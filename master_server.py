@@ -621,10 +621,11 @@ tr:hover{background:#1c2128}
 </div>
 
 <div class="card" id="detailCard" style="display:none">
-  <h2>📝 Chi tiết Job #<span id="detailJobId"></span> <span id="detailOwner" style="font-size:12px;color:#8b949e"></span></h2>
+  <h2>📝 Chi tiết Job #<span id="detailJobId"></span><span id="detailDuration" style="font-size:14px;font-weight:600;color:#8b949e;margin-left:10px"></span> <span id="detailOwner" style="font-size:12px;color:#8b949e"></span></h2>
   <div class="stats" id="detailStats"></div>
   <div style="margin:10px 0;display:flex;gap:8px">
     <button class="btn btn-sm btn-primary" onclick="refreshDetail()">🔄 Refresh</button>
+    <button class="btn btn-sm" id="stopJobBtn" onclick="stopCurrentJob()" style="background:#da3633">⏹ Dừng job</button>
     <button class="btn btn-sm btn-primary" onclick="exportCsv()" style="background:#1f6feb">📥 Export CSV</button>
     <button class="btn btn-sm btn-primary" onclick="exportXlsx()" style="background:#8250df">📊 Xuất Excel</button>
   </div>
@@ -727,6 +728,8 @@ async function refreshDetail(){
     const s=await api('/api/jobs/'+id);
     if(!s.ok){document.getElementById('detailStats').innerHTML='<div class="empty">'+s.error+'</div>';return}
     const c=s.chunks||{},r=s.results||{};
+    const duration=document.getElementById('detailDuration');duration.textContent=' · ⏱ '+formatJobDuration(s.created_at,s.finished_at);
+    document.getElementById('stopJobBtn').style.display=s.status==='open'?'inline-block':'none';
     document.getElementById('detailStats').innerHTML=
       '<div class="stat"><div class="num">'+s.total+'</div><div class="lbl">Tổng</div></div>'+
       '<div class="stat ok"><div class="num">'+(r.ok||0)+'</div><div class="lbl">OK</div></div>'+
@@ -759,6 +762,8 @@ function goDetailPage(page){detailPage=Math.max(1,page);refreshDetail();}
 
 function exportCsv(){if(currentJobId)window.open('/api/jobs/'+currentJobId+'/export.csv?token='+TOKEN)}
 function exportXlsx(){if(currentJobId)window.open('/api/jobs/'+currentJobId+'/export.xlsx?token='+TOKEN)}
+function formatJobDuration(start,end){const t=Math.max(0,Math.floor((Number(end)||Date.now()/1000)-Number(start)));return String(Math.floor(t/3600)).padStart(2,'0')+':'+String(Math.floor(t%3600/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0');}
+async function stopCurrentJob(){if(!currentJobId||!confirm('Dừng job này?'))return;const d=await api('/api/jobs/'+currentJobId+'/stop',{method:'POST',body:'{}'});if(d.ok){toast('⏹ Đã dừng job');refreshDetail();loadJobs()}else toast('❌ '+(d.error||'Không thể dừng job'));}
 
 loadJobs();setInterval(loadJobs,15000);
 </script>
@@ -1025,6 +1030,14 @@ class MasterHandler(BaseHTTPRequestHandler):
                     return
                 self._handle_create_job(auth)
                 return
+            parts = path.strip("/").split("/")
+            if len(parts) == 4 and parts[0] == "api" and parts[1] == "jobs" and parts[3] == "stop":
+                auth = self._require_user()
+                if auth is None: return
+                job_id = self._int_or_none(parts[2])
+                if job_id is None:
+                    self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "job_id không hợp lệ"}); return
+                self._handle_stop_job(job_id, auth); return
             if path == "/api/claim":
                 auth = self._require_satellite()
                 if auth is None:
@@ -1184,6 +1197,21 @@ class MasterHandler(BaseHTTPRequestHandler):
             "chunk_size": chunk_size,
         })
 
+    def _handle_stop_job(self, job_id: int, auth: dict[str, Any]) -> None:
+        allowed, job = self._check_job_access(job_id, auth)
+        if job is None:
+            self._json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "job không tồn tại"}); return
+        if not allowed:
+            self._json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "không có quyền dừng job này"}); return
+        if job[4] != "open":
+            self._json(HTTPStatus.OK, {"ok": True, "status": job[4], "already_stopped": True}); return
+        now = _now()
+        self.server.store.batch([
+            {"sql": "UPDATE jobs SET status='stopped', finished_at=? WHERE id=? AND status='open'", "args": [now, job_id]},
+            {"sql": "UPDATE chunks SET status='stopped', lease_until=NULL WHERE job_id=? AND status IN ('pending','claimed')", "args": [job_id]},
+        ])
+        self._json(HTTPStatus.OK, {"ok": True, "job_id": job_id, "status": "stopped"})
+
     def _handle_claim(self) -> None:
         try:
             body = self._read_json()
@@ -1313,6 +1341,10 @@ class MasterHandler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "chunk không tồn tại"})
             return
         job_id = chunk[0]
+        job_state = store.fetchone("SELECT status FROM jobs WHERE id=?", (job_id,))
+        if job_state and job_state[0] == "stopped":
+            self._json(HTTPStatus.OK, {"ok": True, "chunk_id": chunk_id, "stopped": True})
+            return
         # Lấy số acc kỳ vọng của pack (kể cả pack nhỏ < chunk_size)
         expected_count = None
         try:
