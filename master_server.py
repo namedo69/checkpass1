@@ -33,6 +33,7 @@ MAX_CHUNK_LIMIT = 15
 DEFAULT_DB_PATH = Path(__file__).resolve().with_name("master.db")
 DEFAULT_LEASE_MINUTES = 3
 MAX_SATELLITE_LEASE_MINUTES = 3
+MAX_ACCOUNT_RETRY_ROUNDS = 3
 MAX_BODY = 32 * 1024 * 1024
 LICENSE_CACHE_TTL = 300  # giây cache kết quả verify license
 LICENSE_SERVER_URL = os.environ.get("LICENSE_SERVER_URL", "").strip()
@@ -61,6 +62,8 @@ CREATE TABLE IF NOT EXISTS chunks (
     claimed_at REAL,
     lease_until REAL,
     reported_at REAL,
+    retry_round INTEGER NOT NULL DEFAULT 1,
+    avoid_satellite_id TEXT DEFAULT '',
     UNIQUE(job_id, idx)
 );
 CREATE TABLE IF NOT EXISTS results (
@@ -396,6 +399,8 @@ class TursoStore:
         for mig in [
             "ALTER TABLE jobs ADD COLUMN owner_hash TEXT DEFAULT ''",
             "ALTER TABLE jobs ADD COLUMN owner_preview TEXT DEFAULT ''",
+            "ALTER TABLE chunks ADD COLUMN retry_round INTEGER NOT NULL DEFAULT 1",
+            "ALTER TABLE chunks ADD COLUMN avoid_satellite_id TEXT DEFAULT ''",
             "CREATE INDEX IF NOT EXISTS idx_jobs_owner ON jobs(owner_hash)",
         ]:
             try:
@@ -457,6 +462,8 @@ class LocalStore:
             for mig in [
                 "ALTER TABLE jobs ADD COLUMN owner_hash TEXT DEFAULT ''",
                 "ALTER TABLE jobs ADD COLUMN owner_preview TEXT DEFAULT ''",
+                "ALTER TABLE chunks ADD COLUMN retry_round INTEGER NOT NULL DEFAULT 1",
+                "ALTER TABLE chunks ADD COLUMN avoid_satellite_id TEXT DEFAULT ''",
                 "CREATE INDEX IF NOT EXISTS idx_jobs_owner ON jobs(owner_hash)",
             ]:
                 try:
@@ -1236,12 +1243,15 @@ class MasterHandler(BaseHTTPRequestHandler):
             row = store.fetchone(
                 """
                 SELECT id, job_id, account FROM chunks
-                WHERE status='pending'
-                   OR (status='claimed' AND lease_until IS NOT NULL AND lease_until < ?)
+                WHERE (
+                    status='pending'
+                    OR (status='claimed' AND lease_until IS NOT NULL AND lease_until < ?)
+                )
+                AND (avoid_satellite_id='' OR avoid_satellite_id<>?)
                 ORDER BY job_id, idx
                 LIMIT 1
                 """,
-                (now,),
+                (now, satellite_id),
             )
             if row is None:
                 self._check_finish_all_jobs(now)
@@ -1335,7 +1345,7 @@ class MasterHandler(BaseHTTPRequestHandler):
         store = self.server.store
         now = _now()
         chunk = store.fetchone(
-            "SELECT job_id, status, account FROM chunks WHERE id=?", (chunk_id,)
+            "SELECT job_id, status, account, satellite_id, retry_round FROM chunks WHERE id=?", (chunk_id,)
         )
         if chunk is None:
             self._json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "chunk không tồn tại"})
@@ -1372,17 +1382,61 @@ class MasterHandler(BaseHTTPRequestHandler):
             })
         if stmts:
             store.batch(stmts)
+        requeued = 0
+        retry_round = int(chunk[4] or 1)
+        if is_done and chunk[1] != "done" and retry_round < MAX_ACCOUNT_RETRY_ROUNDS:
+            requeued = self._requeue_uncheckable_rows(
+                chunk_id, int(job_id), str(chunk[2] or ""), retry_round, str(chunk[3] or "")
+            )
         # Kiểm tra sau khi ghi: nếu là pack nhỏ mà số rows thực tế ít hơn kỳ vọng, log cảnh báo để phát hiện mất pack
         if expected_count is not None:
             actual = store.fetchone("SELECT COUNT(*) FROM results WHERE chunk_id=?", (chunk_id,))
             actual_count = actual[0] if actual else 0
-            if is_done and actual_count != expected_count:
+            final_expected = expected_count - requeued if is_done else expected_count
+            if is_done and actual_count != final_expected:
                 print(f"[master] cảnh báo: chunk {chunk_id} expected {expected_count} acc nhưng results {actual_count} (rows gửi {len(rows)} skipped_empty {skipped_empty})", flush=True)
             elif skipped_empty:
                 print(f"[master] chunk {chunk_id} skipped_empty {skipped_empty}/{len(rows)}", flush=True)
         if is_done:
             self._check_finish_all_jobs(now)
-        self._json(HTTPStatus.OK, {"ok": True, "chunk_id": chunk_id, "rows": len(rows), "done": is_done, "expected": expected_count})
+        self._json(HTTPStatus.OK, {"ok": True, "chunk_id": chunk_id, "rows": len(rows), "done": is_done, "expected": expected_count, "requeued": requeued})
+
+    def _requeue_uncheckable_rows(self, chunk_id: int, job_id: int, account_data: str, retry_round: int, avoid_satellite_id: str) -> int:
+        """Allocate timeout/network failures again; only round 3 is final."""
+        store = self.server.store
+        try:
+            source_accounts = json.loads(account_data)
+        except (TypeError, json.JSONDecodeError):
+            source_accounts = []
+        if not isinstance(source_accounts, list):
+            return 0
+        retry_credentials: list[str] = []
+        retry_accounts: list[str] = []
+        for account, row_json in store.fetch("SELECT account, row_json FROM results WHERE chunk_id=? ORDER BY id", (chunk_id,)):
+            try:
+                row = json.loads(row_json)
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if str(row.get("status") or "").strip().upper() != "CHƯA THỂ CHECK":
+                continue
+            try:
+                source_index = int(str(row.get("stt") or "0")) - 1
+            except (TypeError, ValueError):
+                source_index = -1
+            if 0 <= source_index < len(source_accounts):
+                retry_credentials.append(str(source_accounts[source_index]))
+                retry_accounts.append(str(account))
+        if not retry_credentials:
+            return 0
+        next_idx_row = store.fetchone("SELECT COALESCE(MAX(idx), -1) + 1 FROM chunks WHERE job_id=?", (job_id,))
+        statements = [{
+            "sql": "INSERT INTO chunks (job_id, idx, account, retry_round, avoid_satellite_id) VALUES (?,?,?,?,?)",
+            "args": [job_id, int(next_idx_row[0]) if next_idx_row else 0, json.dumps(retry_credentials, ensure_ascii=False), retry_round + 1, avoid_satellite_id],
+        }]
+        statements.extend({"sql": "DELETE FROM results WHERE chunk_id=? AND account=?", "args": [chunk_id, account]} for account in retry_accounts)
+        store.batch(statements)
+        print(f"[master] chunk {chunk_id}: phân lại {len(retry_credentials)} acc sang vòng {retry_round + 1}", flush=True)
+        return len(retry_credentials)
 
     def _handle_release(self) -> None:
         try:
