@@ -1248,7 +1248,7 @@ class MasterHandler(BaseHTTPRequestHandler):
                     OR (status='claimed' AND lease_until IS NOT NULL AND lease_until < ?)
                 )
                 AND (avoid_satellite_id='' OR avoid_satellite_id<>?)
-                ORDER BY job_id, idx
+                ORDER BY RANDOM()
                 LIMIT 1
                 """,
                 (now, satellite_id),
