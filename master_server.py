@@ -633,7 +633,7 @@ tr:hover{background:#1c2128}
   <div style="margin:10px 0;display:flex;gap:8px">
     <button class="btn btn-sm btn-primary" onclick="refreshDetail()">🔄 Refresh</button>
     <button class="btn btn-sm" id="stopJobBtn" onclick="stopCurrentJob()" style="background:#da3633">⏹ Dừng job</button>
-    <button class="btn btn-sm btn-primary" onclick="exportCsv()" style="background:#1f6feb">📥 Export CSV</button>
+    <button class="btn btn-sm btn-primary" onclick="exportTxt()" style="background:#1f6feb">📥 Xuất TXT</button>
     <button class="btn btn-sm btn-primary" onclick="exportXlsx()" style="background:#8250df">📊 Xuất Excel</button>
   </div>
   <div id="detailRows"><div class="empty">Đang tải...</div></div>
@@ -767,7 +767,7 @@ async function refreshDetail(){
 }
 function goDetailPage(page){detailPage=Math.max(1,page);refreshDetail();}
 
-function exportCsv(){if(currentJobId)window.open('/api/jobs/'+currentJobId+'/export.csv?token='+TOKEN)}
+function exportTxt(){if(currentJobId)window.open('/api/jobs/'+currentJobId+'/export.txt?token='+TOKEN)}
 function exportXlsx(){if(currentJobId)window.open('/api/jobs/'+currentJobId+'/export.xlsx?token='+TOKEN)}
 function formatJobDuration(start,end){const t=Math.max(0,Math.floor((Number(end)||Date.now()/1000)-Number(start)));return String(Math.floor(t/3600)).padStart(2,'0')+':'+String(Math.floor(t%3600/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0');}
 async function stopCurrentJob(){if(!currentJobId||!confirm('Dừng job này?'))return;const d=await api('/api/jobs/'+currentJobId+'/stop',{method:'POST',body:'{}'});if(d.ok){toast('⏹ Đã dừng job');refreshDetail();loadJobs()}else toast('❌ '+(d.error||'Không thể dừng job'));}
@@ -994,7 +994,7 @@ class MasterHandler(BaseHTTPRequestHandler):
                     return
                 self._handle_job_rows(job_id, auth)
                 return
-            if len(parts) == 4 and parts[0] == "api" and parts[1] == "jobs" and parts[3] == "export.csv":
+            if len(parts) == 4 and parts[0] == "api" and parts[1] == "jobs" and parts[3] == "export.txt":
                 job_id = self._int_or_none(parts[2])
                 if job_id is None:
                     self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "job_id không hợp lệ"})
@@ -1619,24 +1619,20 @@ class MasterHandler(BaseHTTPRequestHandler):
         rows_raw = store.fetch(
             "SELECT row_json FROM results WHERE job_id=? ORDER BY id", (job_id,)
         )
-        rows = [json.loads(item[0]) for item in rows_raw]
-        columns: list[str] = []
-        for row in rows:
-            for key in row:
-                if key not in columns:
-                    columns.append(key)
-        if not columns:
-            columns = ["account", "status"]
-        buffer = io.StringIO()
-        writer = csv.DictWriter(buffer, fieldnames=columns, extrasaction="ignore")
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(row)
-        body = buffer.getvalue()
+        lines: list[str] = []
+        for item in rows_raw:
+            row = json.loads(item[0])
+            level = str(row.get("level") or "").strip()
+            player_status = str(row.get("player_status") or "").strip()
+            is_ctnv = level.casefold() == "ctnv" or player_status.casefold() == "chưa tạo nhân vật"
+            name = "CTNV" if is_ctnv else str(row.get("name") or "").strip()
+            status = player_status or str(row.get("status") or "").strip()
+            lines.append(" || ".join((str(row.get("account") or "").strip(), str(row.get("uid") or "").strip(), name, level, status)))
+        body = "\n".join(lines) + ("\n" if lines else "")
         data = body.encode("utf-8-sig")
         self.send_response(HTTPStatus.OK)
-        self._security_headers("text/csv; charset=utf-8")
-        self.send_header("Content-Disposition", f'attachment; filename="job_{job_id}.csv"')
+        self._security_headers("text/plain; charset=utf-8")
+        self.send_header("Content-Disposition", f'attachment; filename="job_{job_id}.txt"')
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         try:
