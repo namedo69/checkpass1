@@ -1619,15 +1619,36 @@ class MasterHandler(BaseHTTPRequestHandler):
         rows_raw = store.fetch(
             "SELECT row_json FROM results WHERE job_id=? ORDER BY id", (job_id,)
         )
-        lines: list[str] = []
+        grouped_rows: dict[str, list[dict[str, Any]]] = {
+            "Đạt": [], "Không đạt": [], "CTNV": [], "Chưa thể check": [], "Bị khóa": [], "Sai pass": [],
+        }
         for item in rows_raw:
             row = json.loads(item[0])
             level = str(row.get("level") or "").strip()
             player_status = str(row.get("player_status") or "").strip()
             is_ctnv = level.casefold() == "ctnv" or player_status.casefold() == "chưa tạo nhân vật"
-            name = "CTNV" if is_ctnv else str(row.get("name") or "").strip()
-            status = player_status or str(row.get("status") or "").strip()
-            lines.append(" || ".join((str(row.get("account") or "").strip(), str(row.get("uid") or "").strip(), name, level, status)))
+            result_type = str(row.get("result_type") or "").strip().casefold()
+            if result_type == "sai pass" or str(row.get("status") or "").strip().upper() == "FAIL":
+                grouped_rows["Sai pass"].append(row)
+            elif result_type == "chưa thể check" or str(row.get("status") or "").strip().upper() == "CHƯA THỂ CHECK":
+                grouped_rows["Chưa thể check"].append(row)
+            elif player_status == "Bị khóa":
+                grouped_rows["Bị khóa"].append(row)
+            elif is_ctnv:
+                grouped_rows["CTNV"].append(row)
+            elif level.isdigit() and int(level) >= 12:
+                grouped_rows["Đạt"].append(row)
+            else:
+                grouped_rows["Không đạt"].append(row)
+        lines: list[str] = []
+        for category in ("Đạt", "Không đạt", "CTNV", "Chưa thể check", "Bị khóa", "Sai pass"):
+            for row in grouped_rows[category]:
+                level = str(row.get("level") or "").strip()
+                player_status = str(row.get("player_status") or "").strip()
+                is_ctnv = level.casefold() == "ctnv" or player_status.casefold() == "chưa tạo nhân vật"
+                name = "CTNV" if is_ctnv else str(row.get("name") or "").strip()
+                status = player_status or str(row.get("status") or "").strip()
+                lines.append(" || ".join((str(row.get("account") or "").strip(), str(row.get("uid") or "").strip(), name, level, status)))
         body = "\n".join(lines) + ("\n" if lines else "")
         data = body.encode("utf-8-sig")
         self.send_response(HTTPStatus.OK)
