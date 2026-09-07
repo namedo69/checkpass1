@@ -15,6 +15,7 @@ import socket
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from http import HTTPStatus
@@ -41,6 +42,83 @@ POLL_INTERVAL = float(_env("POLL_INTERVAL", "15") or "15")
 # Render Web Service truyền PORT; fallback HEALTH_PORT cho local
 HEALTH_PORT = int(_env("PORT", "") or _env("HEALTH_PORT", "8765") or "8765")
 HEALTH_HOST = _env("HEALTH_HOST", "0.0.0.0") or "0.0.0.0"
+GARENA_PROXY = _env("GARENA_PROXY")
+
+
+def _proxy_label(proxy_url: str) -> str:
+    if not proxy_url:
+        return "IP gốc"
+    try:
+        parsed = urllib.parse.urlsplit(proxy_url if "://" in proxy_url else f"socks5://{proxy_url}")
+        return f"{parsed.hostname}:{parsed.port}" if parsed.hostname and parsed.port else "Proxy lỗi"
+    except ValueError:
+        return "Proxy lỗi"
+
+
+class _RuntimeStatus:
+    """Thread-safe counters exposed by the local health endpoint."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.started_at = time.time()
+        self.claimed_chunks = 0
+        self.completed_chunks = 0
+        self.failed_chunks = 0
+        self.claimed_accounts = 0
+        self.completed_accounts = 0
+        self.active_chunks: dict[int, dict[str, int]] = {}
+        self.last_error = ""
+
+    def claim(self, chunk_id: int, account_count: int) -> None:
+        with self._lock:
+            self.claimed_chunks += 1
+            self.claimed_accounts += account_count
+            self.active_chunks[chunk_id] = {"accounts": account_count, "processed": 0}
+
+    def account_done(self, chunk_id: int) -> None:
+        with self._lock:
+            chunk = self.active_chunks.get(chunk_id)
+            if chunk is not None:
+                chunk["processed"] += 1
+
+    def finish(self, chunk_id: int, successful: bool, error: str = "") -> None:
+        with self._lock:
+            chunk = self.active_chunks.pop(chunk_id, None)
+            if chunk is not None:
+                self.completed_accounts += chunk["processed"]
+            if successful:
+                self.completed_chunks += 1
+            else:
+                self.failed_chunks += 1
+                self.last_error = error[:200]
+
+    def set_error(self, error: str) -> None:
+        with self._lock:
+            self.last_error = error[:200]
+
+    def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            active_accounts = sum(
+                max(0, chunk["accounts"] - chunk["processed"])
+                for chunk in self.active_chunks.values()
+            )
+            processed_active = sum(chunk["processed"] for chunk in self.active_chunks.values())
+            return {
+                "proxy": _proxy_label(GARENA_PROXY),
+                "started_at": self.started_at,
+                "chunks_claimed": self.claimed_chunks,
+                "chunks_completed": self.completed_chunks,
+                "chunks_failed": self.failed_chunks,
+                "chunks_active": len(self.active_chunks),
+                "accounts_claimed": self.claimed_accounts,
+                "accounts_completed": self.completed_accounts,
+                "accounts_active": active_accounts,
+                "accounts_processed_active": processed_active,
+                "last_error": self.last_error,
+            }
+
+
+RUNTIME_STATUS = _RuntimeStatus()
 
 
 class _Client:
@@ -94,7 +172,12 @@ class _Health(BaseHTTPRequestHandler):
         return
 
     def do_GET(self) -> None:
-        body = b'{"ok":true,"role":"satellite","id":"' + SATELLITE_ID.encode() + b'"}'
+        body = json.dumps({
+            "ok": True,
+            "role": "satellite",
+            "id": SATELLITE_ID,
+            **RUNTIME_STATUS.snapshot(),
+        }, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
@@ -127,7 +210,7 @@ def _self_ping_loop() -> None:
             pass
 
 
-def _process_chunk(client: _Client, tcp_module: Any, claim: dict) -> None:
+def _process_chunk(client: _Client, tcp_module: Any, claim: dict, stop_event: threading.Event) -> None:
     """Xử lý 1 chunk trong thread riêng."""
     chunk_id = int(claim["chunk_id"])
     accounts = list(claim.get("accounts") or [])
@@ -156,7 +239,10 @@ def _process_chunk(client: _Client, tcp_module: Any, claim: dict) -> None:
         FLUSH_SIZE = 5
 
         def on_result(row):
+            if stop_event.is_set():
+                return
             pub = api_test.public_batch_row(row)
+            RUNTIME_STATUS.account_done(chunk_id)
             flush = None
             with buffer_lock:
                 buffer.append(pub)
@@ -178,8 +264,13 @@ def _process_chunk(client: _Client, tcp_module: Any, claim: dict) -> None:
 
         api_test.run_batch_core(
             credentials, tcp_module, WORKERS, START_GAP, TIMEOUT,
+            stop_event=stop_event,
             on_result=on_result,
         )
+        if stop_event.is_set():
+            print(f"[satellite] {SATELLITE_ID}: chunk {chunk_id} nhan lenh dung", flush=True)
+            RUNTIME_STATUS.finish(chunk_id, successful=True)
+            return
         # Gui phan con lai + danh dau done — dam bao gui het ke ca khi truoc do flush loi
         # Thu lai den khi thanh cong (toi da 3 lan) de tranh mat pack nho
         with buffer_lock:
@@ -206,8 +297,10 @@ def _process_chunk(client: _Client, tcp_module: Any, claim: dict) -> None:
             print(f"[satellite] {SATELLITE_ID}: chunk {chunk_id} xong {total}/{expected} acc (da gui {sent_count[0]} + con lai {len(remaining)})", flush=True)
         else:
             print(f"[satellite] {SATELLITE_ID}: chunk {chunk_id} xong {total} acc", flush=True)
+        RUNTIME_STATUS.finish(chunk_id, successful=True)
     except Exception as exc:
         print(f"[satellite] {SATELLITE_ID}: chunk {chunk_id} loi, release: {exc}", flush=True)
+        RUNTIME_STATUS.finish(chunk_id, successful=False, error=str(exc))
         try:
             client.release(chunk_id)
         except Exception as release_exc:
@@ -217,17 +310,22 @@ def _process_chunk(client: _Client, tcp_module: Any, claim: dict) -> None:
             credential.password = ""
 
 
-def _lease_heartbeat_loop(client: _Client, active_chunk_ids: set[int], active_chunks_lock: threading.Lock) -> None:
+def _lease_heartbeat_loop(client: _Client, active_chunk_stops: dict[int, threading.Event], active_chunks_lock: threading.Lock) -> None:
     """Gia hạn lease định kỳ; nếu vệ tinh chết, lease sẽ tự hết hạn sau 5 phút."""
     interval = max(15.0, min(60.0, LEASE_MINUTES * 60 / 3))
     while True:
         time.sleep(interval)
         with active_chunks_lock:
-            chunk_ids = list(active_chunk_ids)
+            active = dict(active_chunk_stops)
+        chunk_ids = list(active)
         if not chunk_ids:
             continue
         try:
-            client.heartbeat(chunk_ids)
+            response = client.heartbeat(chunk_ids)
+            for chunk_id in response.get("stopped_chunk_ids") or []:
+                stop_event = active.get(int(chunk_id))
+                if stop_event is not None:
+                    stop_event.set()
         except Exception as exc:
             print(f"[satellite] heartbeat loi: {exc}", flush=True)
 
@@ -245,7 +343,7 @@ def _worker_loop() -> None:
     # Đếm số chunk đang xử lý
     active_count = 0
     active_lock = threading.Lock()
-    active_chunk_ids: set[int] = set()
+    active_chunk_stops: dict[int, threading.Event] = {}
     active_chunks_lock = threading.Lock()
 
     def on_chunk_done(future, chunk_id: int):
@@ -253,11 +351,11 @@ def _worker_loop() -> None:
         with active_lock:
             active_count = max(0, active_count - 1)
         with active_chunks_lock:
-            active_chunk_ids.discard(chunk_id)
+            active_chunk_stops.pop(chunk_id, None)
 
     heartbeat_thread = threading.Thread(
         target=_lease_heartbeat_loop,
-        args=(client, active_chunk_ids, active_chunks_lock),
+        args=(client, active_chunk_stops, active_chunks_lock),
         daemon=True,
         name="lease-heartbeat",
     )
@@ -283,15 +381,18 @@ def _worker_loop() -> None:
 
                 with active_lock:
                     active_count += 1
+                RUNTIME_STATUS.claim(int(claim["chunk_id"]), len(claim.get("accounts") or []))
                 chunk_id = int(claim["chunk_id"])
+                chunk_stop_event = threading.Event()
                 with active_chunks_lock:
-                    active_chunk_ids.add(chunk_id)
+                    active_chunk_stops[chunk_id] = chunk_stop_event
 
-                future = pool.submit(_process_chunk, client, tcp_module, claim)
+                future = pool.submit(_process_chunk, client, tcp_module, claim, chunk_stop_event)
                 future.add_done_callback(lambda done, cid=chunk_id: on_chunk_done(done, cid))
 
             except Exception as exc:
                 err_msg = str(exc)
+                RUNTIME_STATUS.set_error(err_msg)
                 # Phân biệt lỗi auth (401) với lỗi mạng thường — nếu auth fail thì chờ lâu hơn, không spam
                 if "401" in err_msg or "token" in err_msg.lower() or "không hợp lệ" in err_msg.lower() or "unauthorized" in err_msg.lower():
                     print(f"[satellite] LỖI AUTH: {err_msg}", flush=True)
