@@ -33,6 +33,11 @@ def _env(name: str, default: str = "") -> str:
 MASTER_URL = _env("MASTER_URL").rstrip("/") or "http://127.0.0.1:8761"
 MASTER_TOKEN = _env("MASTER_TOKEN")
 SATELLITE_ID = _env("SATELLITE_ID") or f"{socket.gethostname()}-{os.getpid()}"
+GIT_COMMIT = _env("RENDER_GIT_COMMIT") or _env("SERVER_VERSION", "local")
+SERVER_VERSION = GIT_COMMIT[:12] if GIT_COMMIT != "local" else "local"
+GIT_BRANCH = _env("RENDER_GIT_BRANCH", "local")
+GIT_REPO = _env("RENDER_GIT_REPO_SLUG", "local")
+SERVER_STARTED_AT_UTC = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 WORKERS = int(_env("WORKERS", "8") or "8")
 START_GAP = float(_env("START_GAP", "3.0") or "3.0")
 TIMEOUT = float(_env("TIMEOUT", "20.0") or "20.0")
@@ -176,6 +181,11 @@ class _Health(BaseHTTPRequestHandler):
             "ok": True,
             "role": "satellite",
             "id": SATELLITE_ID,
+            "version": SERVER_VERSION,
+            "commit": GIT_COMMIT,
+            "branch": GIT_BRANCH,
+            "repo": GIT_REPO,
+            "started_at_utc": SERVER_STARTED_AT_UTC,
             **RUNTIME_STATUS.snapshot(),
         }, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         self.send_response(HTTPStatus.OK)
