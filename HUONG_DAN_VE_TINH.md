@@ -318,10 +318,11 @@ pip install cryptography
 - Kiểm tra `MASTER_TOKEN` giống master
 - Kiểm tra đã gửi acc (tạo job) trên master chưa
 
-### ❌ FAIL nhanh < 600ms
-- **Không phải sai pass** → là rate limit từ Garena
-- Code tự retry tới 8 lần
-- Nếu vẫn FAIL nhiều: tăng `START_GAP` lên 3-5s, giảm `WORKERS`
+### ⚠️ LOGIN phản hồi nhanh < 600ms
+- Chưa đủ căn cứ kết luận rate limit hoặc không thể đăng nhập → code sẽ chờ rồi check lại.
+- Rate limit chỉ được ghi nhận khi có tín hiệu rõ như HTTP 429 hoặc thông báo rate limit/throttling.
+- Mỗi tài khoản được thử lại trong giới hạn tối đa 100 lần hoặc 300 giây.
+- Nếu xuất hiện nhiều phản hồi nhanh: tăng `START_GAP` lên 3-5s và giảm `WORKERS`.
 
 ### ❌ Termux bị Android kill
 - Xem mục **Giữ Termux không bị Android kill** ở trên

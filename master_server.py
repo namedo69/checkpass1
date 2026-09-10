@@ -710,7 +710,7 @@ async function loadJobs(){
   try{
     const d=await api('/api/jobs_list');
     if(!d.ok||!d.jobs||d.jobs.length===0){el.innerHTML='<div class="empty">Chưa có job nào</div>';return}
-    let h='<table><tr><th>ID</th><th>Tổng</th><th>Trạng thái</th><th>OK</th><th>Sai pass</th><th>Chưa thể check</th><th></th></tr>';
+    let h='<table><tr><th>ID</th><th>Tổng</th><th>Trạng thái</th><th>OK</th><th>Không thể log</th><th>Chưa thể check</th><th></th></tr>';
     d.jobs.forEach(j=>{
       const st=j.status==='done'?'<span class="tag tag-ok">Xong</span>':'<span class="tag tag-run">Đang chạy</span>';
       h+='<tr><td>#'+j.id+'</td><td>'+j.total+'</td><td>'+st+'</td><td style="color:#56d364">'+(j.ok||0)+'</td><td style="color:#ff7b72">'+(j.fail||0)+'</td><td style="color:#d29922">'+(j.uncheckable||0)+'</td>';
@@ -740,7 +740,7 @@ async function refreshDetail(){
     document.getElementById('detailStats').innerHTML=
       '<div class="stat"><div class="num">'+s.total+'</div><div class="lbl">Tổng</div></div>'+
       '<div class="stat ok"><div class="num">'+(r.ok||0)+'</div><div class="lbl">OK</div></div>'+
-      '<div class="stat fail"><div class="num">'+(r.fail||0)+'</div><div class="lbl">Sai pass</div></div>'+
+      '<div class="stat fail"><div class="num">'+(r.fail||0)+'</div><div class="lbl">Không thể log</div></div>'+
       '<div class="stat pending"><div class="num">'+(r.uncheckable||0)+'</div><div class="lbl">Chưa thể check</div></div>'+
       '<div class="stat pending"><div class="num">'+(c.pending||0)+'</div><div class="lbl">Chờ</div></div>'+
       '<div class="stat"><div class="num">'+(c.claimed||0)+'</div><div class="lbl">Đang check</div></div>';
@@ -1620,7 +1620,7 @@ class MasterHandler(BaseHTTPRequestHandler):
             "SELECT row_json FROM results WHERE job_id=? ORDER BY id", (job_id,)
         )
         grouped_rows: dict[str, list[dict[str, Any]]] = {
-            "Đạt": [], "Không đạt": [], "CTNV": [], "Chưa thể check": [], "Bị khóa": [], "Sai pass": [],
+            "Đạt": [], "Không đạt": [], "CTNV": [], "Chưa thể check": [], "Bị khóa": [], "Không thể log": [],
         }
         for item in rows_raw:
             row = json.loads(item[0])
@@ -1628,8 +1628,8 @@ class MasterHandler(BaseHTTPRequestHandler):
             player_status = str(row.get("player_status") or "").strip()
             is_ctnv = level.casefold() == "ctnv" or player_status.casefold() == "chưa tạo nhân vật"
             result_type = str(row.get("result_type") or "").strip().casefold()
-            if result_type == "sai pass" or str(row.get("status") or "").strip().upper() == "FAIL":
-                grouped_rows["Sai pass"].append(row)
+            if result_type in {"sai pass", "không thể log"} or str(row.get("status") or "").strip().upper() == "FAIL":
+                grouped_rows["Không thể log"].append(row)
             elif result_type == "chưa thể check" or str(row.get("status") or "").strip().upper() == "CHƯA THỂ CHECK":
                 grouped_rows["Chưa thể check"].append(row)
             elif player_status == "Bị khóa":
@@ -1641,7 +1641,7 @@ class MasterHandler(BaseHTTPRequestHandler):
             else:
                 grouped_rows["Không đạt"].append(row)
         lines: list[str] = []
-        for category in ("Đạt", "Không đạt", "CTNV", "Chưa thể check", "Bị khóa", "Sai pass"):
+        for category in ("Đạt", "Không đạt", "CTNV", "Chưa thể check", "Bị khóa", "Không thể log"):
             for row in grouped_rows[category]:
                 level = str(row.get("level") or "").strip()
                 player_status = str(row.get("player_status") or "").strip()
@@ -1697,14 +1697,14 @@ class MasterHandler(BaseHTTPRequestHandler):
                 row["_export_credential"] = str(credentials[row_index])
             rows.append(row)
         sheets: dict[str, list[dict[str, Any]]] = {
-            "Đạt": [], "Không đạt": [], "CTNV": [], "Bị khóa": [], "Sai pass": [], "Chưa thể check": [],
+            "Đạt": [], "Không đạt": [], "CTNV": [], "Bị khóa": [], "Không thể log": [], "Chưa thể check": [],
         }
         for row in rows:
             player_status = str(row.get("player_status") or "").strip()
             level = str(row.get("level") or "").strip()
             result_type = str(row.get("result_type") or "").strip().casefold()
-            if result_type == "sai pass":
-                sheets["Sai pass"].append(row)
+            if result_type in {"sai pass", "không thể log"} or str(row.get("status") or "").strip().upper() == "FAIL":
+                sheets["Không thể log"].append(row)
             elif result_type == "chưa thể check" or str(row.get("status") or "").upper() == "CHƯA THỂ CHECK":
                 sheets["Chưa thể check"].append(row)
             elif player_status == "Bị khóa":
@@ -1726,7 +1726,7 @@ class MasterHandler(BaseHTTPRequestHandler):
             fields = ["stt", "account", "status", "uid", "name", "level", "player_status"]
             fills = {
                 "Đạt": "238636", "Không đạt": "9E6A03", "CTNV": "8250DF",
-                "Bị khóa": "C2410C", "Sai pass": "DA3633", "Chưa thể check": "D29922",
+                "Bị khóa": "C2410C", "Không thể log": "DA3633", "Chưa thể check": "D29922",
             }
             for index, (sheet_name, sheet_rows) in enumerate(sheets.items()):
                 worksheet = workbook.active if index == 0 else workbook.create_sheet()
