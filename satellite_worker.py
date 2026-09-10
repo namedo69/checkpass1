@@ -12,6 +12,7 @@ Vệ tinh có một HTTP /healthz để Render không ngủ free tier trong lúc
 import json
 import os
 import socket
+import subprocess
 import threading
 import time
 import urllib.error
@@ -30,6 +31,23 @@ def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
 
 
+def _current_commit_message() -> str:
+    configured = _env("SERVER_COMMIT_MESSAGE")
+    if configured:
+        return configured
+    try:
+        return subprocess.run(
+            ["git", "log", "-1", "--pretty=%s"],
+            cwd=os.path.dirname(os.path.abspath(__file__)),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        ).stdout.strip() or "unknown"
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+
+
 MASTER_URL = _env("MASTER_URL").rstrip("/") or "http://127.0.0.1:8761"
 MASTER_TOKEN = _env("MASTER_TOKEN")
 SATELLITE_ID = _env("SATELLITE_ID") or f"{socket.gethostname()}-{os.getpid()}"
@@ -37,6 +55,7 @@ GIT_COMMIT = _env("RENDER_GIT_COMMIT") or _env("SERVER_VERSION", "local")
 SERVER_VERSION = GIT_COMMIT[:12] if GIT_COMMIT != "local" else "local"
 GIT_BRANCH = _env("RENDER_GIT_BRANCH", "local")
 GIT_REPO = _env("RENDER_GIT_REPO_SLUG", "local")
+GIT_COMMIT_MESSAGE = _current_commit_message()
 SERVER_STARTED_AT_UTC = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 WORKERS = int(_env("WORKERS", "8") or "8")
 START_GAP = float(_env("START_GAP", "3.0") or "3.0")
@@ -183,6 +202,7 @@ class _Health(BaseHTTPRequestHandler):
             "id": SATELLITE_ID,
             "version": SERVER_VERSION,
             "commit": GIT_COMMIT,
+            "commit_message": GIT_COMMIT_MESSAGE,
             "branch": GIT_BRANCH,
             "repo": GIT_REPO,
             "started_at_utc": SERVER_STARTED_AT_UTC,
