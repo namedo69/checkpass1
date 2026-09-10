@@ -1482,7 +1482,8 @@ REQUIRED_ACCOUNT_LABEL = "hồ sơ tài khoản"
 REQUIRED_SESSION_LABEL = "session_key"
 REQUIRED_KIENTUONG_LABEL = "Kiện Tướng"
 
-BATCH_MAX_ATTEMPTS = 100
+BATCH_MAX_RETRIES = 3
+BATCH_MAX_ATTEMPTS = 1 + BATCH_MAX_RETRIES
 BATCH_ROW_DEADLINE_SECONDS = 300.0
 BATCH_MAX_REQUEST_TIMEOUT = 8.0
 
@@ -1621,20 +1622,22 @@ def batch_check_one(
             result = current_result
             attempt_error = ""
             missing = batch_required_missing(current_result)
-            if batch_rate_limit_suspected(current_result):
-                rate_limit_suspected = True
-                break
-            if batch_login_rejected_permanently(current_result):
-                login_rejected = True
-                break
-            # Co UID la pass dung - chi dung khi Kien Tuong da co ket luan Ctnv hoac level
-            tcp_ok = bool((current_result.get("tcp") or {}).get("ok"))
-            if tcp_ok and not missing:
-                break
-            if not missing:
-                break
+            rate_limit_suspected = batch_rate_limit_suspected(current_result)
+            if not rate_limit_suspected:
+                if batch_login_rejected_permanently(current_result):
+                    login_rejected = True
+                    break
+                # Co UID la pass dung - chi dung khi Kien Tuong da co ket luan Ctnv hoac level
+                tcp_ok = bool((current_result.get("tcp") or {}).get("ok"))
+                if tcp_ok and not missing:
+                    break
+                if not missing:
+                    break
         if attempt_count >= BATCH_MAX_ATTEMPTS:
-            gave_up_reason = f"quá {BATCH_MAX_ATTEMPTS} lần thử nhưng chưa đọc đủ dữ liệu yêu cầu"
+            gave_up_reason = (
+                f"đã check {BATCH_MAX_ATTEMPTS} lần (tối đa {BATCH_MAX_RETRIES} retry) "
+                "nhưng chưa đọc đủ dữ liệu yêu cầu"
+            )
             break
         if time.monotonic() - started >= BATCH_ROW_DEADLINE_SECONDS:
             gave_up_reason = f"quá {BATCH_ROW_DEADLINE_SECONDS:.0f}s nhưng chưa đọc đủ dữ liệu yêu cầu"
@@ -2025,7 +2028,7 @@ tr.ok .badge{background:#1a7f37;color:#fff}tr.fail .badge{background:#da3633;col
 <div id="batchTiming" class="fileinfo">Thời gian: chưa bắt đầu.</div>
 <div class="wrap"><table><thead><tr><th>STT</th><th>Tài khoản</th><th>Trạng thái</th><th>UID Garena</th><th>Tên Kiện Tướng</th><th>Cấp</th><th>Trạng thái Kiện Tướng</th><th>ms</th></tr></thead>
 <tbody id="batchBody"></tbody></table></div>
-<small>Kết quả hiển thị trực tiếp khi từng tài khoản xong. TCP từ chối tại LOGIN_PREPARE được đánh <code>FAIL / Không thể log</code>. HTTP 429 hoặc thông báo rate limit/throttling được đánh ngay <code>CHƯA THỂ CHECK</code>. LOGIN phản hồi dưới 600 ms chưa được kết luận mà sẽ chờ rồi kiểm tra lại; chỉ LOGIN từ chối không quá nhanh và không có dấu hiệu rate limit mới là <code>FAIL / Không thể log</code>. Timeout, lỗi mạng/OAuth hoặc dữ liệu thiếu sau tối đa 100 lần thử hoặc 300 giây được đánh <code>CHƯA THỂ CHECK</code>. Bấm "Dừng" để kết thúc sớm.</small>
+<small>Kết quả hiển thị trực tiếp khi từng tài khoản xong. TCP từ chối tại LOGIN_PREPARE được đánh <code>FAIL / Không thể log</code>. Kết quả chưa thể kết luận như HTTP 429, rate limit/throttling, LOGIN dưới 600 ms, timeout, lỗi mạng/OAuth hoặc thiếu dữ liệu sẽ được retry tối đa 3 lần sau lần check đầu. Nếu vẫn chưa rõ sau 4 lượt thì ghi <code>CHƯA THỂ CHECK</code>. Chỉ LOGIN từ chối dứt khoát mới là <code>FAIL / Không thể log</code>. Bấm "Dừng" để kết thúc sớm.</small>
 
 <div id="splitSection" style="display:none;margin-top:18px">
 <h2 id="splitTitle" style="color:#58a6ff;margin:0 0 10px;font-size:16px"></h2>

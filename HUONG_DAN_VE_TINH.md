@@ -321,7 +321,7 @@ pip install cryptography
 ### ⚠️ LOGIN phản hồi nhanh < 600ms
 - Chưa đủ căn cứ kết luận rate limit hoặc không thể đăng nhập → code sẽ chờ rồi check lại.
 - Rate limit chỉ được ghi nhận khi có tín hiệu rõ như HTTP 429 hoặc thông báo rate limit/throttling.
-- Mỗi tài khoản được thử lại trong giới hạn tối đa 100 lần hoặc 300 giây.
+- Sau lần check đầu, mỗi tài khoản chưa thể kết luận được retry tối đa 3 lần (tổng 4 lượt).
 - Nếu xuất hiện nhiều phản hồi nhanh: tăng `START_GAP` lên 3-5s và giảm `WORKERS`.
 
 ### ❌ Termux bị Android kill
