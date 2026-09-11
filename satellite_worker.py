@@ -9,6 +9,7 @@ Nếu xử lý/net lỗi thì release chunk để tổng bộ giao lại cho v�
 Vệ tinh có một HTTP /healthz để Render không ngủ free tier trong lúc chạy dài.
 """
 
+import gc
 import json
 import os
 import socket
@@ -68,6 +69,31 @@ HEALTH_PORT = int(_env("PORT", "") or _env("HEALTH_PORT", "8765") or "8765")
 HEALTH_HOST = _env("HEALTH_HOST", "0.0.0.0") or "0.0.0.0"
 GARENA_PROXY = _env("GARENA_PROXY")
 
+_MEMORY_CLEANUP_LOCK = threading.Lock()
+_MALLOC_TRIM = None
+if os.name == "posix":
+    try:
+        import ctypes
+
+        _MALLOC_TRIM = getattr(ctypes.CDLL(None), "malloc_trim", None)
+        if _MALLOC_TRIM is not None:
+            _MALLOC_TRIM.argtypes = [ctypes.c_size_t]
+            _MALLOC_TRIM.restype = ctypes.c_int
+    except Exception:
+        _MALLOC_TRIM = None
+
+
+def _release_unused_memory() -> None:
+    """Thu gom object theo chunk và trả heap rảnh về Linux khi có thể."""
+    if not _MEMORY_CLEANUP_LOCK.acquire(blocking=False):
+        return
+    try:
+        gc.collect()
+        if _MALLOC_TRIM is not None:
+            _MALLOC_TRIM(0)
+    finally:
+        _MEMORY_CLEANUP_LOCK.release()
+
 
 def _proxy_label(proxy_url: str) -> str:
     if not proxy_url:
@@ -88,28 +114,24 @@ class _RuntimeStatus:
         self.claimed_chunks = 0
         self.completed_chunks = 0
         self.failed_chunks = 0
+        self.active_chunk_count = 0
         self.claimed_accounts = 0
         self.completed_accounts = 0
-        self.active_chunks: dict[int, dict[str, int]] = {}
         self.last_error = ""
 
-    def claim(self, chunk_id: int, account_count: int) -> None:
+    def claim(self, account_count: int) -> None:
         with self._lock:
             self.claimed_chunks += 1
-            self.claimed_accounts += account_count
-            self.active_chunks[chunk_id] = {"accounts": account_count, "processed": 0}
+            self.active_chunk_count += 1
+            self.claimed_accounts += max(0, int(account_count))
 
-    def account_done(self, chunk_id: int) -> None:
+    def account_done(self) -> None:
         with self._lock:
-            chunk = self.active_chunks.get(chunk_id)
-            if chunk is not None:
-                chunk["processed"] += 1
+            self.completed_accounts += 1
 
-    def finish(self, chunk_id: int, successful: bool, error: str = "") -> None:
+    def finish(self, successful: bool, error: str = "") -> None:
         with self._lock:
-            chunk = self.active_chunks.pop(chunk_id, None)
-            if chunk is not None:
-                self.completed_accounts += chunk["processed"]
+            self.active_chunk_count = max(0, self.active_chunk_count - 1)
             if successful:
                 self.completed_chunks += 1
             else:
@@ -122,22 +144,15 @@ class _RuntimeStatus:
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
-            active_accounts = sum(
-                max(0, chunk["accounts"] - chunk["processed"])
-                for chunk in self.active_chunks.values()
-            )
-            processed_active = sum(chunk["processed"] for chunk in self.active_chunks.values())
             return {
                 "proxy": _proxy_label(GARENA_PROXY),
                 "started_at": self.started_at,
                 "chunks_claimed": self.claimed_chunks,
                 "chunks_completed": self.completed_chunks,
                 "chunks_failed": self.failed_chunks,
-                "chunks_active": len(self.active_chunks),
+                "chunks_active": self.active_chunk_count,
                 "accounts_claimed": self.claimed_accounts,
                 "accounts_completed": self.completed_accounts,
-                "accounts_active": active_accounts,
-                "accounts_processed_active": processed_active,
                 "last_error": self.last_error,
             }
 
@@ -272,7 +287,7 @@ def _process_chunk(client: _Client, tcp_module: Any, claim: dict, stop_event: th
             if stop_event.is_set():
                 return
             pub = api_test.public_batch_row(row)
-            RUNTIME_STATUS.account_done(chunk_id)
+            RUNTIME_STATUS.account_done()
             flush = None
             with buffer_lock:
                 buffer.append(pub)
@@ -299,7 +314,7 @@ def _process_chunk(client: _Client, tcp_module: Any, claim: dict, stop_event: th
         )
         if stop_event.is_set():
             print(f"[satellite] {SATELLITE_ID}: chunk {chunk_id} nhan lenh dung", flush=True)
-            RUNTIME_STATUS.finish(chunk_id, successful=True)
+            RUNTIME_STATUS.finish(successful=True)
             return
         # Gui phan con lai + danh dau done — dam bao gui het ke ca khi truoc do flush loi
         # Thu lai den khi thanh cong (toi da 3 lan) de tranh mat pack nho
@@ -327,10 +342,10 @@ def _process_chunk(client: _Client, tcp_module: Any, claim: dict, stop_event: th
             print(f"[satellite] {SATELLITE_ID}: chunk {chunk_id} xong {total}/{expected} acc (da gui {sent_count[0]} + con lai {len(remaining)})", flush=True)
         else:
             print(f"[satellite] {SATELLITE_ID}: chunk {chunk_id} xong {total} acc", flush=True)
-        RUNTIME_STATUS.finish(chunk_id, successful=True)
+        RUNTIME_STATUS.finish(successful=True)
     except Exception as exc:
         print(f"[satellite] {SATELLITE_ID}: chunk {chunk_id} loi, release: {exc}", flush=True)
-        RUNTIME_STATUS.finish(chunk_id, successful=False, error=str(exc))
+        RUNTIME_STATUS.finish(successful=False, error=str(exc))
         try:
             client.release(chunk_id)
         except Exception as release_exc:
@@ -338,6 +353,13 @@ def _process_chunk(client: _Client, tcp_module: Any, claim: dict, stop_event: th
     finally:
         for credential in credentials:
             credential.password = ""
+        credentials.clear()
+        accounts.clear()
+        if "buffer" in locals():
+            buffer.clear()
+        if "remaining" in locals():
+            remaining.clear()
+        _release_unused_memory()
 
 
 def _lease_heartbeat_loop(client: _Client, active_chunk_stops: dict[int, threading.Event], active_chunks_lock: threading.Lock) -> None:
@@ -411,7 +433,7 @@ def _worker_loop() -> None:
 
                 with active_lock:
                     active_count += 1
-                RUNTIME_STATUS.claim(int(claim["chunk_id"]), len(claim.get("accounts") or []))
+                RUNTIME_STATUS.claim(len(claim.get("accounts") or []))
                 chunk_id = int(claim["chunk_id"])
                 chunk_stop_event = threading.Event()
                 with active_chunks_lock:

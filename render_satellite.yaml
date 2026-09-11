@@ -9,6 +9,8 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.4
+      - key: MALLOC_ARENA_MAX
+        value: "2"
       - key: MASTER_URL
         value: "https://checkpass-4grp.onrender.com"
       - key: MASTER_TOKEN
