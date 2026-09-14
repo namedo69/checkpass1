@@ -10,6 +10,7 @@ không chạy Garena check; dữ liệu nằm trong SQLite trên đĩa.
 import argparse
 import asyncio
 import csv
+from datetime import datetime, timedelta, timezone
 import hashlib
 import io
 import json
@@ -26,6 +27,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 DEFAULT_CHUNK_LIMIT = 15
 # Chunk được cố định để tránh client thay đổi kích thước qua API.
@@ -39,6 +41,7 @@ MAX_ACCOUNT_RETRY_ROUNDS = 3
 MAX_BODY = 32 * 1024 * 1024
 LICENSE_CACHE_TTL = 300  # giây cache kết quả verify license
 LICENSE_SERVER_URL = os.environ.get("LICENSE_SERVER_URL", "").strip()
+MASTER_TIMEZONE = os.environ.get("MASTER_TIMEZONE", "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
 # Cache license: key -> (ok, expiry, info)
 _LICENSE_CACHE: dict[str, tuple[bool, float, dict[str, Any]]] = {}
 _LICENSE_CACHE_LOCK = threading.RLock()
@@ -567,6 +570,48 @@ def _save_max_accounts_per_job(store: Any, value: int) -> None:
     }])
 
 
+def _master_tzinfo():
+    try:
+        return ZoneInfo(MASTER_TIMEZONE)
+    except Exception:
+        if MASTER_TIMEZONE in {"Asia/Ho_Chi_Minh", "Asia/Saigon"}:
+            return timezone(timedelta(hours=7), name="ICT")
+        raise ValueError(f"MASTER_TIMEZONE không hợp lệ: {MASTER_TIMEZONE}")
+
+
+def _today_start_timestamp(now_timestamp: float | None = None) -> float:
+    tz_info = _master_tzinfo()
+    now = datetime.now(tz_info) if now_timestamp is None else datetime.fromtimestamp(now_timestamp, tz_info)
+    return now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+
+
+def _prune_completed_jobs_before_today(store: Any, cutoff: float | None = None) -> dict[str, int]:
+    cutoff = _today_start_timestamp() if cutoff is None else float(cutoff)
+    predicate = "created_at < ? AND status='done'"
+    old_jobs = store.fetchone(f"SELECT COUNT(*) FROM jobs WHERE {predicate}", (cutoff,))
+    old_chunks = store.fetchone(f"SELECT COUNT(*) FROM chunks WHERE job_id IN (SELECT id FROM jobs WHERE {predicate})", (cutoff,))
+    old_results = store.fetchone(f"SELECT COUNT(*) FROM results WHERE job_id IN (SELECT id FROM jobs WHERE {predicate})", (cutoff,))
+    store.batch([
+        {"sql": f"DELETE FROM results WHERE job_id IN (SELECT id FROM jobs WHERE {predicate})", "args": [cutoff]},
+        {"sql": f"DELETE FROM chunks WHERE job_id IN (SELECT id FROM jobs WHERE {predicate})", "args": [cutoff]},
+        {"sql": f"DELETE FROM jobs WHERE {predicate}", "args": [cutoff]},
+    ])
+    return {"jobs": int(old_jobs[0] if old_jobs else 0), "chunks": int(old_chunks[0] if old_chunks else 0), "results": int(old_results[0] if old_results else 0)}
+
+
+def _try_prune_completed_jobs(store: Any) -> None:
+    try:
+        _prune_completed_jobs_before_today(store)
+    except Exception as exc:
+        print(f"[master] prune old completed data error: {exc}", flush=True)
+
+
+def _retention_cleanup_loop(store: Any, stop_event: threading.Event) -> None:
+    while not stop_event.is_set():
+        _try_prune_completed_jobs(store)
+        stop_event.wait(60)
+
+
 _PAGE_HTML = """
 <!doctype html>
 <html lang="vi">
@@ -656,6 +701,7 @@ tr:hover{background:#1c2128}
 <div class="card">
   <h2>📊 Danh sách Jobs của bạn</h2>
   <p style="color:#8b949e;font-size:12px;margin-bottom:8px">Chỉ hiện job tạo bởi key hiện tại. Admin (MASTER_TOKEN) sẽ thấy tất cả.</p>
+  <p style="color:#d29922;font-size:12px;margin-bottom:8px">Dữ liệu chỉ lưu trong ngày hiện tại. Job qua ngày vẫn đang chạy sẽ được giữ đến khi hoàn thành rồi mới xóa.</p>
   <div style="margin-bottom:10px"><button class="btn btn-sm btn-primary" onclick="loadJobs()">🔄 Refresh</button></div>
   <div id="jobsList" class="jobs-list"><div class="empty">Chưa có job nào</div></div>
 </div>
@@ -1025,6 +1071,11 @@ class MasterHandler(BaseHTTPRequestHandler):
                     return
                 self._handle_admin_settings_get()
                 return
+            if path == "/api/admin/prune_before_today":
+                if self._require_admin() is None:
+                    return
+                self._handle_prune_before_today()
+                return
             # Các API user cần xác thực license key (hoặc MASTER_TOKEN cho admin)
             auth = self._require_user()
             if auth is None:
@@ -1187,6 +1238,16 @@ class MasterHandler(BaseHTTPRequestHandler):
         _save_max_accounts_per_job(self.server.store, limit)
         self._json(HTTPStatus.OK, {"ok": True, "max_accounts_per_job": limit})
 
+    def _handle_prune_before_today(self) -> None:
+        try:
+            tz_info = _master_tzinfo()
+            cutoff = _today_start_timestamp()
+            deleted = _prune_completed_jobs_before_today(self.server.store, cutoff)
+        except Exception as exc:
+            self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": f"không thể dọn dữ liệu: {exc}"[:300]})
+            return
+        self._json(HTTPStatus.OK, {"ok": True, "timezone": MASTER_TIMEZONE, "cutoff": cutoff, "cutoff_local": datetime.fromtimestamp(cutoff, tz_info).strftime("%Y-%m-%d 00:00:00 %Z"), "deleted": deleted})
+
     def _handle_jobs_list(self, auth: dict[str, Any] | None = None) -> None:
         store = self.server.store
         owner_hash = (auth or {}).get("owner_hash", "") if auth else ""
@@ -1336,6 +1397,7 @@ class MasterHandler(BaseHTTPRequestHandler):
             {"sql": "UPDATE chunks SET status='done', lease_until=NULL, reported_at=? WHERE job_id=? AND status IN ('pending','claimed')", "args": [now, job_id]},
             {"sql": "UPDATE jobs SET status='done', finished_at=? WHERE id=? AND status='open'", "args": [now, job_id]},
         ])
+        _try_prune_completed_jobs(self.server.store)
         self._json(HTTPStatus.OK, {"ok": True, "job_id": job_id, "status": "done", "marked_uncheckable": marked_uncheckable})
 
     def _finalize_unresolved_accounts(self, job_id: int, now: float) -> int:
@@ -1615,6 +1677,7 @@ class MasterHandler(BaseHTTPRequestHandler):
     def _check_finish_all_jobs(self, now: float) -> None:
         store = self.server.store
         open_jobs = store.fetch("SELECT id FROM jobs WHERE status='open'")
+        finished_any = False
         for item in open_jobs:
             job_id = item[0]
             pending = store.fetchone(
@@ -1625,6 +1688,9 @@ class MasterHandler(BaseHTTPRequestHandler):
                     "UPDATE jobs SET status='done', finished_at=? WHERE id=?",
                     (now, job_id),
                 )
+                finished_any = True
+        if finished_any:
+            _try_prune_completed_jobs(store)
 
     def _check_job_access(self, job_id: int, auth: dict[str, Any] | None) -> tuple[bool, tuple | None]:
         """Kiểm tra job có thuộc owner không. Trả về (allowed, job_row). Admin được xem tất cả."""
@@ -1955,6 +2021,9 @@ def main() -> int:
         db_label = f"sqlite={db_path}"
 
     server = CoordinatorServer((host, port), MasterHandler, store, token)
+    retention_stop = threading.Event()
+    retention_thread = threading.Thread(target=_retention_cleanup_loop, args=(store, retention_stop), name="master-retention-cleanup", daemon=True)
+    retention_thread.start()
     license_url = os.environ.get("LICENSE_SERVER_URL", "").strip() or LICENSE_SERVER_URL
     print(f"[master] Tổng bộ: http://{host}:{port}  role=coordinator  db={db_label}")
     print(f"[master] LICENSE_SERVER_URL = '{license_url}'")
@@ -1967,6 +2036,8 @@ def main() -> int:
     except KeyboardInterrupt:
         print("\n[master] Đã dừng.")
     finally:
+        retention_stop.set()
+        retention_thread.join(timeout=2)
         server.server_close()
     return 0
 
