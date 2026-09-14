@@ -759,7 +759,7 @@ async function checkKey(){
   try{
     const r=await fetch('/api/verify?token='+encodeURIComponent(TOKEN),{headers:getHeaders()});
     const j=await r.json();
-    if(j.valid||j.ok){isAdminKey=j.is_admin===true;const value=Number(j.max_accounts_per_job);maxAccountsPerJob=Number.isInteger(value)&&value>0?value:null;document.getElementById('accountLimitCard').style.display=isAdminKey?'block':'none';if(maxAccountsPerJob)document.getElementById('maxAccountsPerJob').value=maxAccountsPerJob;updateAccountCounter();st.innerHTML='<span style="color:#56d364">✅ Key hợp lệ ('+previewKey(TOKEN)+')'+(isAdminKey?' · Admin · Không giới hạn tài khoản/job':(maxAccountsPerJob?' · Tối đa '+maxAccountsPerJob.toLocaleString('vi-VN')+' tài khoản/job':''))+' · 1 job đang chạy/key</span>';}
+    if(j.valid||j.ok){isAdminKey=j.is_admin===true;const value=Number(j.max_accounts_per_job);maxAccountsPerJob=Number.isInteger(value)&&value>0?value:null;document.getElementById('accountLimitCard').style.display=isAdminKey?'block':'none';if(maxAccountsPerJob)document.getElementById('maxAccountsPerJob').value=maxAccountsPerJob;updateAccountCounter();st.innerHTML='<span style="color:#56d364">✅ Key hợp lệ ('+previewKey(TOKEN)+')'+(isAdminKey?' · Admin · Không giới hạn tài khoản/job · Không áp dụng giới hạn 1 job/key':(maxAccountsPerJob?' · Tối đa '+maxAccountsPerJob.toLocaleString('vi-VN')+' tài khoản/job · 1 job đang chạy/key':' · 1 job đang chạy/key'))+'</span>';}
     else{isAdminKey=false;maxAccountsPerJob=null;document.getElementById('accountLimitCard').style.display='none';updateAccountCounter();st.innerHTML='<span style="color:#ff7b72">❌ Key không hợp lệ: '+(j.error||'unknown')+'</span>';}
   }catch(e){st.innerHTML='<span style="color:#d29922">⚠️ Không kiểm tra được: '+e.message+'</span>';}
 }
@@ -1332,15 +1332,11 @@ class MasterHandler(BaseHTTPRequestHandler):
         try:
             with self.server.job_creation_lock:
                 active_key_job = None
-                if owner_hash:
+                if owner_hash and not is_admin:
                     active_key_job = store.fetchone(
                         "SELECT id FROM jobs WHERE owner_hash=? AND status IN ('creating','open') ORDER BY id DESC LIMIT 1",
                         (owner_hash,),
                     )
-                    if active_key_job is None and is_admin:
-                        active_key_job = store.fetchone(
-                            "SELECT id FROM jobs WHERE owner_hash='' AND owner_preview='admin' AND status IN ('creating','open') ORDER BY id DESC LIMIT 1"
-                        )
                 if active_key_job is not None:
                     self._json(HTTPStatus.CONFLICT, {
                         "ok": False,
