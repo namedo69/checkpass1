@@ -28,6 +28,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
+from satellite_keepawake import keepawake_loop, save_satellite_targets
 
 DEFAULT_CHUNK_LIMIT = 15
 # Chunk được cố định để tránh client thay đổi kích thước qua API.
@@ -687,6 +688,13 @@ tr:hover{background:#1c2128}
   </div>
 </div>
 
+<div class="card" id="satelliteTargetsCard" style="display:none">
+  <h2>🌐 Danh sách vệ tinh</h2>
+  <p style="color:#8b949e;font-size:13px">Mỗi dòng một URL. Master sẽ gọi /healthz của các vệ tinh đã lưu mỗi 2 phút.</p>
+  <textarea id="satelliteTargets" placeholder="[Vệ tinh 1] https://example.onrender.com"></textarea>
+  <button class="btn btn-primary" onclick="saveSatelliteTargets()">💾 Lưu danh sách</button>
+</div>
+
 <div class="card">
   <h2>📋 Gửi danh sách tài khoản</h2>
   <textarea id="accInput" oninput="updateAccountCounter()" placeholder="Nhập tài khoản, mỗi dòng 1 acc&#10;Định dạng: user|pass  hoặc  user:pass&#10;&#10;Ví dụ:&#10;account1|password1&#10;account2|password2"></textarea>
@@ -761,6 +769,8 @@ async function checkKey(){
     const j=await r.json();
     if(j.valid||j.ok){isAdminKey=j.is_admin===true;const value=Number(j.max_accounts_per_job);maxAccountsPerJob=Number.isInteger(value)&&value>0?value:null;document.getElementById('accountLimitCard').style.display=isAdminKey?'block':'none';if(maxAccountsPerJob)document.getElementById('maxAccountsPerJob').value=maxAccountsPerJob;updateAccountCounter();st.innerHTML='<span style="color:#56d364">✅ Key hợp lệ ('+previewKey(TOKEN)+')'+(isAdminKey?' · Admin · Không giới hạn tài khoản/job · Không áp dụng giới hạn 1 job/key':(maxAccountsPerJob?' · Tối đa '+maxAccountsPerJob.toLocaleString('vi-VN')+' tài khoản/job · 1 job đang chạy/key':' · 1 job đang chạy/key'))+'</span>';}
     else{isAdminKey=false;maxAccountsPerJob=null;document.getElementById('accountLimitCard').style.display='none';updateAccountCounter();st.innerHTML='<span style="color:#ff7b72">❌ Key không hợp lệ: '+(j.error||'unknown')+'</span>';}
+    document.getElementById('satelliteTargetsCard').style.display=isAdminKey?'block':'none';
+    if(isAdminKey) await loadSatelliteTargets();
   }catch(e){st.innerHTML='<span style="color:#d29922">⚠️ Không kiểm tra được: '+e.message+'</span>';}
 }
 updateOwnerBadge();checkKey();
@@ -768,6 +778,8 @@ updateOwnerBadge();checkKey();
 function submittedAccountCount(){return(document.getElementById('accInput').value||'').split(/\r?\n/).filter(line=>{const value=line.trim();return value&&!value.startsWith('#')}).length;}
 function updateAccountCounter(){const count=submittedAccountCount(),el=document.getElementById('accCounter'),limited=!isAdminKey&&Number.isInteger(maxAccountsPerJob);el.textContent=count.toLocaleString('vi-VN')+(limited?' / '+maxAccountsPerJob.toLocaleString('vi-VN'):'')+' tài khoản';el.style.color=limited&&count>maxAccountsPerJob?'#ff7b72':'#8b949e';}
 async function saveAccountLimit(){const value=Number(document.getElementById('maxAccountsPerJob').value);if(!Number.isInteger(value)||value<1||value>1000000){toast('Giới hạn phải là số nguyên từ 1 đến 1.000.000');return;}const data=await api('/api/admin/settings',{method:'POST',body:JSON.stringify({max_accounts_per_job:value})});if(data.ok){maxAccountsPerJob=value;updateAccountCounter();toast('✅ Đã lưu giới hạn '+value.toLocaleString('vi-VN')+' tài khoản/job')}else toast('❌ '+data.error);}
+async function loadSatelliteTargets(){const data=await api('/api/admin/settings');if(data.ok)document.getElementById('satelliteTargets').value=data.satellite_targets||'';}
+async function saveSatelliteTargets(){const value=document.getElementById('satelliteTargets').value;const data=await api('/api/admin/settings',{method:'POST',body:JSON.stringify({satellite_targets:value})});if(data.ok){document.getElementById('satelliteTargets').value=data.satellite_targets||'';toast('✅ Đã lưu danh sách vệ tinh')}else toast('❌ '+data.error);}
 
 function importAccountsFile(){
   const input=document.getElementById('accFile'),file=input&&input.files&&input.files[0];
@@ -1213,9 +1225,13 @@ class MasterHandler(BaseHTTPRequestHandler):
     # --- handlers -----------------------------------------------------
 
     def _handle_admin_settings_get(self) -> None:
+        row = self.server.store.fetchone(
+            "SELECT setting_value FROM app_settings WHERE setting_key=?", ("satellite_targets",)
+        )
         self._json(HTTPStatus.OK, {
             "ok": True,
             "max_accounts_per_job": _max_accounts_per_job(self.server.store),
+            "satellite_targets": str(row[0]) if row else "",
         })
 
     def _handle_admin_settings_save(self) -> None:
@@ -1223,6 +1239,17 @@ class MasterHandler(BaseHTTPRequestHandler):
             body = self._read_json()
         except ValueError as exc:
             self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+            return
+        if isinstance(body, dict) and "satellite_targets" in body:
+            if not isinstance(body["satellite_targets"], str):
+                self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "danh sách vệ tinh phải là text"})
+                return
+            try:
+                targets = save_satellite_targets(self.server.store, body["satellite_targets"])
+            except ValueError as exc:
+                self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+                return
+            self._json(HTTPStatus.OK, {"ok": True, "satellite_targets": targets})
             return
         value = body.get("max_accounts_per_job") if isinstance(body, dict) else None
         try:
@@ -2020,6 +2047,12 @@ def main() -> int:
     retention_stop = threading.Event()
     retention_thread = threading.Thread(target=_retention_cleanup_loop, args=(store, retention_stop), name="master-retention-cleanup", daemon=True)
     retention_thread.start()
+    keepawake_stop = threading.Event()
+    keepawake_thread = threading.Thread(
+        target=keepawake_loop, args=(store, keepawake_stop),
+        name="master-satellite-keepawake", daemon=True,
+    )
+    keepawake_thread.start()
     license_url = os.environ.get("LICENSE_SERVER_URL", "").strip() or LICENSE_SERVER_URL
     print(f"[master] Tổng bộ: http://{host}:{port}  role=coordinator  db={db_label}")
     print(f"[master] LICENSE_SERVER_URL = '{license_url}'")
@@ -2032,6 +2065,8 @@ def main() -> int:
     except KeyboardInterrupt:
         print("\n[master] Đã dừng.")
     finally:
+        keepawake_stop.set()
+        keepawake_thread.join(timeout=2)
         retention_stop.set()
         retention_thread.join(timeout=2)
         server.server_close()
