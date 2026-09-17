@@ -392,7 +392,6 @@ Chrome mở `http://127.0.0.1:5555/`. Có thể mở thêm nhiều cổng dùng 
 - `account.garena.com/api/account/init`
 - OAuth Kiện Tướng và `api/player/get`
 - OAuth Sale và GraphQL operation `getUser`
-- OAuth Weekly Report và `api/profile`
 - GOP/NapThe session exchange và `api/shop/history?app_id=100054`
 
 Mỗi API trả kết quả độc lập gồm HTTP status, thời gian và JSON body. Token, cookie, SĐT, email và giấy tờ định danh được che trước khi đưa về Chrome. Công cụ không ghi credential hoặc token xuống file/log và không gọi API thay đổi tài khoản, giao dịch hoặc mua hàng.
