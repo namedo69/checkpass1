@@ -1929,8 +1929,8 @@ class MasterHandler(BaseHTTPRequestHandler):
             from openpyxl.styles import Alignment, Font, PatternFill
 
             workbook = openpyxl.Workbook()
-            headers = ["STT", "Tài khoản", "Kết quả check", "UID", "Tên", "Cấp", "registerTime", "Ngày tạo (UTC+7)", "Trạng thái tài khoản"]
-            fields = ["stt", "account", "status", "uid", "name", "level", "registerTime", "registerDate", "player_status"]
+            headers = ["STT", "Tài khoản", "Kết quả check", "UID", "Tên", "Cấp", "Ngày tạo", "Trạng thái tài khoản"]
+            fields = ["stt", "account", "status", "uid", "name", "level", "registerDate", "player_status"]
             fills = {
                 "Đạt": "238636", "Không đạt": "9E6A03", "CTNV": "8250DF",
                 "Bị khóa": "C2410C", "Không thể log": "DA3633", "Chưa thể check": "D29922",
@@ -1949,12 +1949,14 @@ class MasterHandler(BaseHTTPRequestHandler):
                         value = str(
                             row.get("_export_credential") or row.get(field, "") or ""
                         ) if field == "account" else str(row.get(field, "") or "")
+                        if field == "registerDate":
+                            value = value.split(" ", 1)[0]
                         # Excel rejects ASCII control characters in cell values.
                         value = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F]", "", value)
                         worksheet.cell(row=row_index, column=column, value=value)
                 worksheet.freeze_panes = "A2"
-                worksheet.auto_filter.ref = f"A1:I{max(1, len(sheet_rows) + 1)}"
-                for column, width in enumerate((8, 28, 16, 16, 28, 10, 18, 24, 24), 1):
+                worksheet.auto_filter.ref = f"A1:H{max(1, len(sheet_rows) + 1)}"
+                for column, width in enumerate((8, 28, 16, 16, 28, 10, 16, 24), 1):
                     worksheet.column_dimensions[openpyxl.utils.get_column_letter(column)].width = width
 
             output = io.BytesIO()

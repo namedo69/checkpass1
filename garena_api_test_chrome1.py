@@ -405,7 +405,7 @@ def format_register_time(value: Any) -> str:
             return ""
         return datetime.fromtimestamp(
             timestamp, tz=timezone(timedelta(hours=7))
-        ).strftime("%d/%m/%Y %H:%M:%S")
+        ).strftime("%d/%m/%Y")
     except (TypeError, ValueError, OverflowError, OSError):
         return ""
 
@@ -1421,7 +1421,7 @@ def format_user_output(result: dict[str, Any]) -> str:
             [
                 ("Tên Kiện Tướng", kientuong_player.get("name"), "không có"),
                 ("Cấp độ", kientuong_player.get("level"), "không có"),
-                ("Ngày tạo nhân vật (UTC+7)", format_register_time(kientuong_player.get("registerTime")), "không rõ"),
+                ("Ngày tạo nhân vật", format_register_time(kientuong_player.get("registerTime")), "không rõ"),
                 (
                     "Trạng thái Kiện Tướng",
                     "Bị khóa" if bool(kientuong_player.get("banInfo")) else "Bình thường",
@@ -1490,14 +1490,16 @@ def mask_batch_session_key(value: Any, visible: int = 8) -> str:
 
 BATCH_FIELDNAMES = [
     "stt", "account", "status", "uid",
-    "name", "level", "registerTime", "registerDate", "player_status", "result_type", "elapsed_ms",
+    "name", "level", "registerDate", "player_status", "result_type", "elapsed_ms",
 ]
 
 
 def public_batch_row(row: dict[str, Any]) -> dict[str, str]:
     """Return only fields safe for UI, CSV, history APIs and persistence."""
 
-    return {field: str(row.get(field, "") or "") for field in BATCH_FIELDNAMES}
+    public = {field: str(row.get(field, "") or "") for field in BATCH_FIELDNAMES}
+    public["registerDate"] = public["registerDate"].split(" ", 1)[0]
+    return public
 
 REQUIRED_ACCOUNT_LABEL = "hồ sơ tài khoản"
 REQUIRED_SESSION_LABEL = "session_key"
@@ -2053,7 +2055,7 @@ tr.ok .badge{background:#1a7f37;color:#fff}tr.fail .badge{background:#da3633;col
 <div id="batchFileName" class="fileinfo">Chưa chọn file.</div>
 <div id="batchStatus">Chưa chạy.</div>
 <div id="batchTiming" class="fileinfo">Thời gian: chưa bắt đầu.</div>
-<div class="wrap"><table><thead><tr><th>STT</th><th>Tài khoản</th><th>Trạng thái</th><th>UID Garena</th><th>Tên Kiện Tướng</th><th>Cấp</th><th>Ngày tạo (UTC+7)</th><th>Trạng thái Kiện Tướng</th><th>ms</th></tr></thead>
+<div class="wrap"><table><thead><tr><th>STT</th><th>Tài khoản</th><th>Trạng thái</th><th>UID Garena</th><th>Tên Kiện Tướng</th><th>Cấp</th><th>Ngày tạo</th><th>Trạng thái Kiện Tướng</th><th>ms</th></tr></thead>
 <tbody id="batchBody"></tbody></table></div>
 <small>Kết quả hiển thị trực tiếp khi từng tài khoản xong. TCP từ chối tại LOGIN_PREPARE được đánh <code>FAIL / Không thể log</code>. Kết quả chưa thể kết luận như HTTP 429, rate limit/throttling, LOGIN dưới 600 ms, timeout, lỗi mạng/OAuth hoặc thiếu dữ liệu sẽ được retry tối đa 3 lần sau lần check đầu. Nếu vẫn chưa rõ sau 4 lượt thì ghi <code>CHƯA THỂ CHECK</code>. Chỉ LOGIN từ chối dứt khoát mới là <code>FAIL / Không thể log</code>. Bấm "Dừng" để kết thúc sớm.</small>
 
@@ -2062,12 +2064,12 @@ tr.ok .badge{background:#1a7f37;color:#fff}tr.fail .badge{background:#da3633;col
 <div style="display:flex;gap:18px;flex-wrap:wrap">
 <div style="flex:1;min-width:300px">
 <h3 style="color:#56d364;margin:0 0 8px;font-size:14px">✅ Đạt yêu cầu (<span id="metCount">0</span> acc)</h3>
-<div class="wrap" style="max-height:360px"><table><thead><tr><th>STT</th><th>Tài khoản</th><th>Trạng thái</th><th>UID</th><th>Tên KT</th><th>Cấp</th><th>Ngày tạo (UTC+7)</th><th>Trạng thái KT</th><th>ms</th></tr></thead>
+<div class="wrap" style="max-height:360px"><table><thead><tr><th>STT</th><th>Tài khoản</th><th>Trạng thái</th><th>UID</th><th>Tên KT</th><th>Cấp</th><th>Ngày tạo</th><th>Trạng thái KT</th><th>ms</th></tr></thead>
 <tbody id="metBody"></tbody></table></div>
 </div>
 <div style="flex:1;min-width:300px">
 <h3 style="color:#ff7b72;margin:0 0 8px;font-size:14px">❌ Không đạt (<span id="notMetCount">0</span> acc)</h3>
-<div class="wrap" style="max-height:360px"><table><thead><tr><th>STT</th><th>Tài khoản</th><th>Trạng thái</th><th>UID</th><th>Tên KT</th><th>Cấp</th><th>Ngày tạo (UTC+7)</th><th>Trạng thái KT</th><th>ms</th></tr></thead>
+<div class="wrap" style="max-height:360px"><table><thead><tr><th>STT</th><th>Tài khoản</th><th>Trạng thái</th><th>UID</th><th>Tên KT</th><th>Cấp</th><th>Ngày tạo</th><th>Trạng thái KT</th><th>ms</th></tr></thead>
 <tbody id="notMetBody"></tbody></table></div>
 </div>
 </div>
@@ -2099,9 +2101,9 @@ async function getState(){const r=await fetch('/api/batch/state',{cache:'no-stor
 function setStatus(t,bad){const el=$('batchStatus');el.textContent=t;el.className=bad?'bad':'';}
 function formatDuration(ms){const total=Math.max(0,Math.round((Number(ms)||0)/1000)),h=Math.floor(total/3600),m=Math.floor((total%3600)/60),s=total%60;return(h?h+' giờ ':'')+String(m).padStart(2,'0')+' phút '+String(s).padStart(2,'0')+' giây';}
 function updateTiming(s){const elapsed=Number(s.elapsed_ms)||0,done=s.rows.length,total=Number(s.total)||0;let text='Thời gian: '+formatDuration(elapsed);if(s.running&&done>0&&total>done){const eta=Math.max(0,Math.round(elapsed/done*(total-done)));text+=' · Ước còn '+formatDuration(eta);}else if(!s.running&&done){text+=' · Đã hoàn tất';}$('batchTiming').textContent=text;}
-function renderRows(rows){const tb=$('batchBody');for(let i=rendered;i<rows.length;i++){const r=rows[i],tr=document.createElement('tr');tr.className=r.status==='OK'?'ok':'fail';const badge='<span class="badge">'+esc(r.status)+'</span>';tr.innerHTML='<td>'+esc(r.stt)+'</td><td>'+esc(r.account)+'</td><td>'+badge+'</td><td>'+[r.uid,r.name,r.level,r.registerDate,r.player_status,r.elapsed_ms].map(esc).join('</td><td>')+'</td>';tb.appendChild(tr);}rendered=rows.length;lastRows=rows;}
+function renderRows(rows){const tb=$('batchBody');for(let i=rendered;i<rows.length;i++){const r=rows[i],tr=document.createElement('tr');tr.className=r.status==='OK'?'ok':'fail';const badge='<span class="badge">'+esc(r.status)+'</span>';tr.innerHTML='<td>'+esc(r.stt)+'</td><td>'+esc(r.account)+'</td><td>'+badge+'</td><td>'+[r.uid,r.name,r.level,String(r.registerDate||'').split(' ')[0],r.player_status,r.elapsed_ms].map(esc).join('</td><td>')+'</td>';tb.appendChild(tr);}rendered=rows.length;lastRows=rows;}
 async function poll(){try{const s=await getState();if(!s||!s.ok)return;renderRows(s.rows);updateTiming(s);const done=s.rows.length;setStatus(s.running?('Đang chạy: '+done+'/'+s.total+'...'):('Xong: '+done+'/'+s.total+(s.stopped?' (đã dừng sớm)':'')),false);if(s.rows.length) $('exportXlsxBtn').disabled=false;if(!s.running){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}$('batchStart').disabled=false;}}catch(e){}}
-function renderSplitTable(tbodyId,rows){const tb=$(tbodyId);tb.innerHTML='';rows.forEach(r=>{const tr=document.createElement('tr');tr.className=r.status==='OK'?'ok':'fail';const badge='<span class="badge">'+esc(r.status)+'</span>';tr.innerHTML='<td>'+esc(r.stt)+'</td><td>'+esc(r.account)+'</td><td>'+badge+'</td><td>'+[r.uid,r.name,r.level,r.registerDate,r.player_status,r.elapsed_ms].map(esc).join('</td><td>')+'</td>';tb.appendChild(tr);});}
+function renderSplitTable(tbodyId,rows){const tb=$(tbodyId);tb.innerHTML='';rows.forEach(r=>{const tr=document.createElement('tr');tr.className=r.status==='OK'?'ok':'fail';const badge='<span class="badge">'+esc(r.status)+'</span>';tr.innerHTML='<td>'+esc(r.stt)+'</td><td>'+esc(r.account)+'</td><td>'+badge+'</td><td>'+[r.uid,r.name,r.level,String(r.registerDate||'').split(' ')[0],r.player_status,r.elapsed_ms].map(esc).join('</td><td>')+'</td>';tb.appendChild(tr);});}
 $('splitBtn').addEventListener('click',()=>{
  if(!lastRows.length){setStatus('Chưa có kết quả batch để chia lọc',true);return;}
  const lv=parseInt($('requiredLevel').value,10)||12;
@@ -2136,9 +2138,9 @@ $('batchAccounts').addEventListener('input',()=>{if($('batchAccounts').value){ba
 $('batchImport').addEventListener('change',ev=>{const f=ev.target.files&&ev.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{batchFileText=String(rd.result||'');batchFileName=f.name;$('batchAccounts').value='';$('batchFileName').textContent='Đã chọn file: '+batchFileName;setStatus('Đã nạp file, nội dung được giữ ẩn.',false);};rd.onerror=()=>{batchFileText='';batchFileName='';$('batchFileName').textContent='Không đọc được file.';setStatus('Không đọc được file đã chọn.',true);};rd.readAsText(f,'utf-8');ev.target.value='';});
 $('batchExport').addEventListener('click',()=>{
  if(!lastRows.length){setStatus('Chưa có kết quả để xuất',true);return;}
-   const cols=['stt','account','status','uid','name','level','registerTime','registerDate','player_status','deletion_status','elapsed_ms'];
+   const cols=['stt','account','status','uid','name','level','registerDate','player_status','deletion_status','elapsed_ms'];
  const q=v=>{v=String(v==null?'':v);return /[",\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
- const csv='\ufeff'+cols.join(',')+'\n'+lastRows.map(r=>cols.map(c=>q(r[c])).join(',')).join('\r\n');
+ const csv='\ufeff'+cols.join(',')+'\n'+lastRows.map(r=>cols.map(c=>q(c==='registerDate'?String(r[c]||'').split(' ')[0]:r[c])).join(',')).join('\r\n');
  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='ketqua_batch.csv';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),2000);});
 $('f').addEventListener('submit',async ev=>{ev.preventDefault();const b=$('b'),out=$('out'),input=$('credential');
  b.disabled=true;out.className='';out.textContent='Đang kiểm tra tài khoản Garena và hồ sơ Kiện Tướng...';
@@ -2505,8 +2507,8 @@ class Handler(BaseHTTPRequestHandler):
                 locked_fill=PatternFill(start_color="c2410c",end_color="c2410c",fill_type="solid")
                 special_fill=PatternFill(start_color="8250df",end_color="8250df",fill_type="solid")
                 failed_fill=PatternFill(start_color="da3633",end_color="da3633",fill_type="solid")
-                col_names=["stt","account","status","uid","name","level","registerTime","registerDate","player_status","deletion_status","elapsed_ms"]
-                col_labels=["STT","Tài khoản","Trạng thái","UID Garena","Tên Kiện Tướng","Cấp","registerTime","Ngày tạo (UTC+7)","Trạng thái KT","Yêu cầu xóa","ms"]
+                col_names=["stt","account","status","uid","name","level","registerDate","player_status","deletion_status","elapsed_ms"]
+                col_labels=["STT","Tài khoản","Trạng thái","UID Garena","Tên Kiện Tướng","Cấp","Ngày tạo","Trạng thái KT","Yêu cầu xóa","ms"]
                 sheets=[
                     (0,met,"Đạt",header_fill),
                     (1,not_met,"Không đạt",not_met_fill),
@@ -2523,6 +2525,8 @@ class Handler(BaseHTTPRequestHandler):
                     for ri,row in enumerate(data_list,2):
                         for ci,col_name in enumerate(col_names,1):
                             value=row.get(col_name,"")
+                            if col_name == "registerDate":
+                                value=str(value or "").split(" ", 1)[0]
                             if col_name == "account":
                                 value=row.get("_credential") or value
                             if isinstance(value, str):
