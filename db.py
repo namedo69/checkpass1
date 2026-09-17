@@ -99,6 +99,8 @@ def _ensure_tables() -> None:
                 session_key TEXT DEFAULT '',
                 name TEXT DEFAULT '',
                 level TEXT DEFAULT '',
+                registerTime TEXT DEFAULT '',
+                registerDate TEXT DEFAULT '',
                 player_status TEXT DEFAULT '',
                 deletion_status TEXT DEFAULT '',
                 elapsed_ms TEXT DEFAULT '',
@@ -110,6 +112,8 @@ def _ensure_tables() -> None:
         for migration in (
             "ALTER TABLE batch_rows ADD COLUMN credential TEXT DEFAULT ''",
             "ALTER TABLE batch_rows ADD COLUMN special INTEGER DEFAULT 0",
+            "ALTER TABLE batch_rows ADD COLUMN registerTime TEXT DEFAULT ''",
+            "ALTER TABLE batch_rows ADD COLUMN registerDate TEXT DEFAULT ''",
         ):
             try:
                 _run(_execute(migration))
@@ -155,8 +159,8 @@ def save_batch(rows: list[dict[str, str]], required_level: int = 12) -> int | No
         for r in rows:
             special = 1 if str(r.get("_special", "")) == "1" else 0
             stmts.append({
-                "sql": "INSERT INTO batch_rows (run_id,stt,account,credential,special,status,uid,email,email_status,mobile,two_step,authenticator,session_key,name,level,player_status,deletion_status,elapsed_ms,latest_login,login_ip) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                "args": [run_id, r.get("stt",""), r.get("account",""), r.get("_credential",""), special, r.get("status",""), r.get("uid",""), r.get("email",""), r.get("email_status",""), r.get("mobile",""), r.get("two_step",""), r.get("authenticator",""), r.get("session_key",""), r.get("name",""), r.get("level",""), r.get("player_status",""), r.get("deletion_status",""), r.get("elapsed_ms",""), r.get("latest_login",""), r.get("login_ip","")],
+                "sql": "INSERT INTO batch_rows (run_id,stt,account,credential,special,status,uid,email,email_status,mobile,two_step,authenticator,session_key,name,level,registerTime,registerDate,player_status,deletion_status,elapsed_ms,latest_login,login_ip) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "args": [run_id, r.get("stt",""), r.get("account",""), r.get("_credential",""), special, r.get("status",""), r.get("uid",""), r.get("email",""), r.get("email_status",""), r.get("mobile",""), r.get("two_step",""), r.get("authenticator",""), r.get("session_key",""), r.get("name",""), r.get("level",""), str(r.get("registerTime","") or ""), r.get("registerDate",""), r.get("player_status",""), r.get("deletion_status",""), r.get("elapsed_ms",""), r.get("latest_login",""), r.get("login_ip","")],
             })
         if stmts:
             _run(_batch(stmts))
@@ -188,10 +192,10 @@ def get_run_rows(run_id: int) -> list[dict[str, str]]:
     if not _url:
         return []
     _ensure_tables()
-    cols = ["stt","account","status","uid","email","email_status","mobile","two_step","authenticator","session_key","name","level","player_status","deletion_status","elapsed_ms","latest_login","login_ip"]
+    cols = ["stt","account","status","uid","email","email_status","mobile","two_step","authenticator","session_key","name","level","registerTime","registerDate","player_status","deletion_status","elapsed_ms","latest_login","login_ip"]
     try:
         rows = _run(_execute_all(
-            "SELECT stt,account,status,uid,email,email_status,mobile,two_step,authenticator,session_key,name,level,player_status,deletion_status,elapsed_ms,latest_login,login_ip FROM batch_rows WHERE run_id=? ORDER BY id",
+            "SELECT stt,account,status,uid,email,email_status,mobile,two_step,authenticator,session_key,name,level,registerTime,registerDate,player_status,deletion_status,elapsed_ms,latest_login,login_ip FROM batch_rows WHERE run_id=? ORDER BY id",
             (run_id,),
         ))
         return [{cols[i]: (row[i] or "") for i in range(len(cols))} for row in rows]
