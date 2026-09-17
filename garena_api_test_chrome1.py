@@ -29,6 +29,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 import garena_tcp_login_chrome as tcp_ui
 import db
+from weeklyreport import fetch_weekly_profile
 
 
 MAX_BODY = 8 * 1024
@@ -132,6 +133,8 @@ def result_rate_limit_suspected(result: Any) -> bool:
     def scan(value: Any) -> bool:
         if isinstance(value, dict):
             for key, item in value.items():
+                if key == "optional_apis":
+                    continue
                 normalized_key = str(key).strip().casefold()
                 if normalized_key in {"status", "status_code", "http_status"}:
                     try:
@@ -1069,6 +1072,8 @@ def legacy_account_sso_probe(sso_key: str, sso_expiry: int, timeout: float) -> d
                 oauth_result["error"] = "invalid_oauth_response"
             oauth_result["elapsed_ms"] = round((time.monotonic() - oauth_started) * 1000)
             result["account_to_kientuong_oauth"] = oauth_result
+            if oauth_result.get("ok") and not result_rate_limit_suspected(result):
+                result["optional_apis"] = {"weekly_profile": fetch_weekly_profile(session)}
         return result
     except Exception as exc:
         return {
@@ -1169,6 +1174,8 @@ def run_api_tests(tcp_module: Any, account: str, password: str, timeout: float) 
                 "error": (str(exc).strip() or type(exc).__name__)[:500],
             }
         results["tcp_to_web_probe"] = probe
+        if probe.get("optional_apis"):
+            results["optional_apis"] = probe["optional_apis"]
         candidate = probe.get("account_init")
         account_init = candidate if isinstance(candidate, dict) else {}
         results["apis"]["account_init"] = account_init or {
@@ -1289,6 +1296,13 @@ def run_api_tests(tcp_module: Any, account: str, password: str, timeout: float) 
         kientuong_auth["no_character_confirmed"] = bool(no_character_responses >= 2)
         results["web_auth"]["kientuong"] = kientuong_auth
         results["apis"]["kientuong_player"] = web_player
+        if (
+            kientuong_oauth_ready
+            and web_player.get("ok")
+            and not result_rate_limit_suspected(results)
+            and "weekly_profile" not in results.get("optional_apis", {})
+        ):
+            results.setdefault("optional_apis", {})["weekly_profile"] = fetch_weekly_profile(kientuong_session)
 
     password = ""
     results["elapsed_ms"] = round((time.monotonic() - started) * 1000)
