@@ -8,6 +8,7 @@ không chạy Garena check; dữ liệu nằm trong SQLite trên đĩa.
 """
 
 import argparse
+from export_dates import registration_date
 import asyncio
 import csv
 from datetime import datetime, timedelta, timezone
@@ -1407,21 +1408,38 @@ class MasterHandler(BaseHTTPRequestHandler):
         })
 
     def _handle_stop_job(self, job_id: int, auth: dict[str, Any]) -> None:
-        allowed, job = self._check_job_access(job_id, auth)
-        if job is None:
-            self._json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "job không tồn tại"}); return
-        if not allowed:
-            self._json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "không có quyền dừng job này"}); return
-        if job[4] != "open":
-            self._json(HTTPStatus.OK, {"ok": True, "status": job[4], "already_stopped": True}); return
-        now = _now()
-        marked_uncheckable = self._finalize_unresolved_accounts(job_id, now)
-        self.server.store.batch([
-            {"sql": "UPDATE chunks SET status='done', lease_until=NULL, reported_at=? WHERE job_id=? AND status IN ('pending','claimed')", "args": [now, job_id]},
-            {"sql": "UPDATE jobs SET status='done', finished_at=? WHERE id=? AND status='open'", "args": [now, job_id]},
-        ])
-        _try_prune_completed_jobs(self.server.store)
-        self._json(HTTPStatus.OK, {"ok": True, "job_id": job_id, "status": "done", "marked_uncheckable": marked_uncheckable})
+        with self.server.stop_lock:
+            allowed, job = self._check_job_access(job_id, auth)
+            if job is None:
+                self._json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "job không tồn tại"}); return
+            if not allowed:
+                self._json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "không có quyền dừng job này"}); return
+            if job[4] != "open":
+                self._json(HTTPStatus.OK, {"ok": True, "job_id": job_id, "status": job[4], "already_stopped": True}); return
+
+            store = self.server.store
+            now = _now()
+            changed = store.exec_with_changes(
+                "UPDATE jobs SET status='stopping' WHERE id=? AND status='open'", (job_id,)
+            )
+            if changed == 0:
+                current = store.fetchone("SELECT status FROM jobs WHERE id=?", (job_id,))
+                status = current[0] if current else "done"
+                if status != "stopping":
+                    self._json(HTTPStatus.OK, {"ok": True, "job_id": job_id, "status": status, "already_stopped": True}); return
+            try:
+                marked_uncheckable = self._finalize_unresolved_accounts(job_id, now)
+                store.batch([
+                    {"sql": "UPDATE chunks SET status='done', lease_until=NULL, reported_at=? WHERE job_id=? AND status IN ('pending','claimed')", "args": [now, job_id]},
+                    {"sql": "UPDATE jobs SET status='done', finished_at=? WHERE id=? AND status='stopping'", "args": [now, job_id]},
+                ])
+            except Exception as exc:
+                store.exec("UPDATE jobs SET status='open' WHERE id=? AND status='stopping'", (job_id,))
+                print(f"[master] dừng job {job_id} thất bại: {exc}", flush=True)
+                self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": "Không thể hoàn tất yêu cầu dừng job; vui lòng thử lại."})
+                return
+            _try_prune_completed_jobs(store)
+            self._json(HTTPStatus.OK, {"ok": True, "job_id": job_id, "status": "done", "marked_uncheckable": marked_uncheckable})
 
     def _finalize_unresolved_accounts(self, job_id: int, now: float) -> int:
         store = self.server.store
@@ -1950,7 +1968,9 @@ class MasterHandler(BaseHTTPRequestHandler):
                             row.get("_export_credential") or row.get(field, "") or ""
                         ) if field == "account" else str(row.get(field, "") or "")
                         if field == "registerDate":
-                            value = value.split(" ", 1)[0]
+                            cell = worksheet.cell(row=row_index, column=column, value=registration_date(value))
+                            cell.number_format = "dd/mm/yyyy"
+                            continue
                         # Excel rejects ASCII control characters in cell values.
                         value = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F]", "", value)
                         worksheet.cell(row=row_index, column=column, value=value)
@@ -1985,6 +2005,7 @@ class CoordinatorServer(ThreadingHTTPServer):
         self.store = store
         self.master_token = master_token
         self.job_creation_lock = threading.Lock()
+        self.stop_lock = threading.Lock()
 
 
 def parse_args() -> argparse.Namespace:
