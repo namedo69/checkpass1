@@ -672,7 +672,7 @@ tr:hover{background:#1c2128}
 
 <div class="card" id="keyCard" style="border-color:#1f6feb">
   <h2>🔐 License Key (f:license-server)</h2>
-  <p style="color:#8b949e;font-size:13px;margin-bottom:10px">Mỗi key chỉ xem được job của mình. Nhập key được cấp từ license-server. Vệ tinh vẫn dùng <code>MASTER_TOKEN</code> để claim mọi job.</p>
+  <p style="color:#8b949e;font-size:13px;margin-bottom:10px">Mỗi key chỉ xem được job của mình. Nhập key được cấp từ license-server. VPS vẫn dùng <code>MASTER_TOKEN</code> để claim mọi job.</p>
   <div class="row">
     <div class="field" style="flex:2"><label>License Key</label><input type="password" id="keyInput" placeholder="Nhập key..."></div>
     <div class="field"><label>&nbsp;</label><button class="btn btn-primary" onclick="saveKey()">✅ Lưu & Kiểm tra</button></div>
@@ -690,9 +690,9 @@ tr:hover{background:#1c2128}
 </div>
 
 <div class="card" id="satelliteTargetsCard" style="display:none">
-  <h2>🌐 Danh sách vệ tinh</h2>
-  <p style="color:#8b949e;font-size:13px">Mỗi dòng một URL. Master sẽ gọi /healthz của các vệ tinh đã lưu mỗi 2 phút.</p>
-  <textarea id="satelliteTargets" placeholder="[Vệ tinh 1] https://example.onrender.com"></textarea>
+  <h2>🌐 Danh sách VPS</h2>
+  <p style="color:#8b949e;font-size:13px">Mỗi dòng một URL. Master sẽ gọi /healthz của các VPS đã lưu mỗi 2 phút.</p>
+  <textarea id="satelliteTargets" placeholder="[VPS 1] https://example.onrender.com"></textarea>
   <button class="btn btn-primary" onclick="saveSatelliteTargets()">💾 Lưu danh sách</button>
 </div>
 
@@ -780,7 +780,7 @@ function submittedAccountCount(){return(document.getElementById('accInput').valu
 function updateAccountCounter(){const count=submittedAccountCount(),el=document.getElementById('accCounter'),limited=!isAdminKey&&Number.isInteger(maxAccountsPerJob);el.textContent=count.toLocaleString('vi-VN')+(limited?' / '+maxAccountsPerJob.toLocaleString('vi-VN'):'')+' tài khoản';el.style.color=limited&&count>maxAccountsPerJob?'#ff7b72':'#8b949e';}
 async function saveAccountLimit(){const value=Number(document.getElementById('maxAccountsPerJob').value);if(!Number.isInteger(value)||value<1||value>1000000){toast('Giới hạn phải là số nguyên từ 1 đến 1.000.000');return;}const data=await api('/api/admin/settings',{method:'POST',body:JSON.stringify({max_accounts_per_job:value})});if(data.ok){maxAccountsPerJob=value;updateAccountCounter();toast('✅ Đã lưu giới hạn '+value.toLocaleString('vi-VN')+' tài khoản/job')}else toast('❌ '+data.error);}
 async function loadSatelliteTargets(){const data=await api('/api/admin/settings');if(data.ok)document.getElementById('satelliteTargets').value=data.satellite_targets||'';}
-async function saveSatelliteTargets(){const value=document.getElementById('satelliteTargets').value;const data=await api('/api/admin/settings',{method:'POST',body:JSON.stringify({satellite_targets:value})});if(data.ok){document.getElementById('satelliteTargets').value=data.satellite_targets||'';toast('✅ Đã lưu danh sách vệ tinh')}else toast('❌ '+data.error);}
+async function saveSatelliteTargets(){const value=document.getElementById('satelliteTargets').value;const data=await api('/api/admin/settings',{method:'POST',body:JSON.stringify({satellite_targets:value})});if(data.ok){document.getElementById('satelliteTargets').value=data.satellite_targets||'';toast('✅ Đã lưu danh sách VPS')}else toast('❌ '+data.error);}
 
 function importAccountsFile(){
   const input=document.getElementById('accFile'),file=input&&input.files&&input.files[0];
@@ -1243,7 +1243,7 @@ class MasterHandler(BaseHTTPRequestHandler):
             return
         if isinstance(body, dict) and "satellite_targets" in body:
             if not isinstance(body["satellite_targets"], str):
-                self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "danh sách vệ tinh phải là text"})
+                self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "danh sách VPS phải là text"})
                 return
             try:
                 targets = save_satellite_targets(self.server.store, body["satellite_targets"])
