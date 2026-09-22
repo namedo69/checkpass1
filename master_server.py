@@ -741,10 +741,12 @@ let H=getHeaders();
 let currentJobId=null;
 let detailPage=1;
 let isAdminKey=false;
+let canCreateJobs=false;
 let maxAccountsPerJob=null;
 const DETAIL_PAGE_SIZE=50;
 
 function toast(msg,ms=3000){const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';setTimeout(()=>t.style.display='none',ms)}
+function setCreateJobAvailability(allowed){canCreateJobs=allowed===true;const btn=document.getElementById('btnSend');if(btn){btn.disabled=!canCreateJobs;btn.title=canCreateJobs?'':'Key hết hạn chỉ được xem lịch sử job';}}
 
 async function api(path,opt={}){
   const r=await fetch(path,{headers:getHeaders(),...opt});
@@ -768,8 +770,9 @@ async function checkKey(){
   try{
     const r=await fetch('/api/verify?token='+encodeURIComponent(TOKEN),{headers:getHeaders()});
     const j=await r.json();
-    if(j.valid||j.ok){isAdminKey=j.is_admin===true;const value=Number(j.max_accounts_per_job);maxAccountsPerJob=Number.isInteger(value)&&value>0?value:null;document.getElementById('accountLimitCard').style.display=isAdminKey?'block':'none';if(maxAccountsPerJob)document.getElementById('maxAccountsPerJob').value=maxAccountsPerJob;updateAccountCounter();st.innerHTML='<span style="color:#56d364">✅ Key hợp lệ ('+previewKey(TOKEN)+')'+(isAdminKey?' · Admin · Không giới hạn tài khoản/job · Không áp dụng giới hạn 1 job/key':(maxAccountsPerJob?' · Tối đa '+maxAccountsPerJob.toLocaleString('vi-VN')+' tài khoản/job · 1 job đang chạy/key':' · 1 job đang chạy/key'))+'</span>';}
-    else{isAdminKey=false;maxAccountsPerJob=null;document.getElementById('accountLimitCard').style.display='none';updateAccountCounter();st.innerHTML='<span style="color:#ff7b72">❌ Key không hợp lệ: '+(j.error||'unknown')+'</span>';}
+    if(j.valid||j.ok){setCreateJobAvailability(j.can_create_job!==false);isAdminKey=j.is_admin===true;const value=Number(j.max_accounts_per_job);maxAccountsPerJob=Number.isInteger(value)&&value>0?value:null;document.getElementById('accountLimitCard').style.display=isAdminKey?'block':'none';if(maxAccountsPerJob)document.getElementById('maxAccountsPerJob').value=maxAccountsPerJob;updateAccountCounter();st.innerHTML='<span style="color:#56d364">✅ Key hợp lệ ('+previewKey(TOKEN)+')'+(isAdminKey?' · Admin · Không giới hạn tài khoản/job · Không áp dụng giới hạn 1 job/key':(maxAccountsPerJob?' · Tối đa '+maxAccountsPerJob.toLocaleString('vi-VN')+' tài khoản/job · 1 job đang chạy/key':' · 1 job đang chạy/key'))+'</span>';}
+    else if(j.history_access){setCreateJobAvailability(false);isAdminKey=false;maxAccountsPerJob=null;document.getElementById('accountLimitCard').style.display='none';updateAccountCounter();st.innerHTML='<span style="color:#d29922">⚠️ Key đã hết hạn hoặc không còn hiệu lực. Chỉ có thể xem lịch sử job, không thể tạo job mới.</span>';}
+    else{setCreateJobAvailability(false);isAdminKey=false;maxAccountsPerJob=null;document.getElementById('accountLimitCard').style.display='none';updateAccountCounter();st.innerHTML='<span style="color:#ff7b72">❌ Key không hợp lệ: '+(j.error||'unknown')+'</span>';}
     document.getElementById('satelliteTargetsCard').style.display=isAdminKey?'block':'none';
     if(isAdminKey) await loadSatelliteTargets();
   }catch(e){st.innerHTML='<span style="color:#d29922">⚠️ Không kiểm tra được: '+e.message+'</span>';}
@@ -793,6 +796,7 @@ function importAccountsFile(){
 }
 
 async function sendJob(){
+  if(!canCreateJobs){toast('⚠️ Key đã hết hạn hoặc không còn hiệu lực. Bạn vẫn có thể xem lịch sử job nhưng không thể tạo job mới.');return}
   const text=document.getElementById('accInput').value.trim();
   if(!text){toast('Nhập danh sách tài khoản!');return}
   if(!isAdminKey&&Number.isInteger(maxAccountsPerJob)&&submittedAccountCount()>maxAccountsPerJob){toast('❌ Mỗi job chỉ được gửi tối đa '+maxAccountsPerJob.toLocaleString('vi-VN')+' tài khoản');return}
@@ -926,7 +930,9 @@ class MasterHandler(BaseHTTPRequestHandler):
                 return {"authorized": True, "is_admin": False, "is_satellite": False, "owner_hash": _hash_key(token), "owner_preview": _preview_key(token), "token": token, "license_info": info}
             # Verify fail — log để debug
             print(f"[master] auth FAIL: token='{_preview_key(token)}' license_url='{license_url}' info={info}", flush=True)
-            return {"authorized": False, "is_admin": False, "is_satellite": False, "owner_hash": "", "owner_preview": "", "token": token, "license_info": info}
+            # Preserve owner identity after expiry so this exact key can still
+            # access its existing jobs. New job creation still needs validity.
+            return {"authorized": False, "is_admin": False, "is_satellite": False, "owner_hash": _hash_key(token), "owner_preview": _preview_key(token), "token": token, "license_info": info}
         # Không có token
         return {"authorized": False, "is_admin": False, "is_satellite": False, "owner_hash": "", "owner_preview": "", "token": ""}
 
@@ -955,6 +961,17 @@ class MasterHandler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": msg})
             return None
         return info
+
+    def _require_job_owner(self) -> dict[str, Any] | None:
+        """Allow access to jobs owned by the supplied key, even after expiry."""
+        info = self._get_auth_info()
+        if info.get("authorized"):
+            return info
+        if info.get("token") and info.get("owner_hash"):
+            info["history_only"] = True
+            return info
+        self._json(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "thiếu license key"})
+        return None
 
     def _require_satellite(self) -> dict[str, Any] | None:
         """Vệ tinh chỉ cần MASTER_TOKEN, không cần license key. Master có license key là đủ."""
@@ -1067,13 +1084,13 @@ class MasterHandler(BaseHTTPRequestHandler):
                 mt = self.server.master_token or ""
                 is_master = bool(mt and tok and secrets.compare_digest(tok.strip(), mt.strip()))
                 if is_master:
-                    self._json(HTTPStatus.OK, {"ok": True, "valid": True, "is_admin": True, "preview": _preview_key(tok), "max_accounts_per_job": _max_accounts_per_job(self.server.store), "info": {"mode": "master_token"}})
+                    self._json(HTTPStatus.OK, {"ok": True, "valid": True, "history_access": True, "can_create_job": True, "is_admin": True, "preview": _preview_key(tok), "max_accounts_per_job": _max_accounts_per_job(self.server.store), "info": {"mode": "master_token"}})
                     return
                 ok, info = _verify_license_key(tok)
                 if ok:
-                    self._json(HTTPStatus.OK, {"ok": True, "valid": True, "is_admin": False, "preview": _preview_key(tok), "max_accounts_per_job": _max_accounts_per_job(self.server.store), "info": info})
+                    self._json(HTTPStatus.OK, {"ok": True, "valid": True, "history_access": True, "can_create_job": True, "is_admin": False, "preview": _preview_key(tok), "max_accounts_per_job": _max_accounts_per_job(self.server.store), "info": info})
                 else:
-                    self._json(HTTPStatus.OK, {"ok": False, "valid": False, "error": info.get("error") or "key không hợp lệ", "info": info,
+                    self._json(HTTPStatus.OK, {"ok": False, "valid": False, "history_access": True, "can_create_job": False, "error": info.get("error") or "key không hợp lệ", "info": info,
                         "debug": {"token_len": len(tok), "master_token_len": len(mt), "token_preview": _preview_key(tok)}})
                 return
             if path == "/" or path == "/index.html":
@@ -1090,7 +1107,7 @@ class MasterHandler(BaseHTTPRequestHandler):
                 self._handle_prune_before_today()
                 return
             # Các API user cần xác thực license key (hoặc MASTER_TOKEN cho admin)
-            auth = self._require_user()
+            auth = self._require_job_owner()
             if auth is None:
                 return
             if path == "/api/jobs_list":
@@ -1161,7 +1178,7 @@ class MasterHandler(BaseHTTPRequestHandler):
                 return
             parts = path.strip("/").split("/")
             if len(parts) == 4 and parts[0] == "api" and parts[1] == "jobs" and parts[3] == "stop":
-                auth = self._require_user()
+                auth = self._require_job_owner()
                 if auth is None: return
                 job_id = self._int_or_none(parts[2])
                 if job_id is None:
@@ -1206,13 +1223,13 @@ class MasterHandler(BaseHTTPRequestHandler):
                 mt = self.server.master_token or ""
                 is_master = bool(mt and tok and secrets.compare_digest(tok.strip(), mt.strip()))
                 if is_master:
-                    self._json(HTTPStatus.OK, {"ok": True, "valid": True, "is_admin": True, "preview": _preview_key(tok), "max_accounts_per_job": _max_accounts_per_job(self.server.store), "info": {"mode": "master_token"}})
+                    self._json(HTTPStatus.OK, {"ok": True, "valid": True, "history_access": True, "can_create_job": True, "is_admin": True, "preview": _preview_key(tok), "max_accounts_per_job": _max_accounts_per_job(self.server.store), "info": {"mode": "master_token"}})
                     return
                 ok, info = _verify_license_key(tok)
                 if ok:
-                    self._json(HTTPStatus.OK, {"ok": True, "valid": True, "is_admin": False, "preview": _preview_key(tok), "max_accounts_per_job": _max_accounts_per_job(self.server.store), "info": info})
+                    self._json(HTTPStatus.OK, {"ok": True, "valid": True, "history_access": True, "can_create_job": True, "is_admin": False, "preview": _preview_key(tok), "max_accounts_per_job": _max_accounts_per_job(self.server.store), "info": info})
                 else:
-                    self._json(HTTPStatus.OK, {"ok": False, "valid": False, "error": info.get("error") or "key không hợp lệ", "info": info})
+                    self._json(HTTPStatus.OK, {"ok": False, "valid": False, "history_access": True, "can_create_job": False, "error": info.get("error") or "key không hợp lệ", "info": info})
                 return
             self._json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "Không tìm thấy"})
         except Exception as exc:
