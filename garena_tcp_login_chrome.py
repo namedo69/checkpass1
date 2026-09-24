@@ -39,7 +39,10 @@ def load_verified_tcp_module() -> ModuleType:
             + "; ".join(str(path) for path in TCP_SOURCES)
         )
 
-    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    # Git may check text files out as CRLF on Windows and LF on Linux/Render.
+    # Hash canonical LF bytes so the integrity check is platform-independent.
+    canonical_source = source.read_bytes().replace(b"\r\n", b"\n")
+    digest = hashlib.sha256(canonical_source).hexdigest()
     if digest != TCP_SOURCE_SHA256:
         raise RuntimeError(
             f"{source.name} không đúng SHA-256 đã kiểm tra; dừng để tránh chạy mã bị thay đổi"
