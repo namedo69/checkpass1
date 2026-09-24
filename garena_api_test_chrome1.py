@@ -93,12 +93,6 @@ def _text_suggests_rate_limit(value: Any) -> bool:
 def tcp_rate_limit_suspected(error: Any) -> bool:
     """Recognize explicit rate-limit signals; response speed alone is not one."""
 
-    command = getattr(error, "garena_command", 0)
-    if bool(getattr(error, "garena_rejected", False)) and command == 0x100:
-        return False
-    normalized_message = _normalized_error_text(error)
-    if "login_prepare" in normalized_message or "0x100" in normalized_message:
-        return False
     return bool(
         getattr(error, "code", None) == 429
         or _text_suggests_rate_limit(error)
@@ -219,19 +213,12 @@ def resilient_tcp_client_type(tcp_module: Any) -> type:
 
 
 def tcp_login_was_rejected(error: Any) -> bool:
-    """Return whether Garena explicitly rejected TCP login.
-
-    Rejection at LOGIN_PREPARE (0x100) is also a terminal login failure.
-    """
+    """Return whether Garena explicitly rejected password-bearing LOGIN 0x101."""
 
     if bool(getattr(error, "garena_rejected", False)):
         command = getattr(error, "garena_command", 0)
-        result_code = getattr(error, "garena_result", 0)
-        # LOGIN_PREPARE và LOGIN đều là từ chối đăng nhập dứt khoát.
-        # SSO_KEY_GET (0x1BA) reject = session issue
-        if command in {0x100, 0x101}:
-            return True
-        return False
+        # LOGIN_PREPARE 0x100 chưa gửi mật khẩu nên không thể kết luận credential.
+        return command == 0x101
     message = str(error or "").strip().casefold()
     ascii_message = "".join(
         char
@@ -240,7 +227,9 @@ def tcp_login_was_rejected(error: Any) -> bool:
     )
     explicitly_rejected = "tu choi" in ascii_message or "rejected" in ascii_message
     if "garena" in ascii_message and explicitly_rejected:
-        return True
+        if "login_prepare" in ascii_message or "0x100" in ascii_message:
+            return False
+        return "login" in ascii_message or "0x101" in ascii_message
     return False
 
 
@@ -1164,7 +1153,6 @@ def run_api_tests(tcp_module: Any, account: str, password: str, timeout: float) 
                 "credential_rejected": bool(
                     tcp_login_was_rejected(exc)
                     and not rate_limit_suspected
-                    and not retryable_fast_rejection
                 ),
                 "rate_limit_suspected": rate_limit_suspected,
                 "retryable_fast_rejection": retryable_fast_rejection,
@@ -1521,6 +1509,8 @@ def mask_batch_session_key(value: Any, visible: int = 8) -> str:
 BATCH_FIELDNAMES = [
     "stt", "account", "status", "uid",
     "name", "level", "registerDate", "player_status", "result_type", "elapsed_ms",
+    "last_tcp_rejection_stage", "last_tcp_rejection_result",
+    "login_rejection_confirmations",
 ]
 BATCH_BAN_FIELDNAMES = ["banTime", "unbanTime"]
 
@@ -1541,12 +1531,13 @@ REQUIRED_KIENTUONG_LABEL = "Kiện Tướng"
 
 BATCH_MAX_RETRIES = 3
 BATCH_MAX_ATTEMPTS = 1 + BATCH_MAX_RETRIES
+BATCH_LOGIN_REJECTION_CONFIRMATIONS = 2
 BATCH_ROW_DEADLINE_SECONDS = 300.0
 BATCH_MAX_REQUEST_TIMEOUT = 8.0
 
 
 def batch_login_rejected_permanently(result: Any) -> bool:
-    """An explicit TCP rejection is a terminal login failure."""
+    """Return whether this attempt contains an explicit TCP LOGIN rejection."""
 
     if not isinstance(result, dict):
         return False
@@ -1653,6 +1644,9 @@ def batch_check_one(
         "session_key": "",
         "elapsed_ms": "0",
         "result_type": "",
+        "last_tcp_rejection_stage": "",
+        "last_tcp_rejection_result": "",
+        "login_rejection_confirmations": "0",
         "error": "",
         "_credential": f"{input_account}|{credential.password}",
         "_special": "",
@@ -1666,6 +1660,8 @@ def batch_check_one(
     attempt_error = ""
     retry_stopped = False
     login_rejected = False
+    login_rejection_signature: tuple[int, int] | None = None
+    login_rejection_confirmations = 0
     rate_limit_suspected = False
     gave_up_reason = ""
     missing: list[str] = []
@@ -1684,16 +1680,42 @@ def batch_check_one(
             attempt_error = ""
             missing = batch_required_missing(current_result)
             rate_limit_suspected = batch_rate_limit_suspected(current_result)
+            attempt_tcp = current_result.get("tcp") or {}
+            rejection_command = int(attempt_tcp.get("rejection_command") or 0)
+            rejection_result = int(attempt_tcp.get("rejection_result") or 0)
+            if rejection_command:
+                row["last_tcp_rejection_stage"] = {
+                    0x100: "LOGIN_PREPARE",
+                    0x101: "LOGIN",
+                    0x1BA: "SSO_KEY_GET",
+                }.get(rejection_command, f"0x{rejection_command:X}")
+                row["last_tcp_rejection_result"] = str(rejection_result)
             if not rate_limit_suspected:
                 if batch_login_rejected_permanently(current_result):
-                    login_rejected = True
-                    break
-                # Co UID la pass dung - chi dung khi Kien Tuong da co ket luan Ctnv hoac level
-                tcp_ok = bool((current_result.get("tcp") or {}).get("ok"))
-                if tcp_ok and not missing:
-                    break
-                if not missing:
-                    break
+                    signature = (rejection_command, rejection_result)
+                    if signature == login_rejection_signature:
+                        login_rejection_confirmations += 1
+                    else:
+                        login_rejection_signature = signature
+                        login_rejection_confirmations = 1
+                    row["login_rejection_confirmations"] = str(login_rejection_confirmations)
+                    if login_rejection_confirmations >= BATCH_LOGIN_REJECTION_CONFIRMATIONS:
+                        login_rejected = True
+                        break
+                else:
+                    login_rejection_signature = None
+                    login_rejection_confirmations = 0
+                    row["login_rejection_confirmations"] = "0"
+                    # Co UID la pass dung - chi dung khi Kien Tuong da co ket luan Ctnv hoac level
+                    tcp_ok = bool(attempt_tcp.get("ok"))
+                    if tcp_ok and not missing:
+                        break
+                    if not missing:
+                        break
+            else:
+                login_rejection_signature = None
+                login_rejection_confirmations = 0
+                row["login_rejection_confirmations"] = "0"
         if attempt_count >= BATCH_MAX_ATTEMPTS:
             gave_up_reason = (
                 f"đã check {BATCH_MAX_ATTEMPTS} lần (tối đa {BATCH_MAX_RETRIES} retry) "
@@ -1862,7 +1884,7 @@ def batch_check_one(
         elif login_rejected:
             errors.insert(
                 0,
-                "FALSE - không thể đăng nhập (TCP từ chối), dừng ngay",
+                "FALSE - LOGIN 0x101 bị từ chối cùng mã qua 2 lần kiểm tra",
             )
             row["status"] = "FAIL"
             row["result_type"] = "Không thể log"
@@ -1900,7 +1922,8 @@ def batch_check_one(
     if attempt_count and not kientuong_info_found:
         row["_special"] = "1"
     credential.password = ""
-    # Error codes are internal retry diagnostics only; never expose or persist them.
+    # Free-form error text may contain server details; only safe numeric/stage
+    # diagnostics from BATCH_FIELDNAMES are exposed and persisted.
     row.pop("error", None)
     return row
 
@@ -2094,7 +2117,7 @@ tr.ok .badge{background:#1a7f37;color:#fff}tr.fail .badge{background:#da3633;col
 <div id="batchTiming" class="fileinfo">Thời gian: chưa bắt đầu.</div>
 <div class="wrap"><table><thead><tr><th>STT</th><th>Tài khoản</th><th>Trạng thái</th><th>UID Garena</th><th>Tên Kiện Tướng</th><th>Cấp</th><th>Ngày tạo</th><th>Trạng thái Kiện Tướng</th><th>ms</th></tr></thead>
 <tbody id="batchBody"></tbody></table></div>
-<small>Kết quả hiển thị trực tiếp khi từng tài khoản xong. TCP từ chối tại LOGIN_PREPARE được đánh <code>FAIL / Không thể log</code>. Kết quả chưa thể kết luận như HTTP 429, rate limit/throttling, LOGIN dưới 600 ms, timeout, lỗi mạng/OAuth hoặc thiếu dữ liệu sẽ được retry tối đa 3 lần sau lần check đầu. Nếu vẫn chưa rõ sau 4 lượt thì ghi <code>CHƯA THỂ CHECK</code>. Chỉ LOGIN từ chối dứt khoát mới là <code>FAIL / Không thể log</code>. Bấm "Dừng" để kết thúc sớm.</small>
+<small>Kết quả hiển thị trực tiếp khi từng tài khoản xong. LOGIN_PREPARE <code>0x100</code> chưa gửi mật khẩu nên luôn được retry và không bị kết luận <code>FAIL</code>. Chỉ LOGIN <code>0x101</code> bị từ chối cùng mã qua hai lần kiểm tra mới là <code>FAIL / Không thể log</code>. HTTP 429, rate limit/throttling, timeout, lỗi mạng/OAuth hoặc thiếu dữ liệu sẽ được retry tối đa 3 lần sau lần check đầu; nếu vẫn chưa rõ sau 4 lượt thì ghi <code>CHƯA THỂ CHECK</code>. Bấm "Dừng" để kết thúc sớm.</small>
 
 <div id="splitSection" style="display:none;margin-top:18px">
 <h2 id="splitTitle" style="color:#58a6ff;margin:0 0 10px;font-size:16px"></h2>

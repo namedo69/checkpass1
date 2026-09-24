@@ -318,8 +318,9 @@ pip install cryptography
 - Kiểm tra `MASTER_TOKEN` giống master
 - Kiểm tra đã gửi acc (tạo job) trên master chưa
 
-### ⚠️ LOGIN phản hồi nhanh < 600ms
-- Chưa đủ căn cứ kết luận rate limit hoặc không thể đăng nhập → code sẽ chờ rồi check lại.
+### ⚠️ Xác nhận lỗi đăng nhập TCP
+- Mọi từ chối tại `LOGIN 0x101` đều phải được xác nhận cùng mã qua hai lần liên tiếp mới thành `FAIL / Không thể log`.
+- Từ chối tại `LOGIN_PREPARE 0x100` chưa liên quan đến mật khẩu nên luôn được retry; hết 4 lượt sẽ là `CHƯA THỂ CHECK`.
 - Rate limit chỉ được ghi nhận khi có tín hiệu rõ như HTTP 429 hoặc thông báo rate limit/throttling.
 - Sau lần check đầu, mỗi tài khoản chưa thể kết luận được retry tối đa 3 lần (tổng 4 lượt).
 - Nếu xuất hiện nhiều phản hồi nhanh: tăng `START_GAP` lên 3-5s và giảm `WORKERS`.
