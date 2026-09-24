@@ -1,5 +1,6 @@
 
 import argparse
+from export_dates import registration_date
 import base64
 import csv
 import functools
@@ -408,6 +409,35 @@ def format_register_time(value: Any) -> str:
         ).strftime("%d/%m/%Y")
     except (TypeError, ValueError, OverflowError, OSError):
         return ""
+
+
+def format_player_event_time(value: Any) -> str:
+    """Format a player event Unix timestamp with time in Vietnam timezone."""
+    if isinstance(value, bool):
+        return ""
+    try:
+        timestamp = int(value)
+        if timestamp <= 0:
+            return ""
+        return datetime.fromtimestamp(
+            timestamp, tz=timezone(timedelta(hours=7))
+        ).strftime("%d/%m/%Y %H:%M:%S GMT+7")
+    except (TypeError, ValueError, OverflowError, OSError):
+        return ""
+
+
+def player_ban_fields(player: Any) -> dict[str, str]:
+    """Return formatted ban times only for a player with non-empty banInfo."""
+    empty = {"banTime": "", "unbanTime": ""}
+    if not isinstance(player, dict):
+        return empty
+    ban_info = player.get("banInfo")
+    if not isinstance(ban_info, dict) or not ban_info:
+        return empty
+    return {
+        "banTime": format_player_event_time(ban_info.get("banTime")),
+        "unbanTime": format_player_event_time(ban_info.get("unbanTime")),
+    }
 
 
 def garena_web_password(password: str, v1: str, v2: str) -> str:
@@ -1492,6 +1522,7 @@ BATCH_FIELDNAMES = [
     "stt", "account", "status", "uid",
     "name", "level", "registerDate", "player_status", "result_type", "elapsed_ms",
 ]
+BATCH_BAN_FIELDNAMES = ["banTime", "unbanTime"]
 
 
 def public_batch_row(row: dict[str, Any]) -> dict[str, str]:
@@ -1499,6 +1530,9 @@ def public_batch_row(row: dict[str, Any]) -> dict[str, str]:
 
     public = {field: str(row.get(field, "") or "") for field in BATCH_FIELDNAMES}
     public["registerDate"] = public["registerDate"].split(" ", 1)[0]
+    player_status = public["player_status"].casefold()
+    if "khóa" in player_status or "ban" in player_status:
+        public.update({field: str(row.get(field, "") or "") for field in BATCH_BAN_FIELDNAMES})
     return public
 
 REQUIRED_ACCOUNT_LABEL = "hồ sơ tài khoản"
@@ -1613,6 +1647,8 @@ def batch_check_one(
         "registerTime": "",
         "registerDate": "",
         "player_status": "",
+        "banTime": "",
+        "unbanTime": "",
         "deletion_status": "",
         "session_key": "",
         "elapsed_ms": "0",
@@ -1781,6 +1817,7 @@ def batch_check_one(
         row["player_status"] = (
             "Bị khóa" if bool(player.get("banInfo")) else "Bình thường"
         ) if player else ""
+        row.update(player_ban_fields(player))
         row["deletion_status"] = str(
             deletion_labels.get(str(deletion_status), deletion_status or "")
         )
@@ -2000,7 +2037,7 @@ def run_batch(args: argparse.Namespace) -> int:
 
     if args.csv:
         with args.csv.open("w", encoding="utf-8-sig", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=BATCH_FIELDNAMES)
+            writer = csv.DictWriter(handle, fieldnames=BATCH_FIELDNAMES, extrasaction="ignore")
             writer.writeheader()
             writer.writerows(
                 public_batch_row(row)
@@ -2526,7 +2563,9 @@ class Handler(BaseHTTPRequestHandler):
                         for ci,col_name in enumerate(col_names,1):
                             value=row.get(col_name,"")
                             if col_name == "registerDate":
-                                value=str(value or "").split(" ", 1)[0]
+                                cell=ws.cell(row=ri,column=ci,value=registration_date(value))
+                                cell.number_format="dd/mm/yyyy"
+                                continue
                             if col_name == "account":
                                 value=row.get("_credential") or value
                             if isinstance(value, str):

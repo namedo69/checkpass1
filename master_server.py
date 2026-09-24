@@ -1890,7 +1890,10 @@ class MasterHandler(BaseHTTPRequestHandler):
                 is_ctnv = level.casefold() == "ctnv" or player_status.casefold() == "chưa tạo nhân vật"
                 name = "CTNV" if is_ctnv else str(row.get("name") or "").strip()
                 status = player_status or str(row.get("status") or "").strip()
-                lines.append(" || ".join((str(row.get("account") or "").strip(), str(row.get("uid") or "").strip(), name, level, status)))
+                values = [str(row.get("account") or "").strip(), str(row.get("uid") or "").strip(), name, level, status]
+                if player_status == "Bị khóa":
+                    values.extend((f"Ban: {str(row.get('banTime') or '').strip()}", f"Mở ban: {str(row.get('unbanTime') or '').strip()}"))
+                lines.append(" || ".join(values))
         body = "\n".join(lines) + ("\n" if lines else "")
         data = body.encode("utf-8-sig")
         self.send_response(HTTPStatus.OK)
@@ -1966,6 +1969,7 @@ class MasterHandler(BaseHTTPRequestHandler):
             workbook = openpyxl.Workbook()
             headers = ["STT", "Tài khoản", "Kết quả check", "UID", "Tên", "Cấp", "Ngày tạo", "Trạng thái tài khoản"]
             fields = ["stt", "account", "status", "uid", "name", "level", "registerDate", "player_status"]
+            widths = [8, 28, 16, 16, 28, 10, 16, 24]
             fills = {
                 "Đạt": "238636", "Không đạt": "9E6A03", "CTNV": "8250DF",
                 "Bị khóa": "C2410C", "Không thể log": "DA3633", "Chưa thể check": "D29922",
@@ -1974,13 +1978,20 @@ class MasterHandler(BaseHTTPRequestHandler):
                 worksheet = workbook.active if index == 0 else workbook.create_sheet()
                 worksheet.title = sheet_name
                 fill = PatternFill(start_color=fills[sheet_name], end_color=fills[sheet_name], fill_type="solid")
-                for column, label in enumerate(headers, 1):
+                sheet_headers = list(headers)
+                sheet_fields = list(fields)
+                sheet_widths = list(widths)
+                if sheet_name == "Bị khóa":
+                    sheet_headers.extend(("Thời gian ban", "Thời gian mở ban"))
+                    sheet_fields.extend(("banTime", "unbanTime"))
+                    sheet_widths.extend((28, 28))
+                for column, label in enumerate(sheet_headers, 1):
                     cell = worksheet.cell(row=1, column=column, value=label)
                     cell.font = Font(bold=True, color="FFFFFF")
                     cell.fill = fill
                     cell.alignment = Alignment(horizontal="center")
                 for row_index, row in enumerate(sheet_rows, 2):
-                    for column, field in enumerate(fields, 1):
+                    for column, field in enumerate(sheet_fields, 1):
                         value = str(
                             row.get("_export_credential") or row.get(field, "") or ""
                         ) if field == "account" else str(row.get(field, "") or "")
@@ -1992,8 +2003,9 @@ class MasterHandler(BaseHTTPRequestHandler):
                         value = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F]", "", value)
                         worksheet.cell(row=row_index, column=column, value=value)
                 worksheet.freeze_panes = "A2"
-                worksheet.auto_filter.ref = f"A1:H{max(1, len(sheet_rows) + 1)}"
-                for column, width in enumerate((8, 28, 16, 16, 28, 10, 16, 24), 1):
+                last_column = openpyxl.utils.get_column_letter(len(sheet_headers))
+                worksheet.auto_filter.ref = f"A1:{last_column}{max(1, len(sheet_rows) + 1)}"
+                for column, width in enumerate(sheet_widths, 1):
                     worksheet.column_dimensions[openpyxl.utils.get_column_letter(column)].width = width
 
             output = io.BytesIO()
