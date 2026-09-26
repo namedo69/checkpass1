@@ -12,6 +12,7 @@ Vệ tinh có một HTTP /healthz để Render không ngủ free tier trong lúc
 import gc
 import json
 import os
+import re
 import socket
 import subprocess
 import threading
@@ -269,17 +270,9 @@ def _process_chunk(client: _Client, tcp_module: Any, claim: dict, stop_event: th
     credentials = []
     for index, raw in enumerate(accounts, 1):
         raw_str = str(raw).strip()
-        if "|" in raw_str:
-            parts = raw_str.split("|")
-            account = parts[0].strip() if len(parts) >= 1 else ""
-            password = parts[1].strip() if len(parts) >= 2 else ""
-        elif raw_str.count(":") == 1:
-            account, password = raw_str.split(":", 1)
-            account = account.strip()
-            password = password.strip()
-        else:
-            account = raw_str
-            password = ""
+        parts = re.split(r"[|:]", raw_str)
+        account = parts[0].strip() if parts else ""
+        password = parts[1].strip() if len(parts) >= 2 else ""
         credentials.append(api_test.BatchAccount(index, account, password))
 
     try:
