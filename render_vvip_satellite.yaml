@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: checkpass1-vvip
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python service-liteselVVIP.py
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.4
+      - key: MALLOC_ARENA_MAX
+        value: "2"
+      - key: MASTER_URL
+        value: "https://checkpass-4grp.onrender.com"
+      - key: MASTER_TOKEN
+        sync: false
+      - key: SATELLITE_ID
+        value: checkpass1-vvip
+      - key: WORKERS
+        value: "1"
+      - key: CONCURRENT_CHUNKS
+        value: "15"
+      - key: START_GAP
+        value: "0"
+      - key: TIMEOUT
+        value: "20.0"
+      - key: POLL_INTERVAL
+        value: "10"
