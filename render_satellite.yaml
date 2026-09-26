@@ -19,8 +19,6 @@ services:
         value: render-satellite-1
       - key: WORKERS
         value: "1"
-      - key: CONCURRENT_CHUNKS
-        value: "15"
       - key: START_GAP
         value: "0"
       - key: TIMEOUT
