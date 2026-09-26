@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# Master claim endpoints own VVIP pool preference and overflow routing.
+
 """Vệ tinh check acc - claim chunk từ tổng bộ, chạy check, trả kết quả.
 
 Vòng lặp: claim (<= 1000 acc/chunk) -> chạy qua engine cũng được dùng bởi
