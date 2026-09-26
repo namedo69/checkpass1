@@ -15,8 +15,10 @@ import gc
 import json
 import os
 import re
+import secrets
 import socket
 import subprocess
+import sys
 import threading
 import time
 import urllib.error
@@ -75,8 +77,10 @@ POLL_INTERVAL = float(_env("POLL_INTERVAL", "15") or "15")
 HEALTH_PORT = int(_env("PORT", "") or _env("HEALTH_PORT", "8765") or "8765")
 HEALTH_HOST = _env("HEALTH_HOST", "0.0.0.0") or "0.0.0.0"
 GARENA_PROXY = _env("GARENA_PROXY")
+SATELLITE_CONTROL_TOKEN = _env("SATELLITE_CONTROL_TOKEN") or MASTER_TOKEN
 
 _MEMORY_CLEANUP_LOCK = threading.Lock()
+_RESTART_SCHEDULED = threading.Event()
 _MALLOC_TRIM = None
 if os.name == "posix":
     try:
@@ -217,8 +221,20 @@ class _Health(BaseHTTPRequestHandler):
     def log_message(self, _format: str, *args: Any) -> None:
         return
 
+    def _send_json(self, status: HTTPStatus, value: dict[str, Any]) -> None:
+        body = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+
     def do_GET(self) -> None:
-        body = json.dumps({
+        self._send_json(HTTPStatus.OK, {
             "ok": True,
             "role": "satellite",
             "service_type": SERVICE_TYPE,
@@ -230,15 +246,43 @@ class _Health(BaseHTTPRequestHandler):
             "repo": GIT_REPO,
             "started_at_utc": SERVER_STARTED_AT_UTC,
             **RUNTIME_STATUS.snapshot(),
-        }, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        try:
-            self.wfile.write(body)
-        except (BrokenPipeError, ConnectionResetError, OSError):
-            pass
+        })
+
+    def do_POST(self) -> None:
+        path = urllib.parse.urlsplit(self.path).path.rstrip("/") or "/"
+        if path != "/restart":
+            self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "Not found"})
+            return
+        if not SATELLITE_CONTROL_TOKEN:
+            self._send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"ok": False, "error": "Chưa cấu hình token điều khiển vệ tinh"})
+            return
+        header = self.headers.get("Authorization", "")
+        supplied = header[7:].strip() if header.startswith("Bearer ") else ""
+        if not supplied or not secrets.compare_digest(supplied, SATELLITE_CONTROL_TOKEN):
+            self._send_json(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "Token điều khiển vệ tinh không hợp lệ"})
+            return
+        already_scheduled = _RESTART_SCHEDULED.is_set()
+        if not already_scheduled:
+            _RESTART_SCHEDULED.set()
+            threading.Thread(target=_restart_current_process, name="satellite-restart", daemon=True).start()
+        self._send_json(HTTPStatus.ACCEPTED, {
+            "ok": True,
+            "restart_scheduled": True,
+            "already_scheduled": already_scheduled,
+            "id": SATELLITE_ID,
+            "service_type": SERVICE_TYPE,
+        })
+
+
+def _restart_current_process() -> None:
+    time.sleep(0.8)
+    argv = [sys.executable, *sys.argv]
+    try:
+        print(f"[satellite] {SATELLITE_ID}: nhận lệnh restart từ trang quản trị", flush=True)
+        os.execv(sys.executable, argv)
+    except Exception as exc:
+        _RESTART_SCHEDULED.clear()
+        print(f"[satellite] restart thất bại: {exc}", flush=True)
 
 
 def _run_health_server() -> None:
