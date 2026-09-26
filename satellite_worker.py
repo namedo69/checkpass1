@@ -50,8 +50,12 @@ def _current_commit_message() -> str:
 
 
 MASTER_URL = _env("MASTER_URL").rstrip("/") or "http://127.0.0.1:8761"
-MASTER_TOKEN = _env("MASTER_TOKEN")
-SATELLITE_ID = _env("SATELLITE_ID") or f"{socket.gethostname()}-{os.getpid()}"
+SERVICE_TYPE = _env("SATELLITE_SERVICE_TYPE", "normal").lower()
+if SERVICE_TYPE not in {"normal", "vvip"}:
+    raise RuntimeError("SATELLITE_SERVICE_TYPE phải là normal hoặc vvip")
+MASTER_TOKEN = _env("VVIP_MASTER_TOKEN") if SERVICE_TYPE == "vvip" else _env("MASTER_TOKEN")
+CLAIM_ENDPOINT = "/api/vvip/claim" if SERVICE_TYPE == "vvip" else "/api/claim"
+SATELLITE_ID = _env("SATELLITE_ID") or f"{SERVICE_TYPE}-{socket.gethostname()}-{os.getpid()}"
 GIT_COMMIT = _env("RENDER_GIT_COMMIT") or _env("SERVER_VERSION", "local")
 SERVER_VERSION = GIT_COMMIT[:12] if GIT_COMMIT != "local" else "local"
 GIT_BRANCH = _env("RENDER_GIT_BRANCH", "local")
@@ -184,7 +188,7 @@ class _Client:
             raise RuntimeError(f"không kết nối được tổng bộ: {exc.reason}") from exc
 
     def claim(self) -> dict:
-        return self._request("/api/claim", {
+        return self._request(CLAIM_ENDPOINT, {
             "satellite_id": SATELLITE_ID,
             "lease_minutes": LEASE_MINUTES,
         })
@@ -214,6 +218,7 @@ class _Health(BaseHTTPRequestHandler):
         body = json.dumps({
             "ok": True,
             "role": "satellite",
+            "service_type": SERVICE_TYPE,
             "id": SATELLITE_ID,
             "version": SERVER_VERSION,
             "commit": GIT_COMMIT,
@@ -387,6 +392,7 @@ def _worker_loop() -> None:
     client = _Client(MASTER_URL, MASTER_TOKEN)
     print(
         f"[satellite] {SATELLITE_ID} khởi động: master={MASTER_URL} "
+        f"service_type={SERVICE_TYPE} "
         f"workers={WORKERS} concurrent_chunks={CONCURRENT_CHUNKS} "
         f"gap={START_GAP:g}s timeout={TIMEOUT:g}s",
         flush=True,
@@ -448,8 +454,9 @@ def _worker_loop() -> None:
                 # Phân biệt lỗi auth (401) với lỗi mạng thường — nếu auth fail thì chờ lâu hơn, không spam
                 if "401" in err_msg or "token" in err_msg.lower() or "không hợp lệ" in err_msg.lower() or "unauthorized" in err_msg.lower():
                     print(f"[satellite] LỖI AUTH: {err_msg}", flush=True)
-                    print(f"[satellite] Kiểm tra MASTER_TOKEN của vệ tinh có khớp với master server không!", flush=True)
-                    print(f"[satellite] MASTER_TOKEN hiện tại: '{MASTER_TOKEN[:4]}***{MASTER_TOKEN[-2:]}' (len={len(MASTER_TOKEN)})", flush=True)
+                    token_name = "VVIP_MASTER_TOKEN" if SERVICE_TYPE == "vvip" else "MASTER_TOKEN"
+                    print(f"[satellite] Kiểm tra {token_name} của vệ tinh có khớp với master server không!", flush=True)
+                    print(f"[satellite] {token_name} hiện tại: '{MASTER_TOKEN[:4]}***{MASTER_TOKEN[-2:]}' (len={len(MASTER_TOKEN)})", flush=True)
                     time.sleep(60)  # Chờ 60s trước khi thử lại, tránh spam
                 else:
                     print(f"[satellite] loi vong lap: {err_msg}; cho {POLL_INTERVAL}s", flush=True)
@@ -458,10 +465,11 @@ def _worker_loop() -> None:
 
 def main() -> int:
     tcp_ui.configure_console_encoding()
+    token_name = "VVIP_MASTER_TOKEN" if SERVICE_TYPE == "vvip" else "MASTER_TOKEN"
     if not MASTER_TOKEN:
-        print("[satellite] CẢNH BÁO: chưa đặt MASTER_TOKEN", flush=True)
+        print(f"[satellite] CẢNH BÁO: chưa đặt {token_name}", flush=True)
     else:
-        print(f"[satellite] MASTER_TOKEN = '{MASTER_TOKEN[:4]}***{MASTER_TOKEN[-2:]}' (len={len(MASTER_TOKEN)})", flush=True)
+        print(f"[satellite] {token_name} = '{MASTER_TOKEN[:4]}***{MASTER_TOKEN[-2:]}' (len={len(MASTER_TOKEN)})", flush=True)
     health_thread = threading.Thread(target=_run_health_server, daemon=True, name="health")
     health_thread.start()
     # Self-ping để Render Free Web Service không spin down

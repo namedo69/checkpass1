@@ -4,7 +4,7 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: python satellite_worker.py
+    startCommand: python service-litesel.py
     healthCheckPath: /healthz
     envVars:
       - key: PYTHON_VERSION
