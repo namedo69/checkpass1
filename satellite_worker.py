@@ -71,7 +71,7 @@ WORKERS = int(_env("WORKERS", "8") or "8")
 START_GAP = 0.5
 TIMEOUT = float(_env("TIMEOUT", "20.0") or "20.0")
 LEASE_MINUTES = float(_env("LEASE_MINUTES", "5") or "5")
-CONCURRENT_CHUNKS = 4 if SERVICE_TYPE == "vvip" else 3
+CONCURRENT_CHUNKS = 2
 POLL_INTERVAL = float(_env("POLL_INTERVAL", "15") or "15")
 # Render Web Service truyền PORT; fallback HEALTH_PORT cho local
 HEALTH_PORT = int(_env("PORT", "") or _env("HEALTH_PORT", "8765") or "8765")
