@@ -319,8 +319,8 @@ pip install cryptography
 - Kiểm tra đã gửi acc (tạo job) trên master chưa
 
 ### ⚠️ Xác nhận lỗi đăng nhập TCP
-- Mọi từ chối tại `LOGIN 0x101` đều phải được xác nhận cùng mã qua hai lần liên tiếp mới thành `FAIL / Không thể log`.
-- Từ chối tại `LOGIN_PREPARE 0x100` chưa liên quan đến mật khẩu nên luôn được retry; hết 4 lượt sẽ là `CHƯA THỂ CHECK`.
+- Mọi từ chối tại `LOGIN_PREPARE 0x100` hoặc `LOGIN 0x101` đều phải được xác nhận cùng bước và cùng mã qua hai lần liên tiếp mới thành `FAIL / Không thể log`.
+- Từ chối tại `LOGIN_PREPARE 0x100` chưa khẳng định sai mật khẩu, nhưng cùng mã qua hai lần liên tiếp vẫn là `FAIL / Không thể log` vì tài khoản không thể đi tiếp.
 - Rate limit chỉ được ghi nhận khi có tín hiệu rõ như HTTP 429 hoặc thông báo rate limit/throttling.
 - Sau lần check đầu, mỗi tài khoản chưa thể kết luận được retry tối đa 3 lần (tổng 4 lượt).
 - Nếu xuất hiện nhiều phản hồi nhanh: tăng `START_GAP` lên 3-5s và giảm `WORKERS`.
