@@ -18,3 +18,8 @@ sale_catalog_export.py
 skin.py
 skins.json
 XUAT_CATALOG_SKIN_SALE.cmd
+
+# UpLv deploy payload and private runtime state
+uplv_state/
+uplv_runtime/**/_data/
+!uplv_runtime/pve_runtime/vendor/*.pyc

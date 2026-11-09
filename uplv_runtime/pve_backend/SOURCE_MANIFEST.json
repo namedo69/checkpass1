@@ -1,0 +1,23 @@
+{
+  "source_project": "C:\\Users\\ADMIN'\\Downloads\\Autochungsuc-runner-v2-parallel-100\\Autochungsuc",
+  "original_sha256": {
+    "aov_device_identity.py": "c02fec99c18dd9f60bce9815cf5f5f8ada0894ea24da6e6abf91df5a1ea97574",
+    "aov_itop_login.py": "175380d506b6f1893d4abdf880913cf0f924865e934edf8bb7fe55bcbe7f4b5b",
+    "token_login.py": "e095fe9753bea083919c7dfcf4f04186786faee738cc3f7d2c13d7cf2f064bf5",
+    "bridge/core/_core_data/garena_tcp.py": "12d75635092e5f2f75a26ce6a773c6aeea46af036df099aa22d7cb4f90c5897a",
+    "purepc/__init__.py": "592c0c23784f467e9559b973d4be27d7eef970c5f3619d912cc97a9dffa85191",
+    "purepc/cs/__init__.py": "88ded7162fadd3d35d89c610c908c29550204706bac8a180db8dc65f2dbb873d",
+    "purepc/crypto/__init__.py": "2aecad67f6a6fc947f56b96d44e227c77b5c49aac348d6aa6ad754d0181b141b",
+    "purepc/purepc_run.py": "9fbb3b77366f2cc0237d99ad84c8fed25a4a57d26ec96946fa37a3e4b0595f90",
+    "purepc/uplevel_stateful.py": "fc3edb0f465b94d3afe06d0e8a4999edca2027aa6ea45d5dba24c09426ed5cff",
+    "purepc/shard_resolve.py": "60b23a9a3532a6980eac7edeb62877c34bd8a77b027b41bb1b6303f74d8e4d77",
+    "purepc/dr_role_decode.py": "355207fc37bc6a4ab341f6c98aa8cbe38c934297a59654202fd2a81a45015b42",
+    "_internal/rt/purepc/seq6670.json": "db30309abd76fe18593f7522a91bd659dd5f1aef9481d1495b9802766a5ddd79",
+    "_internal/rt/purepc/createseq.json": "32705bda41e589c7451bb4257fa35de22626757eb100688476155bbaccffe782",
+    "_internal/rt/purepc/1v1_setwin_seq.json": "4c62a39f436192eeb2ecb71a65a3e7f58cc7bdc403a1795190092c7fc2015007",
+    "_internal/rt/purepc/1v1_templates.hex": "9e5d516e44904c0fc30f993411a2b03d2adecdd72ddb5de61753501e5716982b",
+    "_internal/rt/purepc/newbie_seq.hex": "bb2fc668d132c53155eb05c5cec56b81966391d97c0eb4af7fc726776fbc2301",
+    "_internal/rt/purepc/devreg_6670_dev11270.hex": "a3873359c5f8e177ce76eeec27388c9f59122a09590793101d98e9f4d5c736ba",
+    "_internal/rt/purepc/room_assets/devreg_fresh.json": "580f7f189271f9059d688d99d30ff74268d04e8499c27210ffdc22705de5a517"
+  }
+}

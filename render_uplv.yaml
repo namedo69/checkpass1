@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: checkpass-uplv
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile.uplv
+    dockerContext: .
+    healthCheckPath: /healthz
+    envVars:
+      - key: MASTER_TOKEN
+        sync: false
+      - key: UPLV_STATE_DIR
+        value: /state
+      - key: MALLOC_ARENA_MAX
+        value: "2"
