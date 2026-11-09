@@ -1,5 +1,9 @@
 # Deploy vệ tinh UpLv lên Render — 0.3.0
 
+Heartbeat phòng đang xử lý: **5 giây/phòng** (`HEARTBEAT_SECONDS`). Khi rảnh,
+claim poll vẫn 15 giây. Lease master vẫn 180 giây. Log không gửi kèm heartbeat;
+master chỉ lấy log khi admin yêu cầu. Restart vẫn cần đối soát phòng cũ.
+
 ## 0.4.0 — log theo yêu cầu
 
 Giới hạn thử nghiệm mới: `MAX_ROOMS = 2`. Worker chạy hai phòng độc lập,
