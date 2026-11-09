@@ -6,6 +6,7 @@ import sys
 import tempfile
 import threading
 import time
+import uplv_config as config
 
 
 def load_runtime():
@@ -47,7 +48,8 @@ class Engine:
                 if stop.wait(delay):
                     raise RuntimeError('Stopped')
                 self.last_login = time.monotonic()
-                return login(user, password, device(user)['device_id'], timeout=20)
+            # Serialize start times, not the entire network exchange.
+            return login(user, password, device(user)['device_id'], timeout=20)
 
         def execute(user, password, target_level=5, progress_cb=None, debug_log=None, character_name=None):
             # Read actual CS profile; skip the optional web-profile request.
@@ -91,8 +93,8 @@ class Engine:
                 user, password = account
             return False, 0, 0, 'Đã dừng'
 
-        # One room, sequential preparation/login to avoid CPU bursts and unused
-        # ready-pool preparation. The five battle sessions remain simultaneous.
-        return run_rooms(room['accounts'], room['target'], 1, 1, stop,
+        # One room, up to five concurrent preparations; battle waits for all.
+        concurrency = max(1, min(5, int(config.PREPARE_WORKERS)))
+        return run_rooms(room['accounts'], room['target'], 1, concurrency, stop,
                          prepare, authenticate, progress, mode=room['mode'],
                          checkpoint_store=checkpoints(self.state_dir / 'rewards'), completed=completed)

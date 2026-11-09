@@ -1,5 +1,33 @@
 # Deploy vệ tinh UpLv lên Render — 0.3.0
 
+## 0.4.0 — log theo yêu cầu
+
+Giới hạn thử nghiệm mới: `MAX_ROOMS = 2`. Worker chạy hai phòng độc lập,
+mỗi phòng tối đa năm acc chuẩn bị song song, report/checkpoint và heartbeat
+riêng. Master chặn quá hai lease/phòng-vệ-tinh; worker cũ không gửi capacity
+vẫn chỉ được một phòng. Cần cập nhật master trước worker. Chưa đo tải hai
+phòng live trên Render; drain phòng trước khi redeploy.
+
+Thiết kế hiện tại dùng pull: worker không gửi log trong heartbeat/report.
+Master chỉ gọi endpoint worker `/api/logs` khi admin bấm Lấy log hoặc bật
+Tự làm mới mỗi 5s (mặc định tắt). Đóng viewer/tắt checkbox dừng polling;
+tab ẩn cũng không poll. Nhập URL worker lần đầu, master lưu mapping theo ID.
+Worker giữ tối đa 300 dòng trong RAM của phòng gần nhất, timer lấy mẫu 30s.
+Endpoint yêu cầu Bearer token, không public log. Không lưu log mới trong DB
+master; restart worker làm mất buffer. Các mô tả gửi batch/lưu DB bên dưới
+là thiết kế cũ đã được thay bằng pull.
+
+Trang master `/admin/uplv` có nút **Xem log** cho từng vệ tinh. Hiển thị 500
+dòng gần nhất với thời gian/phòng/slot, tự refresh 5s, có tùy chọn theo dõi
+cuối log hoặc giữ vị trí đọc. Master lưu tối đa 1.500 dòng/vệ tinh.
+Worker gửi batch tối đa 100 dòng/heartbeat 15s; timer chỉ ghi mỗi 30s/acc.
+Buffer worker tối đa 300 dòng, có thể mất dòng cũ khi sự kiện dồn quá nhanh.
+Report cuối mang log chưa ack (tối đa 300), replay dedup theo event ID.
+Username/password và các mẫu token được che trước khi gửi, master che thêm
+lần nữa. Endpoint log yêu cầu quyền admin. Log cũ trước bản 0.4.0 không được
+truy hồi từ Render. Cần cập nhật cả master và worker; chờ hết phòng đang chạy
+trước khi redeploy worker để tránh ngắt trận.
+
 ## Các file đã bổ sung
 
 - `render_uplv.yaml`: Blueprint Web Service Docker, plan free để thử nghiệm.
@@ -30,6 +58,11 @@
 chủ động mở UDP đến relay và cần nhận được phản hồi qua socket đó.
 
 ## Cấu hình cập nhật hàng loạt
+
+`PREPARE_WORKERS = 5` trong `uplv_config.py`: chuẩn bị tối đa năm acc song
+song trong một phòng. Login giãn thời điểm bắt đầu 0,6s, không giữ khóa suốt
+request mạng. Giai đoạn mở phiên/buff cũng dùng tối đa năm worker; trận chỉ
+bắt đầu khi đủ năm phiên hợp lệ. Số phòng mỗi vệ tinh vẫn là một.
 
 Các mặc định URL/token/poll/heartbeat nằm trong `uplv_config.py`, cập nhật
 source và redeploy sẽ cập nhật worker. Env Render nếu đã đặt sẽ ưu tiên hơn

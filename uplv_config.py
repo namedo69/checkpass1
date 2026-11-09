@@ -10,4 +10,6 @@ WORKERS = 15
 STATE_DIR = '/state'
 POLL_SECONDS = 15
 HEARTBEAT_SECONDS = 15
+PREPARE_WORKERS = 5
+MAX_ROOMS = 2
 SECRET_FILE = '/run/secrets/uplv-master-token'

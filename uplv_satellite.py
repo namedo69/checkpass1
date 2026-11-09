@@ -12,9 +12,11 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 import uplv_config as config
+from uplv_logs import RoomLogs
 
-VERSION = 'uplv-satellite-0.3.0'
+VERSION = 'uplv-satellite-0.4.0'
 
 
 class Client:
@@ -63,17 +65,41 @@ class Satellite:
         self.id = satellite_id
         self.shutdown = threading.Event()
         self.metrics = Metrics()
+        self.logs = RoomLogs()
+        self.room_logs = {}
+        self.logging_active = set()
+        self.room_logs_lock = threading.Lock()
+        self.report_lock = threading.Lock()
+
+    def view_logs(self):
+        with self.room_logs_lock:
+            return sorted([item for logs in self.room_logs.values() for item in logs.view()],
+                          key=lambda item: item['at'])[-300:]
 
     def run_room(self, room):
         stop = threading.Event()
         done = threading.Event()
         lock = threading.Lock()
         progress, results = {}, {}
+        logs = RoomLogs(room['id'])
+        self.logs = logs
+        with self.room_logs_lock:
+            self.room_logs[room['id']] = logs
+            self.logging_active.add(room['id'])
+            # Keep two active/recent rooms; bounded even over a long run.
+            while len(self.room_logs) > 2:
+                old = next((key for key in self.room_logs if key not in self.logging_active), None)
+                if old is None:
+                    break
+                del self.room_logs[old]
+        logs.protect(room['accounts'])
+        logs.add(-1, '[ROOM_START] Nhận phòng')
         versions = list(room.get('versions', [0] * 5))
-        checkpoint = self.state_dir / 'pending_report.json'
+        checkpoint = self.state_dir / ('pending_report_' + room['id'] + '.json')
         base = {'satellite_id': self.id, 'room_id': room['id'], 'lease_token': room['lease_token']}
 
         def status(index, message):
+            logs.add(index, message)
             with lock:
                 row = progress.setdefault(str(index), {})
                 stage = re.search(r'\[(STACK\d(?:_DONE)?|BUFF|REGROUP|WAIT|RECONNECT|DEFERRED)\]', message)
@@ -96,6 +122,7 @@ class Satellite:
 
         def completed(index, row):
             ok, before, after, _ = row
+            logs.add(index, f'[RESULT] {"success" if ok else "pending" if stop.is_set() else "failed"} Lv{after}')
             with lock:
                 if (not ok and progress.get(str(index), {}).get('stage') == 'WAIT_REPLACEMENT'
                         and results.get(str(index), {}).get('status') == 'failed'):
@@ -107,7 +134,8 @@ class Satellite:
             with lock:
                 return {**base, 'progress': {k: dict(v) for k, v in progress.items()},
                         'versions': list(versions),
-                        'results': {k: dict(v) for k, v in results.items()}, 'metrics': self.metrics.snapshot()}
+                        'results': {k: dict(v) for k, v in results.items()},
+                        'metrics': self.metrics.snapshot()}
 
         def replacement(index, row):
             request = {**base, 'request_id': uuid.uuid4().hex, 'slot': index,
@@ -123,6 +151,8 @@ class Satellite:
                             stop.set()
                             return None
                         if reply.get('account'):
+                            logs.protect([reply['account']])
+                            logs.add(index, '[REPLACEMENT] Đã nhận acc bù')
                             room['accounts'][index] = reply['account']
                             versions[index] = reply['generation']
                             progress.pop(str(index), None)
@@ -165,6 +195,7 @@ class Satellite:
         except Exception as exc:
             # Exceptions can contain auth payloads: log class only.
             print(f'Room interrupted: {type(exc).__name__}', flush=True)
+            logs.add(-1, f'[ERROR] Engine {type(exc).__name__}')
         finally:
             done.set()
             thread.join(timeout=12)
@@ -174,6 +205,9 @@ class Satellite:
                 if key not in results:
                     level = progress.get(key, {}).get('level', 0)
                     results[key] = {'status': 'pending', 'level_before': level, 'level_after': level}
+        logs.add(-1, '[ROOM_END] Kết thúc xử lý phòng')
+        with self.room_logs_lock:
+            self.logging_active.discard(room['id'])
         report = {**snapshot(), 'stopped': stop.is_set() or self.shutdown.is_set()}
         temporary = checkpoint.with_suffix('.tmp')
         temporary.write_text(json.dumps(report), encoding='utf-8')
@@ -181,31 +215,43 @@ class Satellite:
         return self.flush_report()
 
     def flush_report(self):
-        checkpoint = self.state_dir / 'pending_report.json'
-        if not checkpoint.exists():
-            return True
-        try:
-            report = json.loads(checkpoint.read_text(encoding='utf-8'))
-            self.client.post('report', report)
-            checkpoint.unlink()
-            return True
-        except (OSError, ValueError, RuntimeError):
-            return False
+        with self.report_lock:
+            paths = list(self.state_dir.glob('pending_report_*.json'))
+            legacy = self.state_dir / 'pending_report.json'
+            if legacy.exists():
+                paths.append(legacy)
+            ok = True
+            for checkpoint in paths:
+                try:
+                    report = json.loads(checkpoint.read_text(encoding='utf-8'))
+                    self.client.post('report', report)
+                    checkpoint.unlink()
+                except (OSError, ValueError, RuntimeError):
+                    ok = False
+            return ok
 
     def run(self):
-        while not self.shutdown.is_set():
-            try:
-                if not self.flush_report():
+        capacity = max(1, min(2, int(config.MAX_ROOMS)))
+        with ThreadPoolExecutor(max_workers=capacity, thread_name_prefix='uplv-room') as pool:
+            active = set()
+            while not self.shutdown.is_set():
+                try:
+                    for future in list(active):
+                        if future.done():
+                            future.result()
+                            active.remove(future)
+                    if not self.flush_report() or len(active) >= capacity:
+                        self.shutdown.wait(1 if active else config.POLL_SECONDS)
+                        continue
+                    reply = self.client.post('claim', {'satellite_id': self.id, 'capacity': capacity,
+                                                       'metrics': self.metrics.snapshot()})
+                    if reply.get('room'):
+                        active.add(pool.submit(self.run_room, reply['room']))
+                    else:
+                        self.shutdown.wait(config.POLL_SECONDS)
+                except (OSError, ValueError, RuntimeError) as exc:
+                    print(f'Master unavailable: {type(exc).__name__}', flush=True)
                     self.shutdown.wait(config.POLL_SECONDS)
-                    continue
-                reply = self.client.post('claim', {'satellite_id': self.id, 'metrics': self.metrics.snapshot()})
-                if reply.get('room'):
-                    self.run_room(reply['room'])
-                else:
-                    self.shutdown.wait(config.POLL_SECONDS)
-            except (OSError, ValueError, RuntimeError) as exc:
-                print(f'Master unavailable: {type(exc).__name__}', flush=True)
-                self.shutdown.wait(config.POLL_SECONDS)
 
 
 def main():
@@ -244,7 +290,8 @@ def main():
     port = os.environ.get('PORT') or os.environ.get('HEALTH_PORT')
     if port:
         from uplv_health import start_health
-        health = start_health('0.0.0.0', int(port), satellite.shutdown, VERSION)
+        health = start_health('0.0.0.0', int(port), satellite.shutdown, VERSION,
+                              token=token, logs=satellite.view_logs)
     print(f'{VERSION} started; satellite={satellite.id}; health={bool(health)}', flush=True)
     try:
         satellite.run()
