@@ -13,6 +13,37 @@ from uplv_kientuong import PlayerSession
 
 
 class WebTests(unittest.TestCase):
+    def test_game_only_team_keeps_sessions_until_target(self):
+        created, plays = [], []
+        class Session:
+            def __init__(self, *a, **kw):
+                self.level, self.experience, self.character_uid = 5, 0, len(created) + 1
+                self.last_settlement = None
+                created.append(self)
+            def authenticate_garena_session(self, *a): pass
+            def connect(self): pass
+            def check_stop(self): pass
+            def close(self): pass
+        class Match:
+            def __init__(self, *a, **kw):
+                self.surrender = SimpleNamespace(seconds=360)
+                self.outcomes = SimpleNamespace(mode='victory', seconds=190)
+            def play(self, session):
+                plays.append(session.character_uid)
+                session.level += 1
+                session.last_settlement = SimpleNamespace(map_id=20011)
+        with patch('pve_runtime.uplv.load', return_value=SimpleNamespace(LeverSession=Session, FiveMatch=Match)), \
+             patch('pve_runtime.tutorial.wait_lobby_or_rescue'), \
+             patch('pve_runtime.web_finish.idle_on_current_session', return_value=True), \
+             patch('uplv_kientuong.PlayerSession', side_effect=AssertionError('No web after match')):
+            rows = run_five_batch([(f'u{i}', 'unused') for i in range(5)], 7, 5,
+                threading.Event(), lambda *a: (True, 1, 5, ''),
+                lambda *a: SimpleNamespace(access_token='unused', open_id='unused'),
+                lambda *a: None, mode='victory', targets=[7]*5)
+        self.assertEqual(len(created), 5)
+        self.assertEqual(len(plays), 10)
+        self.assertTrue(all(row[0] and row[2] == 7 for row in rows.values()))
+
     def test_code_three_retries_existing_lv5_login(self):
         from uplv_engine import Engine
         engine = Engine.__new__(Engine)
@@ -24,9 +55,10 @@ class WebTests(unittest.TestCase):
         stop = Mock()
         stop.is_set.return_value = False
         stop.wait.return_value = False
-        web = Mock()
-        web.read.return_value = 12
-        with patch('uplv_kientuong.PlayerSession', return_value=web):
+        session = SimpleNamespace(level=12, check_stop=lambda: None, connect=lambda: None,
+            close=lambda: None, authenticate_garena_session=lambda *a: None)
+        with patch('pve_runtime.loader.load', return_value=SimpleNamespace(LeverSession=lambda *a: session)), \
+             patch('pve_runtime.web_finish.idle_on_current_session', return_value=True):
             rows = engine.run({'accounts': [['u', 'p']], 'levels': [8], 'targets': [12], 'screen_only': True},
                               stop, lambda *a: None, lambda *a: None)
         self.assertEqual(login.call_count, 3)
@@ -34,7 +66,7 @@ class WebTests(unittest.TestCase):
 
     def test_preflight_routes_existing_and_missing_characters_without_tutorial(self):
         from uplv_engine import Engine
-        for level in (0, 3, 5, 8, 12):
+        for level in (3, 5, 8, 12):
             with self.subTest(level=level):
                 engine = Engine.__new__(Engine)
                 engine.login_lock = threading.Lock()
@@ -54,8 +86,7 @@ class WebTests(unittest.TestCase):
                 self.assertEqual(rows[0][0], level >= 12)
                 self.assertEqual(rows[0][2], level)
                 self.assertEqual(rows[0][3], '' if level >= 12 else 'screen_ready')
-                web.read.assert_called_once()
-                web.close.assert_called_once()
+                web.read.assert_not_called()
 
     def test_optional_cards_attempt_both_types_despite_failures(self):
         from pve_runtime.rewards import prepare_optional

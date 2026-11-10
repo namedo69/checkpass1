@@ -123,7 +123,6 @@ class Engine:
             from pve_runtime.loader import load
             from pve_runtime.deadlines import session_deadline
             from pve_runtime.web_finish import idle_on_current_session
-            from uplv_kientuong import PlayerSession
             def verify_account(index):
                 level = room['levels'][index]
                 target = room['targets'][index]
@@ -132,11 +131,9 @@ class Engine:
                 try:
                     progress(index, '[VERIFYING] Đối soát cấp/trạng thái cũ; không mở trận')
                     bundle = authenticate(*room['accounts'][index])
-                    web = PlayerSession(bundle.sso_key, bundle.open_id, stop)
-                    if room.get('screen_only'):
-                        verified = web.read(time.monotonic() + 20, allow_no_player=True)
-                    else:
-                        verified = web.verify(level, target, budget=15)
+                    # Initial web screening belongs to CheckPass. Recovery and
+                    # post-match verification use the authenticated game profile.
+                    verified = None
                     if verified is not None:
                         level = verified
                         progress(index, f'[LEVEL] Lv{level}')
@@ -178,13 +175,10 @@ class Engine:
         concurrency = max(1, min(5, int(config.PREPARE_WORKERS)))
         if room.get('pool_protocol'):
             from pve_runtime.uplv import run_five_batch
-            from uplv_kientuong import PlayerSession
             return run_five_batch(room['accounts'], room['target'], concurrency, stop,
                 prepare, authenticate, progress, mode=room['mode'], prepare_cards=True,
                 checkpoint_store=checkpoints(self.state_dir / 'rewards'), completed=completed,
                 require_idle={i for i, level in enumerate(room.get('levels', [])) if level >= 5},
-                web_verify=(lambda bundle, stop: PlayerSession(bundle.sso_key, bundle.open_id, stop))
-                    if room['mode'] == 'victory' else None,
                 targets=room.get('targets'))
         return run_rooms(room['accounts'], room['target'], 1, concurrency, stop,
                          prepare, authenticate, progress, mode=room['mode'],

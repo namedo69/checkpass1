@@ -108,7 +108,7 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
                 return
             if index in require_idle:
                 progress(index, '[REGROUP_CHECK] Kiểm tra rõ trạng thái trận cũ trước khi vào đội')
-                status = inspect_for_regroup(session, session.character_uid, target,
+                status = inspect_for_regroup(session, session.character_uid, goal(index),
                                             lambda msg: progress(index, msg))
                 if status != REGROUP:
                     results[index] = (status == 'done', before, session.level,
@@ -279,6 +279,11 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
                         progress(index, "[STACK4_DONE] Đăng nhập lại xác nhận đạt mục tiêu")
                         if completed:
                             completed(index, results[index])
+                    elif targets:
+                        from .web_finish import idle_on_current_session
+                        idle = idle_on_current_session(session, stop)
+                        results[index] = (False, initial[index], current[0],
+                                          'pool_ready' if idle else 'pool_verifying')
                     return current > previous
                 except Exception as exc:
                     round_errors[index] = str(exc) or type(exc).__name__
@@ -286,7 +291,7 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
                     session.close()
                     if not results[index][0]:
                         results[index] = (False, initial[index], results[index][2],
-                                          'pool_verifying' if web_verify is not None else str(exc))
+                                          'pool_verifying' if web_verify is not None or targets else str(exc))
                         if completed and not allow_regroup:
                             completed(index, results[index])
                     return False
@@ -295,6 +300,14 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
                 changed = list(executor.map(play, team))
             if web_verify is not None or (targets and any(r[0] for r in results.values())):
                 break  # Close this temporary team; master owns continuation.
+            if targets:
+                if round_errors or any(results[i][3] == 'pool_verifying' for i in team):
+                    break
+                # All five still need levels and are confirmed idle: retain
+                # their sessions and keep running rather than reassign stacks.
+                for i in team:
+                    if results[i][3] == 'pool_ready':
+                        results[i] = (False, initial[i], results[i][2], '')
             if round_errors:
                 for i in pending:
                     if allow_regroup and not stop.is_set() and not results[i][0]:
@@ -324,6 +337,15 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
             stalled = 0 if any(changed) else stalled + 1
             if stalled >= 3:
                 break
+        if targets:
+            from .web_finish import idle_on_current_session
+            for i, session in sessions.items():
+                if not results[i][0] and not results[i][3]:
+                    try:
+                        idle = idle_on_current_session(session, stop)
+                    except Exception:
+                        idle = False
+                    results[i] = (False, initial[i], results[i][2], 'pool_ready' if idle else 'pool_verifying')
         for i in sessions:
             ok, before, after, error = results[i]
             if not ok and not error:

@@ -196,6 +196,7 @@ class _Client:
         return self._request(CLAIM_ENDPOINT, {
             "satellite_id": SATELLITE_ID,
             "lease_minutes": LEASE_MINUTES,
+            "uplv_chunk_protocol": 1,
         })
 
     def heartbeat(self, chunk_ids: list[int]) -> dict:
@@ -469,6 +470,10 @@ def _worker_loop() -> None:
         credentials = [api_test.BatchAccount(i, *item['account']) for i, item in enumerate(check['accounts'], 1)]
         rows = []
         def result(row):
+            if check.get('chunk_id'):
+                client._request('/api/checkpass/uplv/chunk-report', {'satellite_id': SATELLITE_ID,
+                    'chunk_id': check['chunk_id'], 'lease_token': check['lease_token'], 'rows': [api_test.public_batch_row(row)], 'done': False})
+                return
             # Checker may replace the submitted alias with Garena's canonical
             # username. Its input index is stable; username is not ownership.
             task = screening_task_id(check, row)
@@ -486,6 +491,10 @@ def _worker_loop() -> None:
         try:
             api_test.run_batch_core(credentials, tcp_module, WORKERS, START_GAP, TIMEOUT,
                                     stop_event=threading.Event(), on_result=result)
+            if check.get('chunk_id'):
+                client._request('/api/checkpass/uplv/chunk-report', {'satellite_id': SATELLITE_ID,
+                    'chunk_id': check['chunk_id'], 'lease_token': check['lease_token'], 'rows': [], 'done': True})
+                return
             for attempt in range(3):
                 try:
                     client._request('/api/checkpass/uplv/report', {'satellite_id': SATELLITE_ID, 'token': check['token'], 'rows': rows})
@@ -519,21 +528,18 @@ def _worker_loop() -> None:
                     time.sleep(1)
                     continue
 
-                if SERVICE_TYPE == 'normal':
-                    try:
-                        check = client._request('/api/checkpass/uplv/claim', {'satellite_id': SATELLITE_ID}).get('check')
-                    except RuntimeError:
-                        check = None  # Compatible with masters predating screening.
-                    if check:
-                        with active_lock:
-                            active_count += 1
-                        future = pool.submit(screen_uplv, check)
-                        future.add_done_callback(screening_done)
-                        continue
                 claim_resp = client.claim()
                 claim = claim_resp.get("claim")
                 if not claim:
                     time.sleep(POLL_INTERVAL)
+                    continue
+
+                if claim.get('kind') == 'uplv_screening':
+                    with active_lock:
+                        active_count += 1
+                    check = {**claim, 'accounts': [{'account': str(raw).split('|')[:2]} for raw in claim['accounts']]}
+                    future = pool.submit(screen_uplv, check)
+                    future.add_done_callback(screening_done)
                     continue
 
                 with active_lock:
