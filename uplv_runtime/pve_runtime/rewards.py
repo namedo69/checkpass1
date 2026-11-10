@@ -63,3 +63,34 @@ def prepare(session):
     return {"ruby": state.ruby, "inventory": list(state.inventory.values()),
             "multipliers": state.multipliers, "day_active": state.exp_active(),
             "wins_active": state.win_exp_active()}
+
+
+def prepare_optional(session, notify=lambda message: None):
+    """Try every EXP preparation stage independently; card failure is optional."""
+    rewards = load('automatic_rewards')
+    helper = rewards.AutomaticRewards(session, budget=70)
+    warnings = []
+
+    def attempt(label, action):
+        session.check_stop()
+        try:
+            return action()
+        except Exception:
+            session.check_stop()
+            warnings.append(label)
+            notify(f'[EXP_OPTIONAL] {label} chưa thành công; tiếp tục bước kế tiếp')
+
+    attempt('Đọc quà tân thủ', lambda: helper.request(2507, b'\x01', 2508, timeout=5))
+    state = session.reward_state
+    starter = next((r for r in state.checkins if r.get('weal_id') == 161116001), {})
+    if starter.get('rewarded') != 1:
+        def claim():
+            reply = helper.request(2503, rewards.collect_starter_checkin(), 2504, timeout=6)
+            if reply is None or rewards.response_result(reply) != 0:
+                raise RuntimeError('Starter reward not confirmed')
+        attempt('Nhận quà tân thủ', claim)
+    attempt('Đọc túi đồ', lambda: helper.request(1108, b'\x00', 1109, timeout=5))
+    attempt('Mua/dùng thẻ EXP ngày', helper.prepare_exp)
+    attempt('Mua/dùng thẻ EXP trận thắng', helper.prepare_win_exp)
+    attempt('Đọc lại túi đồ', lambda: helper.request(1108, b'\x00', 1109, timeout=5))
+    return {'warnings': warnings}

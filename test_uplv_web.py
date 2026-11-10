@@ -13,13 +13,30 @@ from uplv_kientuong import PlayerSession
 
 
 class WebTests(unittest.TestCase):
-    def run_batch(self, behavior='sent', level=12, idle=True):
+    def test_optional_cards_attempt_both_types_despite_failures(self):
+        from pve_runtime.rewards import prepare_optional
+        helper = Mock()
+        helper.request.side_effect = TimeoutError()
+        helper.prepare_exp.side_effect = RuntimeError('no ruby')
+        helper.prepare_win_exp.side_effect = RuntimeError('rejected')
+        rewards = SimpleNamespace(AutomaticRewards=Mock(return_value=helper),
+                                  collect_starter_checkin=lambda: b'')
+        session = SimpleNamespace(check_stop=lambda: None,
+                                  reward_state=SimpleNamespace(checkins=[]))
+        with patch('pve_runtime.rewards.load', return_value=rewards):
+            result = prepare_optional(session)
+        helper.prepare_exp.assert_called_once()
+        helper.prepare_win_exp.assert_called_once()
+        self.assertTrue(result['warnings'])
+
+    def run_batch(self, behavior='sent', level=12, idle=True, cards=False):
         sessions, clients, published = [], [], {}
         class Session:
             def __init__(self, stop, notify):
                 self.notify, self.level, self.experience = notify, 5, 0
                 self.character_uid = len(sessions) + 1
                 self.closed = False
+                self.reward_state = SimpleNamespace(exp_active=lambda: False, win_exp_active=lambda: False)
                 sessions.append(self)
             def authenticate_garena_session(self, *args): pass
             def check_stop(self): pass
@@ -40,15 +57,22 @@ class WebTests(unittest.TestCase):
             return client
         with patch('pve_runtime.uplv.load', return_value=SimpleNamespace(LeverSession=Session, FiveMatch=Match)), \
              patch('pve_runtime.tutorial.wait_lobby_or_rescue'), \
+             patch('pve_runtime.rewards.install_resource_decoder'), \
+             patch('pve_runtime.rewards.prepare_optional', side_effect=RuntimeError('cards unavailable')), \
              patch('pve_runtime.web_finish.idle_on_current_session', return_value=idle):
             rows = run_five_batch([(f'u{i}', 'unused') for i in range(5)], 12, 5,
                 threading.Event(), lambda *a: (True, 1, 5, ''),
                 lambda *a: SimpleNamespace(access_token='unused', open_id='unused'),
-                lambda *a: None, mode='victory', web_verify=web,
+                lambda *a: None, mode='victory', web_verify=web, prepare_cards=cards,
                 completed=lambda i, row: published.update({i: row}))
         self.assertTrue(all(s.closed for s in sessions))
         self.assertTrue(all(c.close.called for c in clients))
         return rows, clients
+
+    def test_missing_cards_and_unconfirmed_buffs_still_play(self):
+        rows, clients = self.run_batch(cards=True)
+        self.assertTrue(all(row[0] for row in rows.values()))
+        self.assertTrue(all(client.verify.called for client in clients))
 
     def test_only_post_send_status_allows_verification(self):
         for behavior in ('return', 'error'):
@@ -68,11 +92,13 @@ class WebTests(unittest.TestCase):
     def test_identity_validation_and_expired_session(self):
         http = Mock()
         http.get.return_value.status_code = 200
-        http.get.return_value.json.return_value = {'player': {'tencentOpenId': 'other', 'level': 12}}
+        http.get.return_value.json.return_value = {'player': {'gopOpenId': 'other', 'level': 12}}
         session = PlayerSession('unused', 'expected', threading.Event(), session=http)
         session.authorized = True
         import time
         with self.assertRaises(ValueError): session.read(time.monotonic() + 5)
+        http.get.return_value.json.return_value = {'player': {'gopOpenId': 'expected', 'tencentOpenId': 'different-game-id', 'level': 8}}
+        self.assertEqual(session.read(time.monotonic() + 5), 8)
         http.get.return_value.status_code = 401
         http.get.return_value.raise_for_status.side_effect = __import__('requests').HTTPError()
         with self.assertRaises(__import__('requests').HTTPError): session.read(time.monotonic() + 5)

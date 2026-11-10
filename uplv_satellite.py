@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 import uplv_config as config
 from uplv_logs import RoomLogs
 
-VERSION = 'uplv-satellite-0.5.1'
+VERSION = 'uplv-satellite-0.5.2'
 
 
 class Client:
@@ -122,7 +122,7 @@ class Satellite:
 
         def completed(index, row):
             ok, before, after, error = row
-            logs.add(index, f'[RESULT] {"success" if ok else "pending" if stop.is_set() else "failed"} Lv{after}')
+            logs.add(index, f'[RESULT] {"success" if ok else "pending" if stop.is_set() or error in ('pool_ready', 'pool_verifying') else "failed"} Lv{after}')
             with lock:
                 if (not ok and progress.get(str(index), {}).get('stage') == 'WAIT_REPLACEMENT'
                         and results.get(str(index), {}).get('status') == 'failed'):
@@ -250,6 +250,7 @@ class Satellite:
                         continue
                     reply = self.client.post('claim', {'satellite_id': self.id, 'capacity': capacity,
                                                        'pool_protocol': 1,
+                                                       'verify_protocol': 1,
                                                        'metrics': self.metrics.snapshot()})
                     if reply.get('room'):
                         active.add(pool.submit(self.run_room, reply['room']))

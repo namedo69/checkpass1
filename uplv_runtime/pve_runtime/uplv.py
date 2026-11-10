@@ -118,20 +118,28 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
                         completed(index, results[index])
                     return
             if session.level < goal(index) and prepare_cards:
-                from .rewards import prepare as prepare_rewards
+                from .rewards import prepare_optional
                 from .tutorial import wait_lobby_or_rescue
                 progress(index, "[STACK2] Nhận quà tân thủ / thẻ EXP")
                 wait_lobby_or_rescue(session, lambda msg: progress(index,msg), 'STACK2')
-                cards = prepare_rewards(session)
+                # Missing ruby/cards or rejected purchase/use must not reject
+                # an otherwise valid Lv5+ account or skip the other card type.
+                try:
+                    with session_deadline(session, 85, 'Thử thẻ EXP', lambda msg: progress(index, msg)):
+                        prepare_optional(session, lambda msg: progress(index, msg))
+                except Exception:
+                    session.check_stop()
+                    progress(index, '[EXP_OPTIONAL] Bước thẻ EXP chưa hoàn tất; mở lại phiên và tiếp tục')
                 uid = session.character_uid
                 session.connect()
                 wait_lobby_or_rescue(session, lambda msg: progress(index,msg), 'STACK2')
                 if session.character_uid != uid:
                     raise RuntimeError("UID thay đổi khi kiểm tra buff")
-                if not (session.reward_state.exp_active() is True
-                        and session.reward_state.win_exp_active() is True):
-                    raise RuntimeError("Chưa xác nhận hai buff EXP sau đăng nhập lại")
-                progress(index, "[BUFF] Ngày: ON | Trận thắng: ON")
+                day = session.reward_state.exp_active() is True
+                wins = session.reward_state.win_exp_active() is True
+                progress(index, f"[BUFF] Ngày: {'ON' if day else 'chưa xác nhận'} | Trận thắng: {'ON' if wins else 'chưa xác nhận'}")
+                if not (day and wins):
+                    progress(index, '[EXP_OPTIONAL] Thiếu buff EXP; vẫn tiếp tục vào trận')
             progress(index, "[STACK2_DONE] Hoàn tất chuẩn bị")
             sessions[index] = session
             session_uids[index] = session.character_uid
@@ -158,6 +166,17 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
         if len(sessions) < 5:
             for i, session in sessions.items():
                 if not results[i][0]:
+                    if targets:
+                        from .web_finish import idle_on_current_session
+                        try:
+                            idle = idle_on_current_session(session, stop)
+                        except Exception:
+                            idle = False
+                        results[i] = (False, initial[i], session.level, 'pool_ready' if idle else 'pool_verifying')
+                        progress(i, '[POOL_READY] Đội thiếu người; trả acc rảnh về pool' if idle else '[VERIFYING] Đội thiếu người; chờ đối soát phiên')
+                        if completed:
+                            completed(i, results[i])
+                        continue
                     results[i] = (False, initial[i], session.level,
                                   REGROUP if allow_regroup else f"Không đủ 5 phiên hợp lệ để lập đội ({len(sessions)}/5)")
                     progress(i, f"[ERROR] Không đủ đội ({len(sessions)}/5); dừng phòng")
@@ -207,6 +226,8 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
                             return False
                         progress(index, '[VERIFYING] Đọc cấp Kiện Tướng')
                         level = web_clients[index].verify(previous[0], goal(index))
+                        if level is None:
+                            progress(index, '[VERIFYING] Kiện Tướng: ' + str(getattr(web_clients[index], 'last_error', '') or 'chưa đọc được cấp hợp lệ'))
                         idle = False
                         if level is not None:
                             progress(index, f'[LEVEL] Lv{level}')
@@ -258,8 +279,8 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
                             completed(index, results[index])
                     return current > previous
                 except Exception as exc:
-                    round_errors[index] = str(exc)
-                    progress(index, f'[ERROR] Trận {round_no} kết thúc lỗi: {exc}; đóng phiên, không chờ thêm')
+                    round_errors[index] = str(exc) or type(exc).__name__
+                    progress(index, f'[ERROR] Trận {round_no} kết thúc lỗi: {round_errors[index]}; đóng phiên, không chờ thêm')
                     session.close()
                     if not results[index][0]:
                         results[index] = (False, initial[index], results[index][2],

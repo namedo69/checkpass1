@@ -8,6 +8,7 @@ class PlayerSession:
         self.sso_key, self.open_id, self.stop = sso_key, str(open_id), stop
         self.http = session or requests.Session()
         self.authorized = False
+        self.last_error = ''
         self.http.headers.update({'Referer': 'https://kientuong.lienquan.garena.vn/'})
 
     def read(self, deadline):
@@ -33,7 +34,9 @@ class PlayerSession:
             self.authorized = False
         reply.raise_for_status()
         player = reply.json().get('player') or {}
-        identity = str(player.get('tencentOpenId') or '')
+        # Garena OAuth open_id is gopOpenId. tencentOpenId belongs to the
+        # game-side identity namespace and is different on live accounts.
+        identity = str(player.get('gopOpenId') or '')
         if not identity or identity != self.open_id:
             raise ValueError('Kiện Tướng identity mismatch/missing')
         level = int(player.get('level') or player.get('role_level') or 0)
@@ -51,8 +54,10 @@ class PlayerSession:
                     latest = level
                     if level > previous or level >= target:
                         return level
-            except (requests.RequestException, ValueError, TimeoutError):
-                pass
+            except (requests.RequestException, ValueError, TimeoutError) as exc:
+                response = getattr(exc, 'response', None)
+                self.last_error = ('HTTP ' + str(response.status_code) if response is not None
+                                   else str(exc) if isinstance(exc, (ValueError, TimeoutError)) else type(exc).__name__)
             self.stop.wait(min(5, max(0, deadline - time.monotonic())))
         return latest
 

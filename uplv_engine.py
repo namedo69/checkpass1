@@ -106,6 +106,55 @@ class Engine:
                 user, password = account
             return False, 0, 0, 'Đã dừng'
 
+        if room.get('verify_only'):
+            from concurrent.futures import ThreadPoolExecutor
+            from pve_runtime.loader import load
+            from pve_runtime.deadlines import session_deadline
+            from pve_runtime.web_finish import idle_on_current_session
+            from uplv_kientuong import PlayerSession
+            def verify_account(index):
+                level = room['levels'][index]
+                target = room['targets'][index]
+                row = (False, level, level, 'pool_verifying')
+                session = web = None
+                try:
+                    progress(index, '[VERIFYING] Đối soát cấp/trạng thái cũ; không mở trận')
+                    bundle = authenticate(*room['accounts'][index])
+                    web = PlayerSession(bundle.sso_key, bundle.open_id, stop)
+                    verified = web.verify(level, target, budget=15)
+                    if verified is not None:
+                        level = verified
+                        progress(index, f'[LEVEL] Lv{level}')
+                    if verified is not None and level >= target:
+                        row = (True, room['levels'][index], level, '')
+                    else:
+                        session = load('lever_session').LeverSession(stop)
+                        session.authenticate_garena_session(bundle.access_token, bundle.open_id)
+                        with session_deadline(session, 35, 'Đối soát phiên cũ'):
+                            session.connect()
+                            idle = idle_on_current_session(session, stop)
+                        # Readback on a fresh authenticated game session is also
+                        # valid level evidence; silence never means idle.
+                        actual = getattr(session, 'level', None)
+                        if type(actual) is int and 1 <= actual <= 30:
+                            level = actual
+                            progress(index, f'[LEVEL] Lv{level}')
+                            row = (level >= target, room['levels'][index], level,
+                                   '' if level >= target else 'pool_ready' if idle else 'pool_verifying')
+                    progress(index, '[POOL_READY] Đã xác nhận rảnh; chờ ghép cùng cấp' if row[3] == 'pool_ready'
+                             else '[STACK4_DONE] Đã đạt mục tiêu' if row[0] else '[VERIFYING] Chưa xác nhận rảnh; retry có giới hạn')
+                except Exception as exc:
+                    progress(index, '[VERIFYING] Đối soát chưa xong: ' + type(exc).__name__)
+                finally:
+                    if session is not None:
+                        session.close()
+                    if web is not None:
+                        web.close()
+                completed(index, row)
+                return index, row
+            with ThreadPoolExecutor(max_workers=min(5, len(room['accounts']))) as executor:
+                return dict(executor.map(verify_account, range(len(room['accounts']))))
+
         # One room, up to five concurrent preparations; battle waits for all.
         concurrency = max(1, min(5, int(config.PREPARE_WORKERS)))
         if room.get('pool_protocol'):
