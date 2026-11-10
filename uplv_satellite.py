@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 import uplv_config as config
 from uplv_logs import RoomLogs
 
-VERSION = 'uplv-satellite-0.6.0'
+VERSION = 'uplv-satellite-0.6.1'
 
 
 class RevokedLease(RuntimeError):
@@ -83,6 +83,16 @@ class Satellite:
         self.logging_active = set()
         self.room_logs_lock = threading.Lock()
         self.report_lock = threading.Lock()
+        self.loop_seen = time.monotonic()
+        self.master_seen = 0
+        self.last_control_error = ''
+
+    def health_status(self):
+        age = time.monotonic() - self.loop_seen
+        return {'id': self.id, 'commit': os.environ.get('RENDER_GIT_COMMIT', 'local'),
+                'worker_loop_ok': age < 180, 'loop_age_seconds': round(age),
+                'master_age_seconds': round(time.monotonic() - self.master_seen) if self.master_seen else None,
+                'last_control_error': self.last_control_error}
 
     def view_logs(self):
         with self.room_logs_lock:
@@ -277,6 +287,7 @@ class Satellite:
         with ThreadPoolExecutor(max_workers=capacity, thread_name_prefix='uplv-room') as pool:
             active = set()
             while not self.shutdown.is_set():
+                self.loop_seen = time.monotonic()
                 try:
                     for future in list(active):
                         if future.done():
@@ -288,6 +299,11 @@ class Satellite:
                                 # subsequent claim iteration. Its expired lease
                                 # is recovered by the master inspection queue.
                                 print(f'Room task failed: {type(exc).__name__}; continuing claims', flush=True)
+                    # Presence is independent of report spool/game threads.
+                    # A failed pending report must remain visible to master.
+                    self.client.post('presence', {'satellite_id': self.id, 'metrics': self.metrics.snapshot()})
+                    self.master_seen = time.monotonic()
+                    self.last_control_error = ''
                     if not self.flush_report() or len(active) >= capacity:
                         self.shutdown.wait(1 if active else config.POLL_SECONDS)
                         continue
@@ -301,6 +317,7 @@ class Satellite:
                     else:
                         self.shutdown.wait(config.POLL_SECONDS)
                 except (OSError, ValueError, RuntimeError) as exc:
+                    self.last_control_error = type(exc).__name__
                     print(f'Master unavailable: {type(exc).__name__}', flush=True)
                     self.shutdown.wait(config.POLL_SECONDS)
 
@@ -342,7 +359,7 @@ def main():
     if port:
         from uplv_health import start_health
         health = start_health('0.0.0.0', int(port), satellite.shutdown, VERSION,
-                              token=token, logs=satellite.view_logs)
+                              token=token, logs=satellite.view_logs, status=satellite.health_status)
     print(f'{VERSION} started; satellite={satellite.id}; health={bool(health)}', flush=True)
     try:
         satellite.run()

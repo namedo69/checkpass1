@@ -5,7 +5,7 @@ import threading
 import secrets
 
 
-def start_health(host, port, shutdown, version, token='', logs=None):
+def start_health(host, port, shutdown, version, token='', logs=None, status=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass
@@ -27,9 +27,10 @@ def start_health(host, port, shutdown, version, token='', logs=None):
             if self.path.split('?', 1)[0] not in ('/', '/healthz'):
                 self.send_error(404)
                 return
-            ready = not shutdown.is_set()
+            details = status() if status else {}
+            ready = not shutdown.is_set() and details.get('worker_loop_ok', True)
             body = json.dumps({'ok': ready, 'role': 'satellite', 'service_type': 'uplv',
-                               'version': version}).encode()
+                               'version': version, **details}).encode()
             self.send_response(200 if ready else 503)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Cache-Control', 'no-store')
