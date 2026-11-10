@@ -1,5 +1,12 @@
 # Deploy vệ tinh UpLv lên Render — 0.5.1
 
+## Source 0.6.0 — 4 phòng/vệ tinh
+
+`MAX_ROOMS = 4`; master chặn tối đa 4 lease mỗi vệ tinh. Giới hạn ô phòng
+toàn hệ thống vẫn ưu tiên: ví dụ tổng 10 ô thì mọi vệ tinh chia sẻ 10 ô đó.
+Mỗi phòng tối đa 5 acc, tối đa 20 acc/vệ tinh. Cần cập nhật cả master và
+worker để nhận đủ 4 phòng; chưa đo tải live cấu hình này.
+
 ## Source local trên ổ D — 2026-11-10
 
 - Master/source chuẩn: `D:\checkpass`; vệ tinh: `D:\checkpass1`–`D:\checkpass5`.

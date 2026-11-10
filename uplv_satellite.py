@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 import uplv_config as config
 from uplv_logs import RoomLogs
 
-VERSION = 'uplv-satellite-0.5.2'
+VERSION = 'uplv-satellite-0.6.0'
 
 
 class Client:
@@ -86,8 +86,8 @@ class Satellite:
         with self.room_logs_lock:
             self.room_logs[room['id']] = logs
             self.logging_active.add(room['id'])
-            # Keep two active/recent rooms; bounded even over a long run.
-            while len(self.room_logs) > 2:
+            # Keep four active/recent rooms; bounded even over a long run.
+            while len(self.room_logs) > 4:
                 old = next((key for key in self.room_logs if key not in self.logging_active), None)
                 if old is None:
                     break
@@ -127,10 +127,11 @@ class Satellite:
                 if (not ok and progress.get(str(index), {}).get('stage') == 'WAIT_REPLACEMENT'
                         and results.get(str(index), {}).get('status') == 'failed'):
                     return  # The failed original is not merely pending on stop.
-                pending = stop.is_set() or error in ('pool_ready', 'pool_verifying')
+                pending = stop.is_set() or error in ('pool_ready', 'pool_verifying', 'screen_ready', 'screen_wait')
                 results[str(index)] = {'status': 'success' if ok else 'pending' if pending else 'failed',
                                        'level_before': before, 'level_after': after,
-                                       'verified': ok or error == 'pool_ready', 'idle': error == 'pool_ready'}
+                                        'verified': ok or error in ('pool_ready', 'screen_ready'),
+                                        'idle': error in ('pool_ready', 'screen_ready'), 'screened': error == 'screen_ready'}
 
         def snapshot():
             with lock:
@@ -205,7 +206,7 @@ class Satellite:
             done.set()
             thread.join(timeout=12)
         with lock:
-            for index in range(5):
+            for index in range(len(room['accounts'])):
                 key = str(index)
                 if key not in results:
                     level = progress.get(key, {}).get('level', 0)
@@ -236,7 +237,7 @@ class Satellite:
             return ok
 
     def run(self):
-        capacity = max(1, min(2, int(config.MAX_ROOMS)))
+        capacity = max(1, min(4, int(config.MAX_ROOMS)))
         with ThreadPoolExecutor(max_workers=capacity, thread_name_prefix='uplv-room') as pool:
             active = set()
             while not self.shutdown.is_set():
@@ -251,6 +252,7 @@ class Satellite:
                     reply = self.client.post('claim', {'satellite_id': self.id, 'capacity': capacity,
                                                        'pool_protocol': 1,
                                                        'verify_protocol': 1,
+                                                       'screen_protocol': 1,
                                                        'metrics': self.metrics.snapshot()})
                     if reply.get('room'):
                         active.add(pool.submit(self.run_room, reply['room']))

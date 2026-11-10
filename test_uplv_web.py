@@ -13,6 +13,31 @@ from uplv_kientuong import PlayerSession
 
 
 class WebTests(unittest.TestCase):
+    def test_preflight_routes_existing_and_missing_characters_without_tutorial(self):
+        from uplv_engine import Engine
+        for level in (0, 3, 5, 8, 12):
+            with self.subTest(level=level):
+                engine = Engine.__new__(Engine)
+                engine.login_lock = threading.Lock()
+                engine.last_login = 0
+                login = Mock(return_value=SimpleNamespace(sso_key='unused', open_id='unused', access_token='unused'))
+                engine.runtime = (None, None, login, lambda u: {'device_id': 'unused'},
+                                  Mock(side_effect=AssertionError('Preflight must not run tutorial')), None)
+                web = Mock()
+                web.read.return_value = level
+                session = SimpleNamespace(level=level, check_stop=lambda: None,
+                    authenticate_garena_session=lambda *a: None, connect=lambda: None, close=Mock())
+                with patch('uplv_kientuong.PlayerSession', return_value=web), \
+                     patch('pve_runtime.loader.load', return_value=SimpleNamespace(LeverSession=lambda *a: session)), \
+                     patch('pve_runtime.web_finish.idle_on_current_session', return_value=True):
+                    rows = engine.run({'accounts': [['u', 'p']], 'levels': [0], 'targets': [12],
+                        'screen_only': True}, threading.Event(), lambda *a: None, lambda *a: None)
+                self.assertEqual(rows[0][0], level >= 12)
+                self.assertEqual(rows[0][2], level)
+                self.assertEqual(rows[0][3], '' if level >= 12 else 'screen_ready')
+                web.read.assert_called_once()
+                web.close.assert_called_once()
+
     def test_optional_cards_attempt_both_types_despite_failures(self):
         from pve_runtime.rewards import prepare_optional
         helper = Mock()
@@ -99,6 +124,8 @@ class WebTests(unittest.TestCase):
         with self.assertRaises(ValueError): session.read(time.monotonic() + 5)
         http.get.return_value.json.return_value = {'player': {'gopOpenId': 'expected', 'tencentOpenId': 'different-game-id', 'level': 8}}
         self.assertEqual(session.read(time.monotonic() + 5), 8)
+        http.get.return_value.status_code = 422
+        self.assertEqual(session.read(time.monotonic() + 5, allow_no_player=True), 0)
         http.get.return_value.status_code = 401
         http.get.return_value.raise_for_status.side_effect = __import__('requests').HTTPError()
         with self.assertRaises(__import__('requests').HTTPError): session.read(time.monotonic() + 5)

@@ -11,7 +11,7 @@ class PlayerSession:
         self.last_error = ''
         self.http.headers.update({'Referer': 'https://kientuong.lienquan.garena.vn/'})
 
-    def read(self, deadline):
+    def read(self, deadline, allow_no_player=False):
         def timeout():
             remaining = deadline - time.monotonic()
             if remaining <= 0 or self.stop.is_set():
@@ -30,6 +30,8 @@ class PlayerSession:
             self.http.get('https://kientuong.lienquan.garena.vn/auth/login/callback', params={'code': code}, timeout=timeout()).raise_for_status()
             self.authorized = True
         reply = self.http.get('https://kientuong.lienquan.garena.vn/api/player/get', timeout=timeout(), headers={'Cache-Control': 'no-cache'})
+        if allow_no_player and reply.status_code == 422:
+            return 0
         if reply.status_code in (401, 403):
             self.authorized = False
         reply.raise_for_status()

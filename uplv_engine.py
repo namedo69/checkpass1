@@ -106,7 +106,7 @@ class Engine:
                 user, password = account
             return False, 0, 0, 'Đã dừng'
 
-        if room.get('verify_only'):
+        if room.get('verify_only') or room.get('screen_only'):
             from concurrent.futures import ThreadPoolExecutor
             from pve_runtime.loader import load
             from pve_runtime.deadlines import session_deadline
@@ -121,11 +121,16 @@ class Engine:
                     progress(index, '[VERIFYING] Đối soát cấp/trạng thái cũ; không mở trận')
                     bundle = authenticate(*room['accounts'][index])
                     web = PlayerSession(bundle.sso_key, bundle.open_id, stop)
-                    verified = web.verify(level, target, budget=15)
+                    if room.get('screen_only'):
+                        verified = web.read(time.monotonic() + 20, allow_no_player=True)
+                    else:
+                        verified = web.verify(level, target, budget=15)
                     if verified is not None:
                         level = verified
                         progress(index, f'[LEVEL] Lv{level}')
-                    if verified is not None and level >= target:
+                    if room.get('screen_only') and verified is not None and level < 5:
+                        row = (False, room['levels'][index], level, 'screen_ready')
+                    elif verified is not None and level >= target:
                         row = (True, room['levels'][index], level, '')
                     else:
                         session = load('lever_session').LeverSession(stop)
@@ -140,10 +145,12 @@ class Engine:
                             level = actual
                             progress(index, f'[LEVEL] Lv{level}')
                             row = (level >= target, room['levels'][index], level,
-                                   '' if level >= target else 'pool_ready' if idle else 'pool_verifying')
+                                   '' if level >= target else 'screen_ready' if idle and room.get('screen_only') else 'pool_ready' if idle else 'pool_verifying')
                     progress(index, '[POOL_READY] Đã xác nhận rảnh; chờ ghép cùng cấp' if row[3] == 'pool_ready'
                              else '[STACK4_DONE] Đã đạt mục tiêu' if row[0] else '[VERIFYING] Chưa xác nhận rảnh; retry có giới hạn')
                 except Exception as exc:
+                    if room.get('screen_only'):
+                        row = (False, room['levels'][index], level, 'screen_wait')
                     progress(index, '[VERIFYING] Đối soát chưa xong: ' + type(exc).__name__)
                 finally:
                     if session is not None:
