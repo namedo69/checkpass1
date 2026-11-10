@@ -480,6 +480,8 @@ def _worker_loop() -> None:
                          'no_character': value.casefold() == 'ctnv' and row.get('player_status') == 'Chưa tạo nhân vật',
                          'check_status': str(row.get('status', ''))[:80],
                          'check_result': str(row.get('result_type', ''))[:80],
+                         'check_stage': str(row.get('last_tcp_rejection_stage', ''))[:40],
+                         'check_code': str(row.get('last_tcp_rejection_result', ''))[:20],
                          'check_error': str(row.get('error', ''))[:200]})
         try:
             api_test.run_batch_core(credentials, tcp_module, WORKERS, START_GAP, TIMEOUT,
