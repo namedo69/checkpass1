@@ -67,7 +67,7 @@ class Metrics:
                 pass
         return {'rss_mb': round(rss, 2), 'cpu_percent': round(percent, 2),
                  'threads': threading.active_count(), 'uptime_seconds': int(now - self.started),
-                 'capacity': max(1, min(4, int(getattr(config, 'MAX_ROOMS', 4))))}
+                 'capacity': max(1, min(3, int(getattr(config, 'MAX_ROOMS', 3))))}
 
 
 class Satellite:
@@ -283,7 +283,7 @@ class Satellite:
             return ok
 
     def run(self):
-        capacity = max(1, min(4, int(config.MAX_ROOMS)))
+        capacity = max(1, min(3, int(config.MAX_ROOMS)))
         with ThreadPoolExecutor(max_workers=capacity, thread_name_prefix='uplv-room') as pool:
             active = set()
             while not self.shutdown.is_set():
