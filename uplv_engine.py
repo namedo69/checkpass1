@@ -41,15 +41,24 @@ class Engine:
 
     def run(self, room, stop, progress, completed, replacement=None):
         run_rooms, run_cs, login, device, retry, checkpoints = self.runtime
+        bundles = {}
+        bundle_lock = threading.Lock()
 
         def authenticate(user, password):
+            with bundle_lock:
+                cached = bundles.get(user.casefold())
+            if cached is not None:
+                return cached
             with self.login_lock:
                 delay = max(0, self.last_login + 0.6 - time.monotonic())
                 if stop.wait(delay):
                     raise RuntimeError('Stopped')
                 self.last_login = time.monotonic()
             # Serialize start times, not the entire network exchange.
-            return login(user, password, device(user)['device_id'], timeout=20)
+            bundle = login(user, password, device(user)['device_id'], timeout=20)
+            with bundle_lock:
+                bundles[user.casefold()] = bundle
+            return bundle
 
         def execute(user, password, target_level=5, progress_cb=None, debug_log=None, character_name=None):
             # Read actual CS profile; skip the optional web-profile request.
@@ -82,6 +91,10 @@ class Engine:
 
         def prepare(index, user, password):
             while not stop.is_set():
+                if room.get('pool_protocol') and room.get('levels', [0] * 5)[index] >= 5:
+                    level = room['levels'][index]
+                    progress(index, f'[LEVEL] Lv{level}')
+                    return True, level, level, ''
                 row = retry(execute, user, password, 5, stop, lambda message: progress(index, message))
                 if row[0] or stop.is_set() or replacement is None:
                     return row
@@ -95,6 +108,15 @@ class Engine:
 
         # One room, up to five concurrent preparations; battle waits for all.
         concurrency = max(1, min(5, int(config.PREPARE_WORKERS)))
+        if room.get('pool_protocol'):
+            from pve_runtime.uplv import run_five_batch
+            from uplv_kientuong import PlayerSession
+            return run_five_batch(room['accounts'], room['target'], concurrency, stop,
+                prepare, authenticate, progress, mode=room['mode'], prepare_cards=True,
+                checkpoint_store=checkpoints(self.state_dir / 'rewards'), completed=completed,
+                web_verify=(lambda bundle, stop: PlayerSession(bundle.sso_key, bundle.open_id, stop))
+                    if room['mode'] == 'victory' else None,
+                targets=room.get('targets'))
         return run_rooms(room['accounts'], room['target'], 1, concurrency, stop,
                          prepare, authenticate, progress, mode=room['mode'],
                          checkpoint_store=checkpoints(self.state_dir / 'rewards'), completed=completed)

@@ -109,9 +109,11 @@ def login_and_exchange(account,password,device_id,tcp_source_path=None,login_api
         except Exception:
             pass
 
-        if not code or len(code) != 64:
+        if with_sso_key or not code or len(code) != 64:
             sso = c.get_sso_key() if hasattr(c,'get_sso_key') else None
-            sso_key = sso.sso_key if hasattr(sso,'sso_key') else str(sso)
+            sso_key = (sso.sso_key if hasattr(sso,'sso_key') else str(sso or '')).strip()
+            if with_sso_key and not sso_key:
+                raise SsoLoginError('Garena returned an empty SSO key',stage='tcp')
 
     connect_client = GarenaConnectClient(connect_base=connect_base,timeout=timeout,opener=opener)
     connect_client._current_sso_key = sso_key

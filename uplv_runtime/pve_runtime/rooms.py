@@ -6,7 +6,8 @@ from .regroup import REGROUP, UNRESOLVED
 
 
 def run_rooms(accounts, target, rooms, concurrency, stop, prepare, authenticate, progress,
-              *, mode='victory', max_rounds=100, checkpoint_store=None, completed=None):
+              *, mode='victory', max_rounds=100, checkpoint_store=None, completed=None,
+              web_verify=None):
     if len({u.casefold() for u, _ in accounts}) != len(accounts):
         raise ValueError('Danh sách có tài khoản trùng')
     waiting = deque(range(len(accounts)))
@@ -44,8 +45,9 @@ def run_rooms(accounts, target, rooms, concurrency, stop, prepare, authenticate,
                 mode=mode, max_rounds=max_rounds, prepare_cards=True,
                 checkpoint_store=checkpoint_store, allow_regroup=True,
                 require_idle={k for k, i in enumerate(indexes) if i in idle_check},
+                **({'web_verify': web_verify} if web_verify is not None else {}),
                 completed=lambda k, row: publish(indexes[k], row)
-                if not stop.is_set() or row[0] else None)
+                if (not stop.is_set() or row[0]) and row[3] not in ('pool_ready', 'pool_verifying') else None)
         except Exception as exc:
             return {k: (False, cached[i][1], cached[i][2], UNRESOLVED + ': ' + str(exc))
                     for k, i in enumerate(indexes)}
@@ -55,26 +57,37 @@ def run_rooms(accounts, target, rooms, concurrency, stop, prepare, authenticate,
         while True:
             if not stop.is_set():
                 # Bound preparation ahead of available battle capacity.
-                capacity = max(5, (len(slots) + 1) * 5)
-                while waiting and len(preparations) < max(1, concurrency) and len(ready) + len(preparations) < capacity:
+                capacity = len(slots) * 5
+                while (waiting and len(preparations) < max(1, concurrency)
+                       and sum(i not in idle_check for i in ready) + len(preparations) < capacity
+                       and (len(ready) + len(preparations) > 0 or len(waiting) >= 5)):
                     index = waiting.popleft()
                     progress(index, '[STACK1] Chuẩn bị vào pool chung')
                     preparations[prep_pool.submit(prepare, index, *accounts[index])] = index
                 # Prefer verified-idle members and new replacements. Recheck
                 # unresolved sessions only once ordinary work cannot fill a team.
-                if not waiting and not preparations and not battles and len(ready) < 5 and checking:
+                if web_verify is None and not waiting and not preparations and not battles and len(ready) < 5 and checking:
                     while checking and len(ready) < 5:
                         ready.append(checking.popleft())
                 while slots and len(ready) >= 5:
-                    indexes = [ready.popleft() for _ in range(5)]
+                    if web_verify is not None:
+                        groups = {}
+                        for i in ready:
+                            groups.setdefault(cached[i][2], []).append(i)
+                        compatible = next((group for group in groups.values() if len(group) >= 5), None)
+                        if compatible is None:
+                            break
+                        indexes = compatible[:5]
+                        for i in indexes:
+                            ready.remove(i)
+                    else:
+                        indexes = [ready.popleft() for _ in range(5)]
                     room = slots.popleft()
                     for i in indexes:
                         progress(i, f'[ROOM {room}] [REGROUP] Ghép đủ 5 từ pool sẵn sàng')
                     battles[battle_pool.submit(run_team, room, indexes)] = (room, indexes)
             active = list(preparations) + list(battles)
             if not active:
-                if not stop.is_set() and waiting:
-                    continue
                 break
             done, _ = wait(active, timeout=0.2, return_when=FIRST_COMPLETED)
             for future in done:
@@ -105,12 +118,12 @@ def run_rooms(accounts, target, rooms, concurrency, stop, prepare, authenticate,
                             continue
                         if row[0]:
                             publish(index, row)
-                        elif row[3] == REGROUP or row[3].startswith(UNRESOLVED):
+                        elif row[3] in (REGROUP, 'pool_ready', 'pool_verifying') or row[3].startswith(UNRESOLVED):
                             retries[index] = retries.get(index, 0) + 1
                             if retries[index] <= 3:
                                 cached[index] = (True, row[1], row[2], '')
                                 idle_check.add(index)
-                                (ready if row[3] == REGROUP else checking).append(index)
+                                (ready if row[3] in (REGROUP, 'pool_ready') else checking).append(index)
                                 progress(index, f'[REGROUP] Kiểm tra lại / tái ghép {retries[index]}/3; giữ Lv{row[2]}')
                             else:
                                 progress(index, '[DEFERRED] Hết 3 lượt kiểm tra/tái ghép; lưu Chưa xong')

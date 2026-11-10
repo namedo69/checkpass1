@@ -1,4 +1,16 @@
-# Deploy vệ tinh UpLv lên Render — 0.3.0
+# Deploy vệ tinh UpLv lên Render — 0.5.1
+
+## Source local trên ổ D — 2026-11-10
+
+- Master/source chuẩn: `D:\checkpass`; vệ tinh: `D:\checkpass1`–`D:\checkpass5`.
+- `python sync_uplv_satellites.py --update-worker --dry-run` kiểm tra trước;
+  bỏ `--dry-run` để đồng bộ payload worker, kiểm SHA256 và backup file khác
+  trong `D:\checkpass\uplv_state\sync_backup_*`.
+- Payload gồm `uplv_kientuong.py` cả trong Docker để tránh lỗi import khi WIN.
+- Scheduler nhận acc lẻ, giới hạn phòng toàn master, ưu tiên nhóm up tiếp.
+  `max_rooms=0` ngừng cấp mới. Chờ xác minh không được ghép trận tự động.
+- Cập nhật source local không tự deploy/restart VPS hoặc Render. Đọc kết quả
+  kiểm thử trong `D:\UpLv_AOV_Standalone\PLAN_NEXT_UPLV.md`, mục 8.
 
 Heartbeat phòng đang xử lý: **5 giây/phòng** (`HEARTBEAT_SECONDS`). Khi rảnh,
 claim poll vẫn 15 giây. Lease master vẫn 180 giây. Log không gửi kèm heartbeat;

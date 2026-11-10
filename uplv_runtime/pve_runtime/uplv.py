@@ -10,7 +10,7 @@ from .regroup import inspect_for_regroup, REGROUP, UNRESOLVED
 
 def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, progress,
                    max_rounds=100, mode="surrender", prepare_cards=False, checkpoint_store=None,
-                   completed=None, allow_regroup=False, require_idle=()):
+                   completed=None, allow_regroup=False, require_idle=(), web_verify=None, targets=None):
     """Return index -> (ok, initial level, latest confirmed level, error).
 
     Completed accounts may support the last incomplete team. Every live session
@@ -21,6 +21,9 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
     initial = {}
     progress_evidence = {}
     session_uids = {}
+    web_clients = {}
+    def goal(index):
+        return targets[index] if targets else target
     if prepare_cards:
         from .rewards import install_resource_decoder
         install_resource_decoder()
@@ -37,8 +40,11 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
                 completed(index, results[index])
             return
         initial[index] = before
+        # Preparation may have replaced this slot. Never authenticate the old
+        # occupant using the credentials captured before the replacement.
+        user, password = accounts[index]
         results[index] = (False, before, after, error)
-        if ok and after >= target:
+        if ok and after >= goal(index):
             results[index] = (True, before, after, "")
             progress(index, f"[LEVEL] Lv{after}")
             progress(index, "[ALREADY_DONE] Đã đạt mục tiêu; bỏ qua các stack còn lại")
@@ -57,6 +63,10 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
             nonlocal last_timer
             if kind == "status" and fields.get("text"):
                 progress(index, fields["text"])
+                if web_verify is not None:
+                    from .web_finish import OutcomeSent, outcome_sent_status
+                    if outcome_sent_status(fields['text'], mode):
+                        raise OutcomeSent()
             elif kind == "profile" and type(fields.get("level")) is int:
                 progress(index, f"5v5: Cấp {fields['level']} / {target}")
             elif kind == "level" and type(fields.get("level")) is int:
@@ -71,6 +81,8 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
         try:
             progress(index, "Đang mở phiên 5v5 PvE...")
             bundle = authenticate(user, password)
+            if web_verify is not None:
+                web_clients[index] = web_verify(bundle, stop)
             session.authenticate_garena_session(bundle.access_token, bundle.open_id)
             session.planned_name = user
             session.request_battle_mode = "5vs5"
@@ -87,7 +99,7 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
             if type(session.level) is not int or session.level < 5:
                 raise RuntimeError("Chưa xác nhận nhân vật đạt Lv5 trong phiên 5v5")
             progress(index, f"[LEVEL] Lv{session.level} EXP {session.experience}")
-            if session.level >= target:
+            if session.level >= goal(index):
                 results[index] = (True, before, session.level, "")
                 progress(index, "[ALREADY_DONE] Server xác nhận đã đạt mục tiêu")
                 session.close()
@@ -105,7 +117,7 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
                     if status == 'done' and completed:
                         completed(index, results[index])
                     return
-            if session.level < target and prepare_cards:
+            if session.level < goal(index) and prepare_cards:
                 from .rewards import prepare as prepare_rewards
                 from .tutorial import wait_lobby_or_rescue
                 progress(index, "[STACK2] Nhận quà tân thủ / thẻ EXP")
@@ -123,7 +135,7 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
             progress(index, "[STACK2_DONE] Hoàn tất chuẩn bị")
             sessions[index] = session
             session_uids[index] = session.character_uid
-            results[index] = (session.level >= target, before, session.level, "")
+            results[index] = (session.level >= goal(index), before, session.level, "")
             progress_evidence[index] = (session.level, session.experience)
         except Exception as exc:
             session.close()
@@ -177,6 +189,39 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
                     from .tutorial import wait_lobby_or_rescue
                     wait_lobby_or_rescue(session, lambda msg: progress(index,msg), 'STACK3')
                     progress(index, f"5v5 PvE: trận {round_no}, đủ 5 tài khoản")
+                    if web_verify is not None:
+                        from .web_finish import OutcomeSent, idle_on_current_session
+                        try:
+                            with session_deadline(session, 720, '5v5 WIN', lambda msg: progress(index, msg)):
+                                match.play(session)
+                        except OutcomeSent:
+                            progress(index, '[STACK4] Kiện Tướng: xác minh cấp, không login game lại')
+                        else:
+                            # A normal return is not evidence that the WIN send
+                            # completed; only the post-send sentinel authorizes
+                            # web verification of this round.
+                            results[index] = (False, initial[index], previous[0], 'pool_verifying')
+                            progress(index, '[VERIFYING] Chưa có bằng chứng gửi WIN thành công')
+                            if completed:
+                                completed(index, results[index])
+                            return False
+                        progress(index, '[VERIFYING] Đọc cấp Kiện Tướng')
+                        level = web_clients[index].verify(previous[0], goal(index))
+                        idle = False
+                        if level is not None:
+                            progress(index, f'[LEVEL] Lv{level}')
+                            try:
+                                idle = idle_on_current_session(session, stop)
+                            except Exception:
+                                idle = False
+                        ok = level is not None and level >= goal(index)
+                        after = level if level is not None else previous[0]
+                        marker = 'pool_ready' if level is not None and level > previous[0] and idle else 'pool_verifying'
+                        results[index] = (ok, initial[index], after, '' if ok else marker)
+                        progress(index, '[STACK4_DONE] Kiện Tướng xác nhận đạt mục tiêu' if ok else '[POOL_READY] Chờ up tiếp' if marker == 'pool_ready' else '[VERIFYING] Chờ xác minh/trận cũ')
+                        if completed:
+                            completed(index, results[index])
+                        return False
                     try:
                         with session_deadline(session, 720, '5v5 / kết toán',
                                               lambda msg: progress(index, msg)):
@@ -206,8 +251,8 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
                     progress_evidence[index] = current
                     progress(index, f"[LEVEL] Lv{current[0]} EXP {current[1]}")
                     progress(index, f"[ROUND_DONE] {round_no}")
-                    results[index] = (current[0] >= target, initial[index], current[0], "")
-                    if current[0] >= target:
+                    results[index] = (current[0] >= goal(index), initial[index], current[0], "")
+                    if current[0] >= goal(index):
                         progress(index, "[STACK4_DONE] Đăng nhập lại xác nhận đạt mục tiêu")
                         if completed:
                             completed(index, results[index])
@@ -217,13 +262,16 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
                     progress(index, f'[ERROR] Trận {round_no} kết thúc lỗi: {exc}; đóng phiên, không chờ thêm')
                     session.close()
                     if not results[index][0]:
-                        results[index] = (False, initial[index], results[index][2], str(exc))
+                        results[index] = (False, initial[index], results[index][2],
+                                          'pool_verifying' if web_verify is not None else str(exc))
                         if completed and not allow_regroup:
                             completed(index, results[index])
                     return False
 
             with ThreadPoolExecutor(max_workers=5) as executor:
                 changed = list(executor.map(play, team))
+            if web_verify is not None or (targets and any(r[0] for r in results.values())):
+                break  # Close this temporary team; master owns continuation.
             if round_errors:
                 for i in pending:
                     if allow_regroup and not stop.is_set() and not results[i][0]:
@@ -262,3 +310,5 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
     finally:
         for session in sessions.values():
             session.close()
+        for client in web_clients.values():
+            client.close()

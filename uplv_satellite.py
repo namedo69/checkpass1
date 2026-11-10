@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 import uplv_config as config
 from uplv_logs import RoomLogs
 
-VERSION = 'uplv-satellite-0.4.0'
+VERSION = 'uplv-satellite-0.5.1'
 
 
 class Client:
@@ -102,7 +102,7 @@ class Satellite:
             logs.add(index, message)
             with lock:
                 row = progress.setdefault(str(index), {})
-                stage = re.search(r'\[(STACK\d(?:_DONE)?|BUFF|REGROUP|WAIT|RECONNECT|DEFERRED)\]', message)
+                stage = re.search(r'\[(STACK\d(?:_DONE)?|BUFF|REGROUP|WAIT|RECONNECT|DEFERRED|VERIFYING|POOL_READY)\]', message)
                 level = re.search(r'\[LEVEL\]\s*Lv(\d+)', message)
                 elapsed = re.search(r'\[TIMER\]\s*(\d+)', message)
                 if stage:
@@ -121,14 +121,16 @@ class Satellite:
                     print(f'room={room["id"]} slot={index} {safe[:400]}', flush=True)
 
         def completed(index, row):
-            ok, before, after, _ = row
+            ok, before, after, error = row
             logs.add(index, f'[RESULT] {"success" if ok else "pending" if stop.is_set() else "failed"} Lv{after}')
             with lock:
                 if (not ok and progress.get(str(index), {}).get('stage') == 'WAIT_REPLACEMENT'
                         and results.get(str(index), {}).get('status') == 'failed'):
                     return  # The failed original is not merely pending on stop.
-                results[str(index)] = {'status': 'success' if ok else 'pending' if stop.is_set() else 'failed',
-                                       'level_before': before, 'level_after': after}
+                pending = stop.is_set() or error in ('pool_ready', 'pool_verifying')
+                results[str(index)] = {'status': 'success' if ok else 'pending' if pending else 'failed',
+                                       'level_before': before, 'level_after': after,
+                                       'verified': ok or error == 'pool_ready', 'idle': error == 'pool_ready'}
 
         def snapshot():
             with lock:
@@ -154,6 +156,9 @@ class Satellite:
                             logs.protect([reply['account']])
                             logs.add(index, '[REPLACEMENT] Đã nhận acc bù')
                             room['accounts'][index] = reply['account']
+                            if 'target' in reply:
+                                room.setdefault('targets', [room['target']] * 5)[index] = reply['target']
+                                room.setdefault('levels', [0] * 5)[index] = reply['level']
                             versions[index] = reply['generation']
                             progress.pop(str(index), None)
                             results.pop(str(index), None)
@@ -244,6 +249,7 @@ class Satellite:
                         self.shutdown.wait(1 if active else config.POLL_SECONDS)
                         continue
                     reply = self.client.post('claim', {'satellite_id': self.id, 'capacity': capacity,
+                                                       'pool_protocol': 1,
                                                        'metrics': self.metrics.snapshot()})
                     if reply.get('room'):
                         active.add(pool.submit(self.run_room, reply['room']))

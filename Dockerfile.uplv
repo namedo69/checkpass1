@@ -3,6 +3,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 MALLOC_ARENA_MAX=2 UPLV_STATE_D
 WORKDIR /app
 COPY requirements_uplv.txt ./
 RUN pip install --no-cache-dir -r requirements_uplv.txt
-COPY uplv_satellite.py uplv_engine.py uplv_config.py uplv_health.py uplv_logs.py ./
+COPY uplv_satellite.py uplv_engine.py uplv_config.py uplv_health.py uplv_logs.py uplv_kientuong.py ./
 COPY uplv_runtime/ ./uplv_runtime/
 CMD ["python", "-B", "uplv_satellite.py"]
