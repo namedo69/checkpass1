@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 import uplv_config as config
 from uplv_logs import RoomLogs
 
-VERSION = 'uplv-satellite-0.6.1'
+VERSION = 'uplv-satellite-0.6.2'
 
 
 class RevokedLease(RuntimeError):
@@ -284,6 +284,7 @@ class Satellite:
 
     def run(self):
         capacity = max(1, min(4, int(config.MAX_ROOMS)))
+        request_id = uuid.uuid4().hex
         with ThreadPoolExecutor(max_workers=capacity, thread_name_prefix='uplv-room') as pool:
             active = set()
             while not self.shutdown.is_set():
@@ -301,17 +302,20 @@ class Satellite:
                                 print(f'Room task failed: {type(exc).__name__}; continuing claims', flush=True)
                     # Presence is independent of report spool/game threads.
                     # A failed pending report must remain visible to master.
-                    self.client.post('presence', {'satellite_id': self.id, 'metrics': self.metrics.snapshot()})
+                    self.client.post('presence', {'satellite_id': self.id, 'metrics': self.metrics.snapshot(),
+                                                  'worker_url': os.environ.get('RENDER_EXTERNAL_URL', '')})
                     self.master_seen = time.monotonic()
                     self.last_control_error = ''
                     if not self.flush_report() or len(active) >= capacity:
                         self.shutdown.wait(1 if active else config.POLL_SECONDS)
                         continue
                     reply = self.client.post('claim', {'satellite_id': self.id, 'capacity': capacity,
+                                                       'request_id': request_id,
                                                        'pool_protocol': 1,
                                                        'verify_protocol': 1,
                                                        'screen_protocol': 1,
                                                        'metrics': self.metrics.snapshot()})
+                    request_id = uuid.uuid4().hex
                     if reply.get('room'):
                         active.add(pool.submit(self.run_room, reply['room']))
                     else:

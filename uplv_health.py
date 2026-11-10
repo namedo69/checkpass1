@@ -16,7 +16,8 @@ def start_health(host, port, shutdown, version, token='', logs=None, status=None
                 if not token or not secrets.compare_digest(supplied, 'Bearer ' + token):
                     self.send_error(403)
                     return
-                body = json.dumps({'ok': True, 'logs': logs() if logs else []}).encode()
+                details = status() if status else {}
+                body = json.dumps({'ok': True, 'satellite_id': details.get('id'), 'logs': logs() if logs else []}).encode()
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self.send_header('Cache-Control', 'no-store')
