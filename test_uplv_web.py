@@ -13,6 +13,25 @@ from uplv_kientuong import PlayerSession
 
 
 class WebTests(unittest.TestCase):
+    def test_code_three_retries_existing_lv5_login(self):
+        from uplv_engine import Engine
+        engine = Engine.__new__(Engine)
+        engine.login_lock = threading.Lock()
+        engine.last_login = 0
+        error = RuntimeError('Garena từ chối yêu cầu, mã 3')
+        login = Mock(side_effect=[error, error, SimpleNamespace(sso_key='unused', open_id='unused', access_token='unused')])
+        engine.runtime = (None, None, login, lambda u: {'device_id': 'unused'}, None, None)
+        stop = Mock()
+        stop.is_set.return_value = False
+        stop.wait.return_value = False
+        web = Mock()
+        web.read.return_value = 12
+        with patch('uplv_kientuong.PlayerSession', return_value=web):
+            rows = engine.run({'accounts': [['u', 'p']], 'levels': [8], 'targets': [12], 'screen_only': True},
+                              stop, lambda *a: None, lambda *a: None)
+        self.assertEqual(login.call_count, 3)
+        self.assertTrue(rows[0][0])
+
     def test_preflight_routes_existing_and_missing_characters_without_tutorial(self):
         from uplv_engine import Engine
         for level in (0, 3, 5, 8, 12):

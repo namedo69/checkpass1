@@ -127,9 +127,22 @@ class Satellite:
                 if (not ok and progress.get(str(index), {}).get('stage') == 'WAIT_REPLACEMENT'
                         and results.get(str(index), {}).get('status') == 'failed'):
                     return  # The failed original is not merely pending on stop.
-                pending = stop.is_set() or error in ('pool_ready', 'pool_verifying', 'screen_ready', 'screen_wait')
+                failure_kind = ('login' if error.startswith('terminal_login:') else
+                                'create_character' if error.startswith('terminal_create_character:') else '')
+                pending = stop.is_set() or (not ok and not failure_kind)
+                if error:
+                    diagnostic = str(error)
+                    for account in room['accounts']:
+                        for secret in account:
+                            if secret:
+                                diagnostic = diagnostic.replace(secret, '[REDACTED]')
+                    diagnostic = re.sub(r'(?i)(bearer\s+|(?:password|token|sso_key|access_token)\s*[=:]\s*)\S+', r'\1[REDACTED]', diagnostic)
+                    item = progress.setdefault(str(index), {})
+                    item.setdefault('stage', 'VERIFYING' if pending else 'FAILED')
+                    if not item.get('detail'):
+                        item['detail'] = diagnostic[:400]
                 results[str(index)] = {'status': 'success' if ok else 'pending' if pending else 'failed',
-                                       'level_before': before, 'level_after': after,
+                                        'level_before': before, 'level_after': after, 'failure_kind': failure_kind,
                                         'verified': ok or error in ('pool_ready', 'screen_ready'),
                                         'idle': error in ('pool_ready', 'screen_ready'), 'screened': error == 'screen_ready'}
 
@@ -143,7 +156,8 @@ class Satellite:
         def replacement(index, row):
             request = {**base, 'request_id': uuid.uuid4().hex, 'slot': index,
                        'generation': versions[index], 'phase': 'preparation',
-                       'result': {'status': 'failed', 'level_before': row[1], 'level_after': row[2]}}
+                       'result': {'status': 'failed', 'level_before': row[1], 'level_after': row[2],
+                                  'failure_kind': 'login' if row[3].startswith('terminal_login:') else 'create_character' if row[3].startswith('terminal_create_character:') else ''}}
             while not stop.is_set() and not self.shutdown.is_set():
                 try:
                     # Serialize with heartbeat snapshot+send. A stale heartbeat

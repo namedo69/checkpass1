@@ -334,7 +334,10 @@ class GarenaTcpClient:
         if reply_command != command:
             raise GarenaError(f"Sai lệnh phản hồi Garena: {reply_command}")
         if result != 0:
-            raise GarenaError(f"Garena từ chối yêu cầu, mã {result}")
+            error = GarenaError(f"Garena từ chối yêu cầu, mã {result} (command=0x{command:X})")
+            error.code = result
+            error.command = command
+            raise error
         return reply
 
     def login(self, account: str, password: str) -> int:

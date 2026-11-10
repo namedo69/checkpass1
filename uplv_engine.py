@@ -49,30 +49,34 @@ class Engine:
                 cached = bundles.get(user.casefold())
             if cached is not None:
                 return cached
-            with self.login_lock:
-                delay = max(0, self.last_login + 0.6 - time.monotonic())
-                if stop.wait(delay):
-                    raise RuntimeError('Stopped')
-                self.last_login = time.monotonic()
-            # Serialize start times, not the entire network exchange.
-            bundle = login(user, password, device(user)['device_id'], timeout=20)
+            for attempt in range(3):
+                with self.login_lock:
+                    delay = max(0, self.last_login + 0.6 - time.monotonic())
+                    if stop.wait(delay):
+                        raise RuntimeError('Stopped')
+                    self.last_login = time.monotonic()
+                try:
+                    bundle = login(user, password, device(user)['device_id'], timeout=20)
+                    break
+                except Exception as exc:
+                    # Code 3 is an unclassified request rejection, not proof
+                    # of an invalid password. Keep retries bounded and spaced.
+                    code = getattr(exc, 'code', None)
+                    transient = code == 3 or any(word in str(exc).lower() for word in
+                        ('mã 3', 'timeout', 'timed out', 'connection', '429'))
+                    if not transient or attempt == 2:
+                        raise
+                    if stop.wait(3 * (attempt + 1)):
+                        raise RuntimeError('Stopped')
             with bundle_lock:
                 bundles[user.casefold()] = bundle
             return bundle
 
         def execute(user, password, target_level=5, progress_cb=None, debug_log=None, character_name=None):
             # Read actual CS profile; skip the optional web-profile request.
-            bundle = None
-            for attempt in range(3):
-                if stop.is_set():
-                    return False, 0, 0, 'Đã dừng'
-                try:
-                    bundle = authenticate(user, password)
-                    break
-                except Exception:
-                    if attempt == 2:
-                        raise
-                    stop.wait(2)
+            if stop.is_set():
+                return False, 0, 0, 'Đã dừng'
+            bundle = authenticate(user, password)
             with tempfile.TemporaryDirectory(prefix='uplv-') as temp:
                 token = Path(temp) / 'token.json'
                 token.write_text(json.dumps({'authToken': bundle.access_token, 'openId': bundle.open_id}), encoding='utf-8')
@@ -96,6 +100,14 @@ class Engine:
                     progress(index, f'[LEVEL] Lv{level}')
                     return True, level, level, ''
                 row = retry(execute, user, password, 5, stop, lambda message: progress(index, message))
+                if not row[0] and not stop.is_set():
+                    text = row[3].lower()
+                    login_failed = any(word in text for word in ('sai mật khẩu', '50004', 'bị khóa', 'banned'))
+                    creation_failed = row[2] == 0 and any(word in text for word in ('create-role', 'create_role', '_code_91103', '_code_91123'))
+                    if not (login_failed or creation_failed):
+                        progress(index, '[VERIFYING] Chuẩn bị chưa xong; giữ acc để tiếp tục: ' + row[3])
+                        return False, row[1], row[2], 'pool_verifying'
+                    row = (False, row[1], row[2], ('terminal_login: ' if login_failed else 'terminal_create_character: ') + row[3])
                 if row[0] or stop.is_set() or replacement is None:
                     return row
                 # execute/run_cs has returned and closed the preparation
@@ -170,6 +182,7 @@ class Engine:
             return run_five_batch(room['accounts'], room['target'], concurrency, stop,
                 prepare, authenticate, progress, mode=room['mode'], prepare_cards=True,
                 checkpoint_store=checkpoints(self.state_dir / 'rewards'), completed=completed,
+                require_idle={i for i, level in enumerate(room.get('levels', [])) if level >= 5},
                 web_verify=(lambda bundle, stop: PlayerSession(bundle.sso_key, bundle.open_id, stop))
                     if room['mode'] == 'victory' else None,
                 targets=room.get('targets'))

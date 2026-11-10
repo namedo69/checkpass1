@@ -154,6 +154,8 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
                                   UNRESOLVED + ': ' + str(exc))
                 progress(index, '[REGROUP] Lỗi phiên chuẩn bị; chờ kiểm tra lại từ pool chung')
             elif completed:
+                if targets and after >= 5:
+                    results[index] = (False, before, after, 'pool_verifying')
                 completed(index, results[index])
 
     try:
