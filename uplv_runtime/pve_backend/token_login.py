@@ -49,8 +49,12 @@ class GarenaConnectClient:
  def grant_code(self,sso_key):
   import time as _t
   form={'client_id':'100054','response_type':'code','redirect_uri':'gop100054://auth/','create_grant':'true','login_scenario':'normal','format':'json','id':str(int(_t.time()*1000))}
-  resp=self._post_form('/oauth/token/grant',form,cookie=f'sso_key={sso_key}')
-  return resp.get('code')
+   resp=self._post_form('/oauth/token/grant',form,cookie=f'sso_key={sso_key}')
+   if resp.get('error'):
+    error=str(resp['error'])
+    message=('Garena yêu cầu cấp quyền ứng dụng Liên Quân (error_require_grant)' if error=='error_require_grant' else 'Garena Connect grant rejected: '+error)
+    raise SsoLoginError(message,stage='grant')
+   return resp.get('code')
  def exchange_token(self,code,device_id):
   secret=self.client_secret or '027709b12673a3e18de16bf9b85723a2d55e9bffd3364aea67f176e533f69515'
   form={'grant_type':'authorization_code','code':code,'device_id':device_id,'redirect_uri':'gop100054://auth/','source':'2','client_id':'100054','client_secret':secret}

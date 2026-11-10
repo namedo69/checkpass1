@@ -19,6 +19,10 @@ from uplv_logs import RoomLogs
 VERSION = 'uplv-satellite-0.6.0'
 
 
+class RevokedLease(RuntimeError):
+    pass
+
+
 class Client:
     def __init__(self, url, token):
         self.url, self.token = url.rstrip('/'), token
@@ -28,8 +32,16 @@ class Client:
                                          json.dumps(body).encode(),
                                          {'Authorization': 'Bearer ' + self.token,
                                           'Content-Type': 'application/json'})
-        with urllib.request.urlopen(request, timeout=10) as response:
-            data = json.load(response)
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                data = json.load(response)
+        except urllib.error.HTTPError as exc:
+            if exc.code == 400:
+                payload = json.loads(exc.read().decode('utf-8'))
+                message = str(payload.get('error', ''))
+                if 'Lease không hợp lệ' in message or 'Stale slot versions' in message:
+                    raise RevokedLease('Lease revoked') from None
+            raise
         if not data.get('ok'):
             raise RuntimeError('Master rejected request')
         return data
@@ -54,7 +66,8 @@ class Metrics:
             except ImportError:
                 pass
         return {'rss_mb': round(rss, 2), 'cpu_percent': round(percent, 2),
-                'threads': threading.active_count(), 'uptime_seconds': int(now - self.started)}
+                 'threads': threading.active_count(), 'uptime_seconds': int(now - self.started),
+                 'capacity': max(1, min(4, int(getattr(config, 'MAX_ROOMS', 4))))}
 
 
 class Satellite:
@@ -180,6 +193,9 @@ class Satellite:
                             return reply['account']
                         progress[str(index)] = {'stage': 'WAIT_REPLACEMENT', 'level': row[2]}
                         results[str(index)] = dict(request['result'])
+                except RevokedLease:
+                    stop.set()
+                    return
                 except (OSError, ValueError, RuntimeError):
                     pass
                 stop.wait(15)
@@ -202,6 +218,9 @@ class Satellite:
                     if reply.get('stop'):
                         stop.set()
                     lease_deadline = time.monotonic() + max(0, reply['lease_until'] - time.time()) - 30
+                except RevokedLease:
+                    stop.set()
+                    break
                 except (OSError, ValueError, RuntimeError):
                     pass
                 done.wait(config.HEARTBEAT_SECONDS)
@@ -245,6 +264,9 @@ class Satellite:
                 try:
                     report = json.loads(checkpoint.read_text(encoding='utf-8'))
                     self.client.post('report', report)
+                    checkpoint.unlink()
+                except RevokedLease:
+                    # Retired ownership must never block every future claim.
                     checkpoint.unlink()
                 except (OSError, ValueError, RuntimeError):
                     ok = False
