@@ -424,6 +424,14 @@ def _lease_heartbeat_loop(client: _Client, active_chunk_stops: dict[int, threadi
             print(f"[satellite] heartbeat loi: {exc}", flush=True)
 
 
+def screening_task_id(check, row):
+    try:
+        index = int(row.get('stt', 0)) - 1
+    except (TypeError, ValueError):
+        return None
+    return check['accounts'][index]['task_id'] if 0 <= index < len(check['accounts']) else None
+
+
 def _worker_loop() -> None:
     tcp_module = tcp_ui.load_verified_tcp_module()
     client = _Client(MASTER_URL, MASTER_TOKEN)
@@ -459,11 +467,11 @@ def _worker_loop() -> None:
     def screen_uplv(check):
         """Use the CheckPass checker and its capacity, never UpLv rooms."""
         credentials = [api_test.BatchAccount(i, *item['account']) for i, item in enumerate(check['accounts'], 1)]
-        by_user = {item['account'][0].casefold(): item['task_id'] for item in check['accounts']}
         rows = []
         def result(row):
-            username = str(row.get('account', '')).casefold()
-            task = by_user.get(username)
+            # Checker may replace the submitted alias with Garena's canonical
+            # username. Its input index is stable; username is not ownership.
+            task = screening_task_id(check, row)
             if task is None:
                 return
             value = str(row.get('level', '')).strip()
