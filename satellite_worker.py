@@ -477,7 +477,10 @@ def _worker_loop() -> None:
             value = str(row.get('level', '')).strip()
             level = int(value) if value.isdigit() and 1 <= int(value) <= 30 else None
             rows.append({'task_id': task, 'level': level,
-                         'no_character': value.casefold() == 'ctnv' and row.get('player_status') == 'Chưa tạo nhân vật'})
+                         'no_character': value.casefold() == 'ctnv' and row.get('player_status') == 'Chưa tạo nhân vật',
+                         'check_status': str(row.get('status', ''))[:80],
+                         'check_result': str(row.get('result_type', ''))[:80],
+                         'check_error': str(row.get('error', ''))[:200]})
         try:
             api_test.run_batch_core(credentials, tcp_module, WORKERS, START_GAP, TIMEOUT,
                                     stop_event=threading.Event(), on_result=result)
