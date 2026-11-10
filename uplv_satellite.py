@@ -280,8 +280,14 @@ class Satellite:
                 try:
                     for future in list(active):
                         if future.done():
-                            future.result()
                             active.remove(future)
+                            try:
+                                future.result()
+                            except Exception as exc:
+                                # A failed finished task must not poison every
+                                # subsequent claim iteration. Its expired lease
+                                # is recovered by the master inspection queue.
+                                print(f'Room task failed: {type(exc).__name__}; continuing claims', flush=True)
                     if not self.flush_report() or len(active) >= capacity:
                         self.shutdown.wait(1 if active else config.POLL_SECONDS)
                         continue
