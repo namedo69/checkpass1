@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quản trị - CHECK.SP1S.SHOP</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg?v=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+:root{--primary:#e53935;--orange:#ea580c;--blue:#2563eb;--green:#059669;--red:#dc2626;--amber:#d97706;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--surface:#fff;--bg:#f8fafc;--radius:15px;--shadow:0 5px 20px rgba(15,23,42,.07)}
+*{box-sizing:border-box;margin:0;padding:0}body{background:radial-gradient(circle at 8% 8%,rgba(229,57,53,.05),transparent 32%),var(--bg);color:var(--ink);font:14px/1.5 Inter,system-ui,sans-serif;min-height:100vh}.navbar{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.94);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}.nav,.container{max-width:1380px;margin:auto;padding-left:20px;padding-right:20px}.nav{min-height:70px;display:flex;align-items:center;justify-content:space-between;gap:16px}.brand{display:flex;align-items:center;gap:11px}.brand-icon{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;color:#fff;background:linear-gradient(135deg,var(--primary),var(--orange));box-shadow:0 6px 15px rgba(229,57,53,.25)}.brand-name{font:800 19px 'Inter',system-ui,sans-serif}.brand-sub{font-size:11px;color:var(--muted);letter-spacing:.08em}.container{padding-top:24px;padding-bottom:45px}.hero{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:19px}.hero h1{font:800 28px 'Inter',system-ui,sans-serif}.hero p{color:var(--muted);margin-top:4px}.btn{border:0;border-radius:9px;padding:9px 14px;display:inline-flex;align-items:center;justify-content:center;gap:8px;font:600 13px Inter,sans-serif;cursor:pointer;transition:.15s}.btn:disabled{opacity:.55;cursor:not-allowed}.btn-primary{background:linear-gradient(135deg,var(--primary),var(--orange));color:#fff}.btn-blue{background:var(--blue);color:#fff}.btn-light{background:#fff;color:#334155;border:1px solid var(--line)}.btn:hover:not(:disabled){transform:translateY(-1px);filter:brightness(.98)}.grid{display:grid;grid-template-columns:minmax(320px,.72fr) minmax(500px,1.28fr);gap:18px;align-items:start}.settings-stack{display:grid;gap:18px}.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}.card-head{padding:18px 20px 15px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px}.card-title{font:700 17px 'Inter',system-ui,sans-serif;display:flex;align-items:center;gap:9px}.card-sub{font-size:12px;color:var(--muted);margin-top:3px}.card-body{padding:19px 20px}.field{margin-bottom:15px}.field label{display:flex;justify-content:space-between;font-weight:650;font-size:12px;margin-bottom:6px;color:#334155}.field small{font-weight:400;color:#94a3b8}.input,.textarea{width:100%;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;padding:10px 12px;color:var(--ink);font:13px Inter,sans-serif;outline:none}.textarea{resize:vertical;min-height:165px;line-height:1.55}.textarea.urls{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;min-height:134px}.input:focus,.textarea:focus{border-color:var(--orange);box-shadow:0 0 0 3px rgba(234,88,12,.1);background:#fff}.switch-row{display:flex;align-items:center;gap:9px;margin-bottom:16px;color:#334155;font-weight:600}.switch-row input{width:17px;height:17px;accent-color:var(--orange)}.actions{display:flex;gap:9px;flex-wrap:wrap}.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}.stat{border:1px solid var(--line);border-radius:11px;padding:11px;background:#f8fafc}.stat b{display:block;font:800 21px 'Inter',system-ui,sans-serif}.stat span{font-size:11px;color:var(--muted)}.stat.online b{color:var(--green)}.stat.offline b{color:var(--red)}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:11px}table{width:100%;border-collapse:collapse;min-width:870px}th{text-align:left;background:#f1f5f9;color:#475569;text-transform:uppercase;letter-spacing:.035em;font-size:10px;padding:10px}td{padding:11px 10px;border-top:1px solid var(--line);font-size:12px;vertical-align:top}tbody tr{cursor:pointer}tbody tr:hover{background:#fff7ed}.service{font-weight:700;color:#1e293b}.url{display:block;color:#94a3b8;font-size:10px;max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}.status{display:inline-flex;align-items:center;gap:6px;border-radius:99px;padding:3px 8px;font-weight:700;font-size:11px}.status.online{color:#047857;background:#d1fae5}.status.offline{color:#b91c1c;background:#fee2e2}.dot{width:6px;height:6px;border-radius:50%;background:currentColor}.err{max-width:225px;color:#b91c1c;word-break:break-word}.muted{color:var(--muted)}.detail{display:none;margin-top:14px}.detail.open{display:block}.detail pre{white-space:pre-wrap;word-break:break-word;background:#0f172a;color:#dbeafe;border-radius:11px;padding:14px;max-height:310px;overflow:auto;font:11px/1.5 ui-monospace,Consolas,monospace}.auth{max-width:470px;margin:10vh auto;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 20px 50px rgba(15,23,42,.13);padding:25px}.auth h2{font:800 23px 'Inter',system-ui,sans-serif;margin-bottom:7px}.auth p{color:var(--muted);margin-bottom:17px}.auth .actions{margin-top:13px}.hidden{display:none!important}.toast{position:fixed;right:20px;bottom:20px;z-index:100;background:#0f172a;color:#fff;border-radius:10px;padding:11px 15px;box-shadow:0 15px 35px rgba(15,23,42,.25);display:none;max-width:430px}.scan-status{color:var(--muted);font-size:12px}.spin{animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+.modal-backdrop{position:fixed;inset:0;z-index:90;background:rgba(15,23,42,.55);padding:20px;display:none;align-items:center;justify-content:center}.modal-backdrop.open{display:flex}.health-modal{width:min(850px,100%);max-height:90vh;background:#fff;border-radius:16px;box-shadow:0 25px 60px rgba(15,23,42,.3);overflow:hidden}.modal-head{padding:15px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px}.modal-head h2{font:700 17px 'Inter',system-ui,sans-serif}.modal-body{padding:16px}.modal-body pre{white-space:pre-wrap;word-break:break-word;background:#0f172a;color:#dbeafe;border-radius:11px;padding:15px;max-height:68vh;overflow:auto;font:12px/1.55 ui-monospace,Consolas,monospace}
+.textarea.code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;min-height:220px;font-size:12px}.textarea.css-code{min-height:145px}
+.service-editor-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.service-editor{border:1px solid var(--line);border-radius:12px;padding:13px;background:#f8fafc}.service-editor.vvip{border-color:#ddd6fe;background:#faf5ff}.service-editor .field{margin:0}.service-editor .textarea.urls{margin-top:6px;background:#fff}.filter-bar{display:flex;gap:7px;flex-wrap:wrap;margin:0 0 12px}.filter-btn.active{color:#fff;background:var(--blue);border-color:var(--blue)}.filter-btn.vvip.active{background:#7c3aed;border-color:#7c3aed}.btn-danger{color:#b91c1c;background:#fff;border:1px solid #fecaca}.row-actions{display:flex;gap:6px;white-space:nowrap}.row-actions .btn{padding:6px 8px;font-size:11px}
+@media(max-width:980px){.grid{grid-template-columns:1fr}.summary{grid-template-columns:repeat(2,1fr)}}@media(max-width:700px){.service-editor-grid{grid-template-columns:1fr}}@media(max-width:600px){.nav,.hero{align-items:flex-start;flex-direction:column}.nav{padding-top:12px;padding-bottom:12px}.hero h1{font-size:23px}.card-head{align-items:flex-start;flex-direction:column}.actions .btn{flex:1}.container{padding-left:12px;padding-right:12px}.summary{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<header class="navbar"><div class="nav"><div class="brand"><div class="brand-icon"><i class="fa-solid fa-fire-flame-curved"></i></div><div><div class="brand-name">CHECK.SP1S.SHOP</div><div class="brand-sub">MASTER ADMINISTRATION</div></div></div><button class="btn btn-light" onclick="location.href='/'"><i class="fa-solid fa-arrow-left"></i> Về trang Master</button></div></header>
+
+<main class="container">
+  <p style="margin-bottom:16px"><a class="btn btn-blue" href="/admin/uplv" id="uplvLink">🛰 Quản lý vệ tinh UpLv</a></p>
+  <section id="authPanel" class="auth hidden">
+    <h2><i class="fa-solid fa-shield-halved" style="color:var(--orange)"></i> Xác thực Admin</h2>
+    <p>Trang này chỉ chấp nhận Master Token, không chấp nhận license key thông thường.</p>
+    <input id="tokenInput" class="input" type="password" placeholder="Nhập MASTER_TOKEN" onkeydown="if(event.key==='Enter')login()">
+    <div class="actions"><button class="btn btn-primary" onclick="login()"><i class="fa-solid fa-right-to-bracket"></i> Đăng nhập</button><button class="btn btn-light" onclick="location.href='/'">Quay lại</button></div>
+  </section>
+
+  <section id="adminPanel" class="hidden">
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-head"><div><div class="card-title">🛰 Quản trị vệ tinh UpLv</div><div class="card-sub">Danh sách được master ping /healthz mỗi 120 giây, kể cả khi đóng trang.</div></div><a class="btn btn-blue" href="/admin/uplv">Job / phòng UpLv</a></div>
+      <div class="card-body"><label for="uplvTargets">Danh sách vệ tinh UpLv — mỗi dòng [tên] URL</label><textarea id="uplvTargets" class="textarea urls" spellcheck="false" placeholder="[UpLv 1] https://service.onrender.com"></textarea>
+      <div class="actions"><button class="btn btn-light" onclick="saveUplvTargets()">Lưu danh sách UpLv</button><button id="uplvPingBtn" class="btn btn-blue" onclick="pingUplvTargets()">Ping tất cả</button><label><input id="uplvAutoPing" type="checkbox" onchange="configureUplvPing()"> Tự quét 5 giây</label></div>
+      <p id="uplvPingStatus" class="muted"></p><div class="table-wrap"><table><thead><tr><th>Vệ tinh</th><th>URL</th><th>Trạng thái</th><th>Phiên bản</th><th>Độ trễ</th><th>Quản lý</th></tr></thead><tbody id="uplvHealthRows"></tbody></table></div></div>
+      <div class="card-body" style="border-top:1px solid var(--line)">
+        <div style="font-weight:800;color:var(--orange);margin-bottom:10px"><i class="fa-solid fa-bolt"></i> Chế độ CheckPass cho nhóm vệ tinh UpLv</div>
+        <div class="card-sub" style="margin-bottom:12px">Kích hoạt nhóm vệ tinh UpLv thực hiện CheckPass cho 1 job cụ thể. Vệ tinh UpLv sẽ ưu tiên claim chunk từ job được chỉ định.</div>
+        <div id="uplvCheckpassStatus" class="muted" style="margin-bottom:10px;font-size:13px">Đang tải...</div>
+        <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+          <div class="field" style="margin:0;flex:1;min-width:140px">
+            <label for="uplvCheckpassJobId">Job ID</label>
+            <input id="uplvCheckpassJobId" class="input" type="number" min="1" step="1" inputmode="numeric" placeholder="Nhập ID job cần check">
+          </div>
+          <button id="uplvCheckpassActivateBtn" class="btn btn-primary" onclick="activateUplvCheckpass()"><i class="fa-solid fa-bolt"></i> Kích hoạt CheckPass</button>
+          <button id="uplvCheckpassDeactivateBtn" class="btn btn-danger" onclick="deactivateUplvCheckpass()" style="display:none"><i class="fa-solid fa-stop"></i> Tắt CheckPass</button>
+        </div>
+      </div>
+    </div>
+    <div class="hero"><div><h1>Trung tâm quản trị</h1><p>Chỉnh thông báo hiển thị cho người dùng và theo dõi sức khỏe các VPS.</p></div><div class="scan-status" id="lastUpdated">Chưa quét sức khỏe</div></div>
+    <div class="grid">
+      <div class="settings-stack">
+      <div class="card">
+        <div class="card-head"><div><div class="card-title"><i class="fa-solid fa-gauge-high" style="color:var(--green)"></i> Giới hạn tạo job</div><div class="card-sub">Hàng đợi thường và VVIP có hạn mức độc lập.</div></div></div>
+        <div class="card-body">
+          <div class="service-editor-grid" style="margin-bottom:14px">
+            <div class="service-editor">
+              <div style="font-weight:800;color:var(--blue);margin-bottom:10px"><i class="fa-solid fa-layer-group"></i> JOB THƯỜNG</div>
+              <div class="field"><label for="maxRunningJobs">Job nhận tối đa <small>1–10.000</small></label><input id="maxRunningJobs" class="input" type="number" min="1" max="10000" step="1" inputmode="numeric"></div>
+              <div class="field"><label for="minAccountsPerJob">Tài khoản tối thiểu/job <small>1–999.999.999.999</small></label><input id="minAccountsPerJob" class="input" type="number" min="1" max="999999999999" step="1" inputmode="numeric"></div>
+              <div class="field"><label for="maxAccountsPerJob">Tài khoản tối đa/job <small>1–999.999.999.999</small></label><input id="maxAccountsPerJob" class="input" type="number" min="1" max="999999999999" step="1" inputmode="numeric"></div>
+              <div class="muted" id="jobLimitStatus" style="font-size:12px">Đang tải trạng thái...</div>
+            </div>
+            <div class="service-editor vvip">
+              <div style="font-weight:800;color:#7c3aed;margin-bottom:10px"><i class="fa-solid fa-crown"></i> JOB VVIP</div>
+              <div class="field"><label for="maxVvipRunningJobs">Job VVIP nhận tối đa <small>1–10.000</small></label><input id="maxVvipRunningJobs" class="input" type="number" min="1" max="10000" step="1" inputmode="numeric"></div>
+              <div class="field"><label for="minVvipAccountsPerJob">Tài khoản tối thiểu/job VVIP <small>1–999.999.999.999</small></label><input id="minVvipAccountsPerJob" class="input" type="number" min="1" max="999999999999" step="1" inputmode="numeric"></div>
+              <div class="field"><label for="maxVvipAccountsPerJob">Tài khoản tối đa/job VVIP <small>1–999.999.999.999</small></label><input id="maxVvipAccountsPerJob" class="input" type="number" min="1" max="999999999999" step="1" inputmode="numeric"></div>
+              <div class="muted" id="vvipJobLimitStatus" style="font-size:12px">Đang tải trạng thái...</div>
+            </div>
+          </div>
+          <button id="saveJobLimitBtn" class="btn btn-primary" onclick="saveJobLimit()"><i class="fa-solid fa-floppy-disk"></i> Lưu giới hạn</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><div class="card-title"><i class="fa-solid fa-bullhorn" style="color:var(--amber)"></i> Thông báo hệ thống</div><div class="card-sub">Nội dung này hiển thị trên trang Master cho tất cả người dùng.</div></div></div>
+        <div class="card-body">
+          <label class="switch-row"><input id="noticeEnabled" type="checkbox" checked> Hiển thị thông báo</label>
+          <div class="field"><label for="noticeHtml">HTML thông báo <small>chỉnh được cả nội dung và 3 nhãn bên dưới</small></label><textarea id="noticeHtml" class="textarea code" maxlength="20000" spellcheck="false"></textarea></div>
+          <div class="field"><label for="noticeCss">CSS thông báo <small>nên giới hạn selector trong #noticeBox</small></label><textarea id="noticeCss" class="textarea code css-code" maxlength="20000" spellcheck="false" placeholder="#noticeBox { ... }"></textarea></div>
+          <button id="saveNoticeBtn" class="btn btn-primary" onclick="saveNotice()"><i class="fa-solid fa-floppy-disk"></i> Lưu thông báo</button>
+        </div>
+      </div>
+
+      <div class="card" style="border-left: 4px solid var(--red);">
+        <div class="card-head">
+          <div>
+            <div class="card-title"><i class="fa-solid fa-triangle-exclamation" style="color:var(--red)"></i> Thông báo Modal (Khóa trang web)</div>
+            <div class="card-sub">Khi bật, người dùng chỉ thấy Modal này và toàn bộ trang web bị vô hiệu hóa.</div>
+          </div>
+          <span id="modalNoticeBadge" class="status offline" style="font-size:11px"><span class="dot"></span>Đang tắt</span>
+        </div>
+        <div class="card-body">
+          <label class="switch-row" style="color:var(--red);font-weight:700">
+            <input id="modalNoticeEnabled" type="checkbox" onchange="updateModalBadge()">
+            Bật thông báo Modal (Khóa &amp; vô hiệu hóa toàn bộ trang web)
+          </label>
+          <div class="field">
+            <label for="modalNoticeTitle">Tiêu đề Modal <small>chữ lớn trên đầu modal</small></label>
+            <input id="modalNoticeTitle" class="input" type="text" maxlength="200" placeholder="THÔNG BÁO TỪ HỆ THỐNG">
+          </div>
+          <div class="field">
+            <label for="modalNoticeHtml">Nội dung HTML Modal <small>hỗ trợ thẻ p, b, i, a, br... hiển thị giữa modal</small></label>
+            <textarea id="modalNoticeHtml" class="textarea code" style="min-height:150px" maxlength="50000" spellcheck="false" placeholder="<div style=&quot;text-align:center&quot;><p>Hệ thống đang tạm bảo trì để nâng cấp dịch vụ.<br>Vui lòng quay lại sau ít phút!</p></div>"></textarea>
+          </div>
+          <div class="actions">
+            <button id="saveModalNoticeBtn" class="btn btn-primary" onclick="saveModalNotice()"><i class="fa-solid fa-floppy-disk"></i> Lưu thông báo Modal</button>
+            <button class="btn btn-light" type="button" onclick="previewModalNotice()"><i class="fa-solid fa-eye"></i> Xem trước</button>
+          </div>
+        </div>
+      </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><div class="card-title"><i class="fa-solid fa-satellite-dish" style="color:var(--blue)"></i> Quản lý VPS thường và VVIP</div><div class="card-sub">Hai loại VPS dùng chung env; lệnh chạy quyết định hàng đợi nhận job.</div></div><div class="actions"><button id="toggleTargetEditorBtn" class="btn btn-light" type="button" aria-expanded="true" onclick="toggleTargetEditor()"><i id="toggleTargetEditorIcon" class="fa-solid fa-chevron-up"></i> <span id="toggleTargetEditorLabel">Ẩn danh sách</span></button><label class="switch-row" style="margin:0"><input id="autoScan" type="checkbox" checked onchange="configureAutoScan()"> Tự quét 5 giây</label></div></div>
+        <div class="card-body">
+          <div id="targetEditorPanel">
+            <div class="service-editor-grid">
+              <div class="service-editor"><div class="field"><label for="satelliteTargets"><span><i class="fa-solid fa-server" style="color:var(--blue)"></i> VPS thường</span><small>[tên] URL</small></label><textarea id="satelliteTargets" class="textarea urls" spellcheck="false"></textarea></div></div>
+              <div class="service-editor vvip"><div class="field"><label for="vvipSatelliteTargets"><span><i class="fa-solid fa-crown" style="color:#7c3aed"></i> VPS VVIP</span><small>service-liteselVVIP.py</small></label><textarea id="vvipSatelliteTargets" class="textarea urls" spellcheck="false"></textarea></div></div>
+            </div>
+            <div class="actions" style="margin-bottom:15px"><button id="saveTargetsBtn" class="btn btn-light" onclick="saveTargets()"><i class="fa-solid fa-floppy-disk"></i> Lưu danh sách</button></div>
+          </div>
+          <div class="actions" style="margin-bottom:15px"><button id="scanBtn" class="btn btn-blue" onclick="scanHealth()"><i class="fa-solid fa-rotate" id="scanIcon"></i> Quét ngay</button><button id="restartAllBtn" class="btn btn-light" onclick="restartAllTargets()"><i class="fa-solid fa-power-off" style="color:var(--amber)"></i> Restart tất cả</button></div>
+          <div class="summary"><div class="stat"><b id="normalCount">0</b><span>VPS thường</span></div><div class="stat online"><b id="normalOnline">0</b><span>Thường online</span></div><div class="stat" style="border-color:#ddd6fe"><b id="vvipCount" style="color:#7c3aed">0</b><span>VPS VVIP</span></div><div class="stat online"><b id="vvipOnline">0</b><span>VVIP online</span></div></div>
+          <div class="filter-bar"><button class="btn btn-light filter-btn active" data-filter="all" onclick="setHealthFilter('all')">Tất cả</button><button class="btn btn-light filter-btn" data-filter="normal" onclick="setHealthFilter('normal')">VPS thường</button><button class="btn btn-light filter-btn vvip" data-filter="vvip" onclick="setHealthFilter('vvip')"><i class="fa-solid fa-crown"></i> VPS VVIP</button><span class="muted" id="activeSummary" style="align-self:center;margin-left:auto"></span></div>
+          <div class="table-wrap"><table><thead><tr><th>Dịch vụ</th><th>Loại</th><th>Trạng thái</th><th>Phiên bản / Proxy</th><th>Chunk nhận / xong</th><th>Acc nhận / xong</th><th>Đang chạy</th><th>Độ trễ</th><th>Quản lý</th></tr></thead><tbody id="healthRows"><tr><td colspan="9" class="muted" style="text-align:center;padding:25px">Bấm Quét ngay để kiểm tra</td></tr></tbody></table></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+<div class="modal-backdrop" id="healthDetailModal" onclick="if(event.target===this)closeHealthDetail()">
+  <div class="health-modal" role="dialog" aria-modal="true" aria-labelledby="healthDetailTitle">
+    <div class="modal-head"><h2 id="healthDetailTitle"><i class="fa-solid fa-code" style="color:var(--blue)"></i> Phản hồi VPS</h2><button class="btn btn-light" onclick="closeHealthDetail()"><i class="fa-solid fa-xmark"></i> Đóng</button></div>
+    <div class="modal-body"><pre id="detailJson"></pre></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+let TOKEN=localStorage.getItem('licenseKey')||localStorage.getItem('masterToken')||'';
+let scanBusy=false,autoTimer=null,healthData=[],healthFilter='all';
+let uplvHealthData=[],uplvPingBusy=false,uplvPingTimer=null;
+async function loadUplvTargets(){const d=await request('/api/admin/uplv');$('uplvTargets').value=d.targets||'';}
+async function saveUplvTargets(){try{const d=await request('/api/admin/uplv/targets',{method:'POST',body:JSON.stringify({targets:$('uplvTargets').value})});$('uplvTargets').value=d.targets;toast('Đã lưu vệ tinh UpLv');await pingUplvTargets();}catch(e){toast(e.message);}}
+async function pingUplvTargets(url=''){if(uplvPingBusy)return;uplvPingBusy=true;$('uplvPingBtn').disabled=true;try{const d=await request('/api/admin/uplv/health',{method:'POST',body:JSON.stringify({url})});if(url){for(const item of d.satellites){const i=uplvHealthData.findIndex(x=>x.url===item.url);if(i>=0)uplvHealthData[i]=item;else uplvHealthData.push(item);}}else uplvHealthData=d.satellites||[];renderUplvHealth();$('uplvPingStatus').textContent='Đã ping '+new Date().toLocaleTimeString('vi-VN')+' · '+uplvHealthData.filter(x=>x.online).length+'/'+uplvHealthData.length+' online';}catch(e){toast(e.message);}finally{uplvPingBusy=false;$('uplvPingBtn').disabled=false;}}
+function renderUplvHealth(){$('uplvHealthRows').innerHTML=uplvHealthData.map((s,i)=>'<tr><td>'+esc(s.label)+'</td><td>'+esc(s.url)+'</td><td>'+esc(s.online?(s.type_mismatch?'Online · sai loại service':'Online'):'Offline')+'</td><td>'+esc(s.health?.version||'—')+'</td><td>'+esc(s.latency_ms??s.elapsed_ms??'—')+' ms</td><td><button class="btn btn-light" onclick="pingUplvTargets(uplvHealthData['+i+'].url)">Ping</button> <button class="btn btn-light" onclick="window.open(uplvHealthData['+i+'].url,\'_blank\',\'noopener,noreferrer\')">Mở</button> <button class="btn btn-danger" onclick="deleteUplvTarget('+i+')">Xóa</button></td></tr>').join('')||'<tr><td colspan="6">Chưa có vệ tinh UpLv; thêm URL rồi lưu.</td></tr>';}
+async function deleteUplvTarget(i){if(!confirm('Xóa '+uplvHealthData[i].label+' khỏi danh sách UpLv?'))return;removeTargetLine('uplvTargets',uplvHealthData[i].url);await saveUplvTargets();}
+function configureUplvPing(){clearInterval(uplvPingTimer);uplvPingTimer=null;if($('uplvAutoPing').checked)uplvPingTimer=setInterval(()=>{if(!document.hidden)pingUplvTargets();},5000);}
+async function loadUplvCheckpassMode(){try{const d=await request('/api/admin/uplv/checkpass-mode');updateUplvCheckpassUI(d);}catch(e){$('uplvCheckpassStatus').textContent='Lỗi: '+e.message;}}
+function updateUplvCheckpassUI(d){const active=d.active&&d.job_id;if(active){$('uplvCheckpassStatus').innerHTML='<span style="color:var(--green);font-weight:700"><i class="fa-solid fa-circle-check"></i> ĐANG HOẠT ĐỘNG</span> — Job #'+esc(String(d.job_id))+' ('+esc(d.job_status||'?')+', '+esc(String(d.job_total||'?'))+' acc)';$('uplvCheckpassJobId').value=d.job_id;$('uplvCheckpassActivateBtn').style.display='none';$('uplvCheckpassDeactivateBtn').style.display='';}else{$('uplvCheckpassStatus').innerHTML='<span style="color:var(--muted)"><i class="fa-solid fa-circle-xmark"></i> Chưa kích hoạt</span> — Nhập Job ID rồi bấm "Kích hoạt CheckPass"';$('uplvCheckpassActivateBtn').style.display='';$('uplvCheckpassDeactivateBtn').style.display='none';}}
+async function activateUplvCheckpass(){const jobId=$('uplvCheckpassJobId').value.trim();if(!jobId){toast('Vui lòng nhập Job ID');return;}const btn=$('uplvCheckpassActivateBtn');btn.disabled=true;try{const d=await request('/api/admin/uplv/checkpass-mode',{method:'POST',body:JSON.stringify({job_id:Number(jobId)})});toast(d.message||'Đã kích hoạt CheckPass');updateUplvCheckpassUI(d);}catch(e){toast(e.message);}finally{btn.disabled=false;}}
+async function deactivateUplvCheckpass(){if(!confirm('Tắt chế độ CheckPass cho nhóm vệ tinh UpLv?'))return;const btn=$('uplvCheckpassDeactivateBtn');btn.disabled=true;try{const d=await request('/api/admin/uplv/checkpass-mode',{method:'POST',body:JSON.stringify({job_id:null})});toast(d.message||'Đã tắt CheckPass');updateUplvCheckpassUI(d);}catch(e){toast(e.message);}finally{btn.disabled=false;}}
+const $=id=>document.getElementById(id);
+function esc(value){return String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
+function toast(message){const box=$('toast');box.textContent=message;box.style.display='block';clearTimeout(box._timer);box._timer=setTimeout(()=>box.style.display='none',3200);}
+function headers(){return {'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'};}
+async function request(path,options={}){const response=await fetch(path,{...options,headers:{...headers(),...(options.headers||{})}});const text=await response.text();let data;try{data=text?JSON.parse(text):{};}catch(_){data={ok:false,error:'Phản hồi không phải JSON'};}if(!response.ok||data.ok===false)throw new Error(data.error||('HTTP '+response.status));return data;}
+async function verify(){if(!TOKEN)return false;try{const data=await request('/api/verify');return data.is_admin===true;}catch(_){return false;}}
+async function login(){TOKEN=$('tokenInput').value.trim();if(!TOKEN){toast('Vui lòng nhập Master Token');return;}if(!await verify()){toast('Master Token không hợp lệ');return;}localStorage.setItem('masterToken',TOKEN);localStorage.setItem('licenseKey',TOKEN);showAdmin();}
+async function showAdmin(){$('authPanel').classList.add('hidden');$('adminPanel').classList.remove('hidden');try{await loadSettings();await loadUplvTargets();loadUplvCheckpassMode();pingUplvTargets();scanHealth();configureAutoScan();}catch(error){toast(error.message);}}
+async function boot(){if(await verify())showAdmin();else{$('tokenInput').value=TOKEN;$('authPanel').classList.remove('hidden');}}
+async function loadSettings(){const data=await request('/api/admin/settings');$('noticeEnabled').checked=data.notice.enabled!==false;$('noticeHtml').value=data.notice.html||'';$('noticeCss').value=data.notice.css||'';const mn=data.modal_notice||data.notice?.modal_notice||{};$('modalNoticeEnabled').checked=Boolean(mn.enabled);$('modalNoticeTitle').value=mn.title||'';$('modalNoticeHtml').value=mn.html||'';updateModalBadge();$('satelliteTargets').value=data.satellite_targets||'';$('vvipSatelliteTargets').value=data.vvip_satellite_targets||'';$('maxRunningJobs').value=Number(data.max_running_jobs)||10;$('minAccountsPerJob').value=Number(data.min_accounts_per_job)||1;$('maxAccountsPerJob').value=Number(data.max_accounts_per_job)||1000;$('maxVvipRunningJobs').value=Number(data.max_vvip_running_jobs)||10;$('minVvipAccountsPerJob').value=Number(data.min_vvip_accounts_per_job)||1;$('maxVvipAccountsPerJob').value=Number(data.max_vvip_accounts_per_job)||1000;$('jobLimitStatus').textContent='Đang chạy '+Number(data.running_jobs||0)+'/'+Number(data.max_running_jobs||10)+' · còn '+Number(data.available_job_slots||0)+' chỗ';$('vvipJobLimitStatus').textContent='Đang chạy '+Number(data.vvip_running_jobs||0)+'/'+Number(data.max_vvip_running_jobs||10)+' · còn '+Number(data.vvip_available_job_slots||0)+' chỗ';}
+function updateModalBadge(){const enabled=$('modalNoticeEnabled').checked;const badge=$('modalNoticeBadge');if(badge){badge.className='status '+(enabled?'online':'offline');badge.style.background=enabled?'#fee2e2':'';badge.style.color=enabled?'#b91c1c':'';badge.innerHTML=enabled?'<span class="dot" style="background:#dc2626"></span>ĐANG KHÓA WEB':'<span class="dot"></span>Đang tắt';}}
+async function saveModalNotice(){const button=$('saveModalNoticeBtn');button.disabled=true;try{await request('/api/admin/settings',{method:'POST',body:JSON.stringify({modal_notice:{enabled:$('modalNoticeEnabled').checked,title:$('modalNoticeTitle').value.trim(),html:$('modalNoticeHtml').value.trim()}})});updateModalBadge();toast('Đã lưu thông báo Modal');}catch(error){toast(error.message);}finally{button.disabled=false;}}
+function previewModalNotice(){const title=$('modalNoticeTitle').value.trim()||'THÔNG BÁO TỪ HỆ THỐNG';const html=$('modalNoticeHtml').value.trim()||'<div style="text-align:center"><p>Hệ thống đang tạm bảo trì để nâng cấp dịch vụ.<br>Trang web tạm thời bị khóa. Vui lòng quay lại sau!</p></div>';$('modalPreviewTitle').textContent=title;$('modalPreviewBody').innerHTML=html;$('modalNoticePreviewBackdrop').classList.add('open');document.body.style.overflow='hidden';}
+function closeModalNoticePreview(){$('modalNoticePreviewBackdrop').classList.remove('open');document.body.style.overflow='';}
+async function saveJobLimit(){const button=$('saveJobLimitBtn');const jobValue=Number($('maxRunningJobs').value);const minAccountValue=Number($('minAccountsPerJob').value);const accountValue=Number($('maxAccountsPerJob').value);const vvipJobValue=Number($('maxVvipRunningJobs').value);const minVvipAccountValue=Number($('minVvipAccountsPerJob').value);const vvipAccountValue=Number($('maxVvipAccountsPerJob').value);if(!Number.isInteger(jobValue)||jobValue<1||jobValue>10000){toast('Giới hạn job thường phải là số nguyên từ 1 đến 10.000');return;}if(!Number.isInteger(minAccountValue)||minAccountValue<1||minAccountValue>999999999999){toast('Số tài khoản tối thiểu/job thường phải từ 1 đến 999.999.999.999');return;}if(!Number.isInteger(accountValue)||accountValue<minAccountValue||accountValue>999999999999){toast('Số tài khoản tối đa/job thường phải từ mức tối thiểu đến 999.999.999.999');return;}if(!Number.isInteger(vvipJobValue)||vvipJobValue<1||vvipJobValue>10000){toast('Giới hạn job VVIP phải là số nguyên từ 1 đến 10.000');return;}if(!Number.isInteger(minVvipAccountValue)||minVvipAccountValue<1||minVvipAccountValue>999999999999){toast('Số tài khoản tối thiểu/job VVIP phải từ 1 đến 999.999.999.999');return;}if(!Number.isInteger(vvipAccountValue)||vvipAccountValue<minVvipAccountValue||vvipAccountValue>999999999999){toast('Số tài khoản tối đa/job VVIP phải từ mức tối thiểu đến 999.999.999.999');return;}button.disabled=true;try{await request('/api/admin/settings',{method:'POST',body:JSON.stringify({max_running_jobs:jobValue,min_accounts_per_job:minAccountValue,max_accounts_per_job:accountValue,max_vvip_running_jobs:vvipJobValue,min_vvip_accounts_per_job:minVvipAccountValue,max_vvip_accounts_per_job:vvipAccountValue})});await loadSettings();toast('Đã lưu giới hạn job thường và VVIP');}catch(error){toast(error.message);}finally{button.disabled=false;}}
+async function saveNotice(){const button=$('saveNoticeBtn');button.disabled=true;try{await request('/api/admin/settings',{method:'POST',body:JSON.stringify({notice:{enabled:$('noticeEnabled').checked,html:$('noticeHtml').value.trim(),css:$('noticeCss').value.trim()}})});toast('Đã lưu HTML/CSS thông báo');}catch(error){toast(error.message);}finally{button.disabled=false;}}
+async function saveTargets(){const button=$('saveTargetsBtn');button.disabled=true;try{await request('/api/admin/settings',{method:'POST',body:JSON.stringify({satellite_targets:$('satelliteTargets').value,vvip_satellite_targets:$('vvipSatelliteTargets').value})});await loadSettings();toast('Đã lưu danh sách service thường và VVIP');}catch(error){toast(error.message);}finally{button.disabled=false;}}
+async function persistTargets(message){await request('/api/admin/settings',{method:'POST',body:JSON.stringify({satellite_targets:$('satelliteTargets').value,vvip_satellite_targets:$('vvipSatelliteTargets').value})});toast(message);await scanHealth();}
+function serviceDisplayName(index){return 'VPS '+(Number(index)+1);}
+function targetBaseUrl(value){try{const url=new URL(value);return (url.origin+url.pathname).replace(/\/+$/,'').toLowerCase();}catch(_){return String(value||'').replace(/\/+$/,'').toLowerCase();}}
+function removeTargetLine(textareaId,targetUrl){const textarea=$(textareaId);const wanted=targetBaseUrl(targetUrl);textarea.value=textarea.value.split(/\r?\n/).filter(line=>{const match=line.match(/https?:\/\/[^\s)\]]+/i);return !match||targetBaseUrl(match[0])!==wanted;}).join('\n').trim();}
+async function deleteTarget(index){const item=healthData[index];if(!item||!confirm('Xóa '+item.label+' khỏi danh sách quản lý VPS?'))return;removeTargetLine(item.expected_service_type==='vvip'?'vvipSatelliteTargets':'satelliteTargets',item.url);try{await persistTargets('Đã xóa '+item.label+' khỏi danh sách');}catch(error){toast(error.message);}}
+function openTarget(index){const item=healthData[index];if(!item||!item.url)return;window.open(item.url,'_blank','noopener,noreferrer');}
+async function restartTarget(index,button){const item=healthData[index];if(!item||!item.online)return;if(!confirm('Restart service '+item.label+'? Chunk đang xử lý sẽ được Master giao lại sau khi hết lease.'))return;button.disabled=true;const icon=button.querySelector('i');icon.classList.add('spin');try{const data=await request('/api/admin/satellites/restart',{method:'POST',body:JSON.stringify({url:item.url})});toast(data.message||('Đã gửi lệnh restart tới '+item.label));setTimeout(scanHealth,4000);setTimeout(scanHealth,10000);}catch(error){toast('Không restart được '+item.label+': '+error.message);}finally{button.disabled=false;icon.classList.remove('spin');}}
+async function restartAllTargets(){if(!confirm('Restart toàn bộ service thường và VVIP? Các chunk đang xử lý sẽ được Master giao lại sau khi hết lease.'))return;const button=$('restartAllBtn');const icon=button.querySelector('i');button.disabled=true;icon.classList.add('spin');try{const data=await request('/api/admin/satellites/restart-all',{method:'POST',body:'{}'});toast((data.message||'Đã gửi lệnh restart tất cả')+(Number(data.failed||0)>0?' · thất bại '+Number(data.failed):''));setTimeout(scanHealth,4000);setTimeout(scanHealth,10000);}catch(error){toast('Không restart được tất cả vệ tinh: '+error.message);}finally{button.disabled=false;icon.classList.remove('spin');}}
+function setHealthFilter(filter){healthFilter=filter;document.querySelectorAll('.filter-btn').forEach(button=>button.classList.toggle('active',button.dataset.filter===filter));renderHealth();}
+function configureAutoScan(){if(autoTimer){clearInterval(autoTimer);autoTimer=null;}if($('autoScan').checked)autoTimer=setInterval(scanHealth,5000);}
+async function scanHealth(){if(scanBusy)return;scanBusy=true;$('scanBtn').disabled=true;$('scanIcon').classList.add('spin');try{const data=await request('/api/admin/satellites/health',{method:'POST',body:JSON.stringify({satellite_targets:$('satelliteTargets').value,vvip_satellite_targets:$('vvipSatelliteTargets').value})});healthData=data.satellites||[];renderHealth();$('lastUpdated').textContent='Đã quét '+new Date((data.checked_at||Date.now()/1000)*1000).toLocaleTimeString('vi-VN')+' · thường '+Number(data.normal_online||0)+' online · VVIP '+Number(data.vvip_online||0)+' online';}catch(error){toast('Không quét được: '+error.message);}finally{scanBusy=false;$('scanBtn').disabled=false;$('scanIcon').classList.remove('spin');}}
+function renderHealth(){const normal=healthData.filter(item=>item.expected_service_type!=='vvip');const vvip=healthData.filter(item=>item.expected_service_type==='vvip');$('normalCount').textContent=normal.length;$('normalOnline').textContent=normal.filter(item=>item.online).length;$('vvipCount').textContent=vvip.length;$('vvipOnline').textContent=vvip.filter(item=>item.online).length;const normalActive=normal.reduce((sum,item)=>sum+Number(item.health?.chunks_active||0),0);const vvipActive=vvip.reduce((sum,item)=>sum+Number(item.health?.chunks_active||0),0);$('activeSummary').textContent='Chunk đang chạy: thường '+normalActive+' · VVIP '+vvipActive;const rows=healthData.map((item,index)=>({item,index})).filter(entry=>healthFilter==='all'||entry.item.expected_service_type===healthFilter);const body=$('healthRows');if(!rows.length){body.innerHTML='<tr><td colspan="9" class="muted" style="text-align:center;padding:25px">Không có VPS trong nhóm này</td></tr>';return;}body.innerHTML=rows.map(({item,index})=>{const h=item.health||{};const isVvip=item.expected_service_type==='vvip';const type=isVvip?'VVIP':'THƯỜNG';const typeColor=isVvip?'#7c3aed':'#2563eb';const typeBadge='<span style="font-weight:800;color:'+typeColor+'">'+type+'</span>'+(item.type_mismatch?'<br><small style="color:#dc2626">Sai loại service</small>':'');const status=item.online?'<span class="status online"><span class="dot"></span>Online</span>':'<span class="status offline"><span class="dot"></span>Offline</span>';const version=[h.version,h.proxy].filter(Boolean).map(esc).join('<br>')||'-';const openButton='<button class="btn btn-light" title="Truy cập vệ tinh" '+(item.url?'':'disabled')+' onclick="event.stopPropagation();openTarget('+index+')"><i class="fa-solid fa-arrow-up-right-from-square" style="color:var(--blue)"></i></button>';return '<tr onclick="showDetail('+index+')"><td><span class="service">'+serviceDisplayName(index)+'</span></td><td>'+typeBadge+'</td><td>'+status+'</td><td>'+version+'</td><td>'+Number(h.chunks_claimed||0)+' / '+Number(h.chunks_completed||0)+'</td><td>'+Number(h.accounts_claimed||0)+' / '+Number(h.accounts_completed||0)+'</td><td>'+Number(h.chunks_active||0)+'</td><td>'+Number(item.latency_ms||0)+' ms</td><td><div class="row-actions"><button class="btn btn-light" title="Xem phản hồi" onclick="event.stopPropagation();showDetail('+index+')"><i class="fa-solid fa-code"></i></button>'+openButton+'<button class="btn btn-danger" title="Xóa VPS" onclick="event.stopPropagation();deleteTarget('+index+')"><i class="fa-solid fa-trash"></i></button></div></td></tr>';}).join('');}
+function showDetail(index){const item=healthData[index];if(!item)return;$('healthDetailTitle').innerHTML='<i class="fa-solid fa-code" style="color:var(--blue)"></i> Phản hồi: '+esc(item.label);$('detailJson').textContent=JSON.stringify(item,null,2);$('healthDetailModal').classList.add('open');document.body.style.overflow='hidden';}
+function closeHealthDetail(){$('healthDetailModal').classList.remove('open');document.body.style.overflow='';}
+function setTargetEditorCollapsed(collapsed){$('targetEditorPanel').classList.toggle('hidden',collapsed);$('toggleTargetEditorBtn').setAttribute('aria-expanded',collapsed?'false':'true');$('toggleTargetEditorIcon').className='fa-solid '+(collapsed?'fa-chevron-down':'fa-chevron-up');$('toggleTargetEditorLabel').textContent=collapsed?'Hiện danh sách':'Ẩn danh sách';localStorage.setItem('adminVpsEditorCollapsed',collapsed?'1':'0');}
+function toggleTargetEditor(){setTargetEditorCollapsed(!$('targetEditorPanel').classList.contains('hidden'));}
+document.addEventListener('keydown',event=>{if(event.key==='Escape')closeHealthDetail();});
+setTargetEditorCollapsed(localStorage.getItem('adminVpsEditorCollapsed')==='1');
+boot();
+</script>
+<div class="modal-backdrop" id="modalNoticePreviewBackdrop" onclick="if(event.target===this)closeModalNoticePreview()">
+  <div class="health-modal" style="max-width:540px;background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:18px;overflow:hidden">
+    <div class="modal-head" style="background:#1e293b;border-bottom:1px solid #334155">
+      <h2 style="color:#f59e0b;display:flex;align-items:center;gap:8px"><i class="fa-solid fa-triangle-exclamation"></i> <span id="modalPreviewTitle">THÔNG BÁO TỪ HỆ THỐNG</span></h2>
+      <button class="btn btn-light" type="button" onclick="closeModalNoticePreview()" style="padding:4px 10px;font-size:12px"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body" style="padding:22px">
+      <div id="modalPreviewBody" style="font-size:14px;line-height:1.6;color:#e2e8f0"></div>
+      <div style="margin-top:20px;padding:9px 12px;border-radius:8px;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;font-size:12px;text-align:center">
+        <i class="fa-solid fa-lock"></i> Trên trang người dùng, toàn bộ trang web sẽ bị vô hiệu hóa; modal này không có nút đóng.
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

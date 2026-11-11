@@ -1410,7 +1410,7 @@ def _batch_worker(
 def run_batch(args: argparse.Namespace) -> int:
     import garena_tcp_rate_limit_probe as batch_helpers
 
-    credentials = batch_helpers.load_credentials(args.file.resolve(), limit=1_000_000)
+    credentials = batch_helpers.load_credentials(args.file.resolve(), limit=999999999999)
     tcp_module = tcp_ui.load_verified_tcp_module()
 
     print(

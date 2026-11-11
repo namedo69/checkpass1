@@ -1,0 +1,698 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quản trị UpLv - CHECK.SP1S.SHOP</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg?v=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+:root{--primary:#e53935;--orange:#ea580c;--blue:#2563eb;--green:#059669;--red:#dc2626;--amber:#d97706;--purple:#7c3aed;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--surface:#fff;--bg:#f8fafc;--radius:15px;--shadow:0 5px 20px rgba(15,23,42,.07)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:radial-gradient(circle at 8% 8%,rgba(229,57,53,.05),transparent 32%),var(--bg);color:var(--ink);font:14px/1.5 Inter,system-ui,sans-serif;min-height:100vh}
+.navbar{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.94);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.nav,.container{width:100%;max-width:none;margin:auto;padding-left:24px;padding-right:24px}
+.nav{min-height:70px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.brand{display:flex;align-items:center;gap:11px}
+.brand-icon{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;color:#fff;background:linear-gradient(135deg,var(--primary),var(--orange));box-shadow:0 6px 15px rgba(229,57,53,.25)}
+.brand-name{font:800 19px 'Inter',system-ui,sans-serif}
+.brand-sub{font-size:11px;color:var(--muted);letter-spacing:.08em}
+.container{padding-top:24px;padding-bottom:50px}
+.hero{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:20px}
+.hero h1{font:800 28px 'Inter',system-ui,sans-serif}
+.hero p{color:var(--muted);margin-top:4px}
+.btn{border:0;border-radius:9px;padding:9px 14px;display:inline-flex;align-items:center;justify-content:center;gap:8px;font:600 13px Inter,sans-serif;cursor:pointer;transition:.15s}
+.btn:disabled{opacity:.55;cursor:not-allowed}
+.btn-primary{background:linear-gradient(135deg,var(--primary),var(--orange));color:#fff}
+.btn-blue{background:var(--blue);color:#fff}
+.btn-green{background:var(--green);color:#fff}
+.btn-light{background:#fff;color:#334155;border:1px solid var(--line)}
+.btn-danger{color:#b91c1c;background:#fff;border:1px solid #fecaca}
+.btn:hover:not(:disabled){transform:translateY(-1px);filter:brightness(.98)}
+.btn-danger:hover:not(:disabled){background:#fee2e2}
+.grid{display:grid;grid-template-columns:360px 1fr;gap:20px;align-items:start}
+.stack{display:grid;gap:20px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+.card-head{padding:18px 20px 15px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px;background:linear-gradient(180deg,#fff,#fcfdfe)}
+.card-title{font:800 15px 'Inter',system-ui,sans-serif;display:flex;align-items:center;gap:9px}
+.card-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.card-body{padding:20px}
+.field{margin-bottom:14px}
+.field label{display:flex;align-items:center;justify-content:space-between;font-weight:600;font-size:12px;color:#334155;margin-bottom:6px}
+.field small{font-weight:400;color:var(--muted)}
+.input,.select,.textarea{width:100%;font:inherit;padding:10px 12px;border-radius:9px;border:1px solid var(--line);background:#f8fafc;color:var(--ink);transition:.15s}
+.input:focus,.select:focus,.textarea:focus{outline:0;border-color:var(--blue);background:#fff;box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+.textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;min-height:95px;resize:vertical}
+.textarea.large{min-height:140px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.table-wrap{overflow:auto;border-radius:10px;border:1px solid var(--line);background:#fff}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:11px 13px;text-align:left;border-bottom:1px solid var(--line);vertical-align:middle}
+th{background:#f8fafc;font-weight:700;color:#475569;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em}
+tr:last-child td{border-bottom:0}
+tbody tr:hover{background:#f8fafc}
+.status{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:700}
+.status.online{color:var(--green);background:#ecfdf5}
+.status.offline{color:var(--red);background:#fee2e2}
+.status.warn{color:var(--amber);background:#fef3c7}
+.status.blue{color:var(--blue);background:#eff6ff}
+.dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+.badge{display:inline-block;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700}
+.badge-pill{padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700}
+.badge-success{background:#ecfdf5;color:var(--green)}
+.badge-failed{background:#fee2e2;color:var(--red)}
+.badge-pending{background:#eff6ff;color:var(--blue)}
+.badge-warn{background:#fef3c7;color:var(--amber)}
+.badge-muted{background:#f1f5f9;color:var(--muted)}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px}
+.stat-box{padding:12px;border:1px solid var(--line);border-radius:10px;background:#f8fafc}
+.stat-box.highlight{background:#eff6ff;border-color:#bfdbfe}
+.stat-num{font:800 22px 'Inter',system-ui,sans-serif;color:var(--ink);line-height:1.2}
+.stat-num.good{color:var(--green)}
+.stat-num.bad{color:var(--red)}
+.stat-num.warn{color:var(--amber)}
+.stat-lbl{font-size:11px;font-weight:600;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.03em}
+.job-card{border:1px solid var(--line);border-radius:12px;padding:16px;background:#fff;margin-bottom:14px;transition:.15s}
+.job-card.active{border-color:var(--blue);box-shadow:0 0 0 2px rgba(37,99,235,.15)}
+.progress-bar{height:8px;border-radius:999px;background:#e2e8f0;overflow:hidden;margin:10px 0}
+.progress-val{height:100%;background:linear-gradient(90deg,var(--blue),var(--green));transition:.3s width}
+.rooms-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.room-card{padding:13px;border-radius:10px;border:1px solid var(--line);background:#f8fafc}
+.room-card.running{border-color:#93c5fd;background:#eff6ff}
+.room-user{display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:12px;border-bottom:1px dashed #e2e8f0}
+.room-user:last-child{border-bottom:0}
+.muted{color:var(--muted)}
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.toolbar .input,.toolbar .select{width:auto;min-width:180px}
+.modal-backdrop{position:fixed;inset:0;z-index:90;background:rgba(15,23,42,.55);padding:20px;display:none;align-items:center;justify-content:center}
+.modal-backdrop.open{display:flex}
+.modal{width:min(700px,100%);max-height:90vh;background:#fff;border-radius:16px;box-shadow:0 25px 60px rgba(15,23,42,.3);overflow:hidden;display:flex;flex-direction:column}
+.modal-head{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+.modal-body{padding:20px;overflow:auto}
+.modal-body pre{white-space:pre-wrap;word-break:break-word;background:#0f172a;color:#dbeafe;border-radius:10px;padding:14px;font:12px/1.55 ui-monospace,Consolas,monospace;max-height:55vh;overflow:auto}
+.toast{position:fixed;bottom:20px;right:20px;z-index:99;background:var(--ink);color:#fff;padding:12px 18px;border-radius:10px;box-shadow:0 10px 25px rgba(0,0,0,.25);font-weight:600;font-size:13px;display:none}
+.limits-card{margin-bottom:20px}.limits-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.limit-field{padding:18px;border:1px solid var(--line);border-radius:12px;background:#f8fafc}.limit-field .field{margin:0}.limit-icon{display:inline-grid;place-items:center;width:32px;height:32px;border-radius:9px;margin-bottom:12px;background:#eff6ff;color:var(--blue)}.limit-field:nth-child(2) .limit-icon{background:#faf5ff;color:var(--purple)}.limit-field:nth-child(3) .limit-icon{background:#fff7ed;color:var(--orange)}.limit-field .input{background:#fff;font-size:21px;font-weight:750;font-variant-numeric:tabular-nums;margin:4px 0 9px}.limit-help{font-size:12px;color:var(--muted);line-height:1.6}.limits-footer{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:18px}.limits-feedback{font-size:12px;color:var(--muted)}.limits-feedback.success{color:var(--green)}.limits-feedback.error{color:var(--red)}@media(max-width:800px){.limits-grid{grid-template-columns:1fr}.limits-footer .btn{width:100%}}
+@media(max-width:1080px){.grid{grid-template-columns:1fr}}
+@media(max-width:640px){.nav,.hero{flex-direction:column;align-items:flex-start}.hero h1{font-size:22px}.container{padding-left:14px;padding-right:14px}}
+</style>
+</head>
+<body>
+<header class="navbar"><div class="nav"><div class="brand"><div class="brand-icon"><i class="fa-solid fa-satellite-dish"></i></div><div><div class="brand-name">UPLV ADMINISTRATION</div><div class="brand-sub">CHECK.SP1S.SHOP &middot; STANDALONE CLUSTER</div></div></div><button class="btn btn-light" onclick="location.href='/admin'"><i class="fa-solid fa-arrow-left"></i> Về Quản Trị Chung</button></div></header>
+
+<main class="container">
+  <section class="card limits-card" aria-labelledby="limitsTitle">
+    <div class="card-head"><div><h2 id="limitsTitle" class="card-title"><i class="fa-solid fa-sliders" style="color:var(--blue)" aria-hidden="true"></i> Hạn mức đơn UpLv</h2><p class="card-sub">Quản lý số tài khoản và số đơn khách hàng có thể gửi vào hệ thống.</p></div><a class="btn btn-light" href="/uplv"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i> Trang khách hàng</a></div>
+    <div class="card-body">
+      <div class="limits-grid">
+        <div class="limit-field"><span class="limit-icon"><i class="fa-solid fa-users" aria-hidden="true"></i></span><div class="field"><label for="userMaxAccounts">Tài khoản tối đa / đơn</label><input id="userMaxAccounts" class="input" type="number" min="1" max="100000" step="1" value="1000" aria-describedby="accountsLimitHelp"><p id="accountsLimitHelp" class="limit-help">Số acc tối đa khách được nhập trong một đơn UpLv.</p></div></div>
+        <div class="limit-field"><span class="limit-icon"><i class="fa-solid fa-user-check" aria-hidden="true"></i></span><div class="field"><label for="userMaxJobs">Đơn đang mở / khách hàng</label><input id="userMaxJobs" class="input" type="number" min="1" max="100000" step="1" value="1" aria-describedby="userJobsLimitHelp"><p id="userJobsLimitHelp" class="limit-help">Số đơn chưa kết thúc được phép tồn tại cùng lúc của mỗi khách.</p></div></div>
+        <div class="limit-field"><span class="limit-icon"><i class="fa-solid fa-layer-group" aria-hidden="true"></i></span><div class="field"><label for="systemMaxJobs">Đơn đang mở / toàn hệ thống</label><input id="systemMaxJobs" class="input" type="number" min="1" max="100000" step="1" value="20" aria-describedby="systemJobsLimitHelp"><p id="systemJobsLimitHelp" class="limit-help">Ngừng nhận đơn khách mới khi tổng số đơn đang mở đạt mức này.</p></div></div>
+      </div>
+      <div class="limits-footer"><p class="limit-help">Áp dụng khi khách tạo đơn tại <strong>/uplv</strong>. Số ô phòng được cấu hình riêng bên dưới.</p><div class="actions"><span id="userLimitsFeedback" class="limits-feedback" role="status" aria-live="polite"></span><button id="saveUserLimitsBtn" class="btn btn-primary" onclick="saveUserLimits()"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Lưu hạn mức</button></div></div>
+    </div>
+  </section>
+  <div class="actions" style="justify-content:flex-end;margin-bottom:12px"><span id="clearDataStatus" class="muted" role="status"></span><button id="clearDataBtn" class="btn btn-danger" onclick="clearUplvData()"><i class="fa-solid fa-trash-can"></i> Clear Dữ Liệu UpLv</button></div>
+  <div class="hero"><div><h1>Điều Phối UpLv Standalone</h1><p>Hệ thống tự động screening Kiện Tướng, phân phối ô phòng cố định và đối soát kết quả sau trận.</p></div><div class="actions"><span id="lastUpdated" class="muted" style="font-size:12px">Chưa kết nối</span><button class="btn btn-blue" onclick="refresh()"><i class="fa-solid fa-rotate"></i> Làm Mới</button></div></div>
+
+  <div class="grid">
+    <!-- CỘT TRÁI: CẤU HÌNH & TẠO JOB -->
+    <div class="stack">
+      <div class="card">
+        <div class="card-head"><div><div class="card-title"><i class="fa-solid fa-key" style="color:var(--orange)"></i> Xác Thực Master</div><div class="card-sub">Dùng MASTER_TOKEN để điều khiển cụm.</div></div></div>
+        <div class="card-body">
+          <div class="field"><label for="tokenInput">Master Token</label><input id="tokenInput" class="input" type="password" placeholder="Nhập MASTER_TOKEN" onkeydown="if(event.key==='Enter')saveToken()"></div>
+          <button class="btn btn-primary" style="width:100%" onclick="saveToken()"><i class="fa-solid fa-plug"></i> Kết Nối Master</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><div class="card-title"><i class="fa-solid fa-layer-group" style="color:var(--blue)"></i> Ô Phòng Toàn Cụm</div><div class="card-sub">Số slot phòng cố định; dùng chung qua các lượt.</div></div></div>
+        <div class="card-body">
+          <div class="field"><label for="maxRooms">Số ô phòng tối đa <small>1–1.000</small></label><input id="maxRooms" class="input" type="number" min="0" max="1000" value="10"></div>
+          <button class="btn btn-light" style="width:100%;margin-bottom:12px" onclick="savePoolLimit()"><i class="fa-solid fa-floppy-disk"></i> Lưu Số Ô Phòng</button>
+          <div id="poolSummary" class="muted" style="font-size:12px;margin-bottom:8px">Đang tải trạng thái slot...</div>
+          <div id="poolGroups" style="font-size:11.5px;color:#475569"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><div class="card-title"><i class="fa-solid fa-circle-plus" style="color:var(--green)"></i> Giao Việc Mới</div><div class="card-sub">Nhập acc tùy ý; tự động check và ghép đội.</div></div></div>
+        <div class="card-body">
+          <div class="field"><label for="targetInput">Cấp mục tiêu</label><input id="targetInput" class="input" type="number" min="6" max="30" value="12"></div>
+          <div class="field"><label for="modeSelect">Chế độ kết thúc</label>
+            <select id="modeSelect" class="select"><option value="victory">WIN (190s)</option><option value="defeat">LOST (190s)</option><option value="surrender">Đầu hàng (360s)</option></select>
+          </div>
+          <div class="field"><label for="accountsInput">Danh sách tài khoản <small>user|pass</small></label><textarea id="accountsInput" class="textarea large" placeholder="user|pass&#10;user2|pass2&#10;Mỗi dòng một tài khoản, số lượng bất kỳ"></textarea></div>
+          <div class="field"><label for="reservesInput">Acc bổ sung (nếu có)</label><textarea id="reservesInput" class="textarea" placeholder="user|pass (tùy chọn)"></textarea></div>
+          <button id="createJobBtn" class="btn btn-primary" style="width:100%" onclick="createJob()"><i class="fa-solid fa-paper-plane"></i> Bắt Đầu Nâng Cấp</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- CỘT PHẢI: QUẢN LÝ VỆ TINH, JOBS, TIẾN ĐỘ VÀ BẢNG ACC -->
+    <div class="stack">
+      <!-- VỆ TINH ONLINE -->
+      <div class="card">
+        <div class="card-head"><div><div class="card-title"><i class="fa-solid fa-server" style="color:var(--blue)"></i> Cụm vệ tinh UpLv</div><div class="card-sub">Tối đa 5 phòng / 25 acc mỗi worker.</div></div><button class="btn btn-blue" onclick="openModal('workersModal')"><i class="fa-solid fa-server"></i> Quản lý worker</button></div>
+        <div class="card-body"><div id="workerSummary" class="actions" role="status"><span class="muted">Chưa kết nối master</span></div></div>
+      </div>
+
+      <div class="modal-backdrop" id="workersModal" onclick="if(event.target===this)closeModal('workersModal')"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="workersTitle" style="width:min(1250px,calc(100vw - 32px))">
+        <div class="modal-head"><div><h2 id="workersTitle" class="card-title"><i class="fa-solid fa-server" style="color:var(--blue)"></i> Quản lý worker UpLv</h2><p class="card-sub">Trạng thái theo heartbeat về master; số liệu worker offline là lần ghi nhận cuối.</p></div><button class="btn btn-light" onclick="closeModal('workersModal')" aria-label="Đóng danh sách worker"><i class="fa-solid fa-xmark"></i> Đóng</button></div>
+        <div class="modal-body"><div class="toolbar"><input id="workerSearch" class="input" placeholder="Tìm Worker ID…" aria-label="Tìm worker" oninput="renderWorkerRows()"><select id="workerFilter" class="select" aria-label="Lọc trạng thái worker" onchange="renderWorkerRows()"><option value="all">Tất cả trạng thái</option><option value="online">Online</option><option value="offline">Offline</option><option value="paused">Tạm ngưng nhận việc</option></select><button class="btn btn-light" onclick="refresh()"><i class="fa-solid fa-rotate"></i> Làm mới</button><span id="workerFilterCount" class="muted"></span></div>
+        <div class="card-body" style="padding:0">
+          <div class="table-wrap" style="border:0;border-radius:0">
+            <table>
+              <thead><tr><th>Worker ID</th><th>Trạng Thái</th><th>RAM / CPU / Threads</th><th>Thao Tác</th></tr></thead>
+              <tbody id="satellitesRows"><tr><td colspan="4" class="muted" style="text-align:center;padding:24px">Chưa có kết nối tới Master</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div></div></div>
+
+      <!-- DASHBOARD JOBS -->
+      <div class="card">
+        <div class="card-head"><div><div class="card-title"><i class="fa-solid fa-chart-pie" style="color:var(--purple)"></i> Tiến Độ Công Việc</div><div class="card-sub">Tỷ lệ hoàn thành thực tế sau xác minh Kiện Tướng.</div></div></div>
+        <div class="card-body">
+          <div id="jobDashboard"><p class="muted">Đang tải danh sách công việc...</p></div>
+        </div>
+      </div>
+
+      <!-- BẢNG CHI TIẾT TÀI KHOẢN CỦA JOB CHỌN -->
+      <div id="accountModalList" class="modal-backdrop" onclick="if(event.target===this)closeModal('accountModalList')"><div class="modal" style="width:calc(100vw - 48px);max-width:none;max-height:94vh"><div id="accountSection" class="card" style="display:none;border:0;box-shadow:none;overflow:auto">
+        <div class="card-head"><div><div class="card-title"><i class="fa-solid fa-users" style="color:var(--blue)"></i> Tài Khoản Job <span id="accountJobId" style="color:var(--blue)"></span></div><div class="card-sub">Xem bước chuẩn bị, tiến độ phòng và thời gian trận thực tế.</div></div>
+          <div class="actions"><button class="btn btn-light" onclick="loadAccounts()"><i class="fa-solid fa-rotate"></i> Tải Lại</button><button class="btn btn-light" onclick="closeModal('accountModalList')"><i class="fa-solid fa-xmark"></i> Đóng</button></div>
+        </div>
+        <div class="card-body">
+          <div class="toolbar">
+            <input id="accountSearch" class="input" placeholder="Tìm kiếm tên tài khoản..." oninput="scheduleAccounts()">
+            <select id="accountStatus" class="select" onchange="accountPage=1;loadAccounts()">
+              <option value="">Tất cả trạng thái</option>
+              <option value="screening">Chờ check Kiện Tướng</option>
+              <option value="waiting">Chờ chuẩn bị Lv5</option>
+              <option value="assigned">Đang trong phòng xử lý</option>
+              <option value="ready">Chờ ghép đội cùng cấp</option>
+              <option value="verifying">Chờ đối soát sau trận</option>
+              <option value="success">Đã đạt cấp mục tiêu</option>
+              <option value="failed">Lỗi</option>
+              <option value="stopped">Đã dừng</option>
+            </select>
+            <span id="accountFilterCount" class="muted" style="font-size:12px;margin-left:auto">0 tài khoản</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Tài Khoản</th><th>Cấp Độ</th><th>Trạng Thái</th><th>Bước Xử Lý</th><th>Phòng / Vệ Tinh</th><th>Timer Trận</th><th>Chi Tiết / Chẩn Đoán</th></tr></thead>
+              <tbody id="accountRows"></tbody>
+            </table>
+          </div>
+          <div class="toolbar" style="margin-top:14px;margin-bottom:0">
+            <button id="accountPrevBtn" class="btn btn-light" onclick="changeAccountPage(-1)"><i class="fa-solid fa-chevron-left"></i> Trang Trước</button>
+            <span id="accountPageIndicator" class="muted" style="font-size:12px">Trang 1/1</span>
+            <button id="accountNextBtn" class="btn btn-light" onclick="changeAccountPage(1)">Trang Sau <i class="fa-solid fa-chevron-right"></i></button>
+          </div>
+        </div>
+      </div>
+
+      </div></div>
+      <!-- Ô PHÒNG VẬT LÝ -->
+      <div class="card">
+        <div class="card-head"><div><div class="card-title"><i class="fa-solid fa-cubes" style="color:var(--orange)"></i> Các Ô Phòng Đang Thuê</div><div class="card-sub">Trạng thái thời gian thực của từng ô phòng cố định.</div></div></div>
+        <div class="card-body">
+          <div id="roomsGrid" class="rooms-grid"><p class="muted">Chưa có phòng đang chạy.</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- MODAL CHI TIẾT TÀI KHOẢN -->
+<div class="modal-backdrop" id="accountModal" onclick="if(event.target===this)closeModal('accountModal')">
+  <div class="modal">
+    <div class="modal-head"><h2 id="modalAccTitle" style="font:800 16px Inter,sans-serif">Chi Tiết Tài Khoản</h2><button class="btn btn-light" onclick="closeModal('accountModal')"><i class="fa-solid fa-xmark"></i></button></div>
+    <div class="modal-body">
+      <pre id="modalAccBody"></pre>
+      <div class="actions" style="margin-top:16px"><button id="modalAccLogBtn" class="btn btn-blue"><i class="fa-solid fa-terminal"></i> Xem Log Vệ Tinh Này</button><button class="btn btn-light" onclick="closeModal('accountModal')">Đóng</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL XEM LOG VỆ TINH -->
+<div class="modal-backdrop" id="logModal" onclick="if(event.target===this)closeModal('logModal')">
+  <div class="modal" style="width:min(900px,100%)">
+    <div class="modal-head"><h2 id="modalLogTitle" style="font:800 16px Inter,sans-serif"><i class="fa-solid fa-terminal" style="color:var(--blue)"></i> Log Vệ Tinh</h2><button class="btn btn-light" onclick="closeModal('logModal')"><i class="fa-solid fa-xmark"></i></button></div>
+    <div class="modal-body">
+      <div class="toolbar">
+        <input id="workerUrlInput" class="input" placeholder="Nhập URL worker nếu master cần gọi trực tiếp" style="flex:1">
+        <label class="muted" style="font-size:12px"><input id="logAutoCheck" type="checkbox" onchange="toggleLogAuto()"> Tự refresh 5s</label>
+        <button class="btn btn-blue" onclick="fetchWorkerLogs()"><i class="fa-solid fa-rotate"></i> Lấy Log</button>
+      </div>
+      <p id="logErrorMsg" class="muted" style="color:var(--red);margin-bottom:8px"></p>
+      <pre id="logTerminal" style="height:420px"></pre>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let TOKEN=localStorage.getItem('masterToken')||localStorage.getItem('licenseKey')||'';
+let selectedJob='',selectedSatellite='',accountPage=1,accountBusy=false,accountGen=0,accountTimer=null,accountsCache=[],jobsCache=[];
+let pollTimer=null,logAutoTimer=null,isBusy=false;
+const $=id=>document.getElementById(id);
+
+const statesMap={
+  screening:{text:'Chờ check Kiện Tướng',badge:'badge-warn'},
+  waiting:{text:'Chờ chuẩn bị Lv5',badge:'badge-muted'},
+  assigned:{text:'Đang trong phòng',badge:'badge-pending'},
+  ready:{text:'Chờ ghép cùng cấp',badge:'badge-pending'},
+  verifying:{text:'Chờ đối soát sau trận',badge:'badge-warn'},
+  success:{text:'Đạt cấp mục tiêu',badge:'badge-success'},
+  failed:{text:'Lỗi xử lý',badge:'badge-failed'},
+  stopped:{text:'Đã dừng',badge:'badge-muted'}
+};
+
+const stagesMap={
+  STACK1:'Chuẩn bị / lên Lv5',
+  STACK2:'Mua / dùng thẻ EXP',
+  STACK2_DONE:'Sẵn sàng vào đội',
+  STACK3:'Đang chạy trận 5v5',
+  STACK4:'Xác minh sau trận',
+  STACK4_DONE:'Đã xác minh mục tiêu',
+  VERIFYING:'Đối soát Kiện Tướng',
+  POOL_READY:'Chờ ghép đội',
+  WAIT_REPLACEMENT:'Chờ acc bù vị trí',
+  BUFF:'Kiểm tra buff EXP',
+  CHECKPASS_DONE:'CheckPass đã trả kết quả Kiện Tướng',
+  INSUFFICIENT_ACCOUNTS:'Không đủ tài khoản để tạo phòng'
+};
+
+function toast(msg){
+  const el=$('toast');el.textContent=msg;el.style.display='block';
+  clearTimeout(el._t);el._t=setTimeout(()=>el.style.display='none',3200);
+}
+
+function esc(val){
+  return String(val??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function api(path,body=null){
+  const res=await fetch(path,{
+    method:body?'POST':'GET',
+    headers:{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},
+    ...(body?{body:JSON.stringify(body)}:{})
+  });
+  const data=await res.json();
+  if(!res.ok||data.ok===false)throw new Error(data.error||res.statusText||'Lỗi yêu cầu');
+  return data;
+}
+
+function saveToken(){
+  TOKEN=$('tokenInput').value.trim();
+  if(!TOKEN){toast('Vui lòng nhập Master Token');return;}
+  localStorage.setItem('masterToken',TOKEN);
+  localStorage.setItem('licenseKey',TOKEN);
+  toast('Đã lưu token. Đang tải dữ liệu...');
+  refresh();
+}
+
+async function savePoolLimit(){
+  try{
+    const val=Number($('maxRooms').value);
+    await api('/api/admin/uplv/settings',{max_rooms:val});
+    toast('Đã lưu giới hạn ô phòng: '+val);
+    refresh();
+  }catch(e){toast(e.message);}
+}
+async function saveUserLimits(){const button=$('saveUserLimitsBtn'),feedback=$('userLimitsFeedback'),fields=[['userMaxAccounts','max_accounts_per_job'],['userMaxJobs','max_jobs_per_user'],['systemMaxJobs','max_system_jobs']],body={};for(const [id,key] of fields){const input=$(id);if(!input.reportValidity())return;body[key]=Number(input.value);}button.disabled=true;feedback.className='limits-feedback';feedback.textContent='Đang lưu…';try{await api('/api/admin/uplv/user-limits',body);feedback.className='limits-feedback success';feedback.textContent='Đã lưu thành công';toast('Đã lưu hạn mức khách hàng');}catch(e){feedback.className='limits-feedback error';feedback.textContent=e.message;}finally{button.disabled=false;}}
+
+async function clearUplvData(){
+  if(!confirm('Xóa toàn bộ job, tài khoản, kết quả và lịch sử UpLv? Các phòng sẽ được yêu cầu dừng trước. Cấu hình, danh sách vệ tinh và dữ liệu CheckPass được giữ nguyên.'))return;
+  $('clearDataBtn').disabled=true;
+  try{
+    const d=await api('/api/admin/uplv/clear',{});
+    $('clearDataStatus').textContent=d.clear.message;
+    toast(d.clear.message);
+    await refresh();
+  }catch(e){toast(e.message);$('clearDataBtn').disabled=false;}
+}
+
+async function createJob(){
+  const btn=$('createJobBtn');
+  const accs=$('accountsInput').value.trim();
+  if(!accs){toast('Vui lòng nhập ít nhất một tài khoản');return;}
+  btn.disabled=true;
+  try{
+    await api('/api/admin/uplv/jobs',{
+      accounts:accs,
+      reserves:$('reservesInput').value.trim(),
+      target:Number($('targetInput').value),
+      mode:$('modeSelect').value
+    });
+    $('accountsInput').value='';
+    $('reservesInput').value='';
+    toast('Đã tạo job! Chờ vệ tinh CheckPass kiểm tra Kiện Tướng trước khi chia phòng');
+    refresh();
+  }catch(e){toast(e.message);}
+  finally{btn.disabled=false;}
+}
+
+let workersCache=[];
+function renderSatellites(satellites){
+  workersCache=satellites||[];
+  const online=workersCache.filter(s=>s.online).length,paused=workersCache.filter(s=>s.paused).length;
+  $('workerSummary').innerHTML=`<span class="badge badge-muted">${workersCache.length} worker</span><span class="status online"><span class="dot"></span>${online} online</span><span class="status offline"><span class="dot"></span>${workersCache.length-online} offline</span><span class="status warn"><span class="dot"></span>${paused} tạm ngưng</span>`;
+  renderWorkerRows();
+}
+function renderWorkerRows(){
+  const query=$('workerSearch').value.trim().toLowerCase(),filter=$('workerFilter').value;
+  const satellites=workersCache.filter(s=>s.id.toLowerCase().includes(query)&&(filter==='all'||filter==='online'&&s.online||filter==='offline'&&!s.online||filter==='paused'&&s.paused));
+  $('workerFilterCount').textContent=`${satellites.length}/${workersCache.length} worker`;
+  const tbody=$('satellitesRows');
+  if(!satellites||!satellites.length){
+    tbody.innerHTML='<tr><td colspan="4" class="muted" style="text-align:center;padding:20px">Không có worker phù hợp.</td></tr>';
+    return;
+  }
+  tbody.innerHTML=satellites.map(s=>{
+    const m=s.metrics||{};
+    const statusHtml=s.online
+      ? (s.paused ? '<span class="status warn"><span class="dot"></span>Tạm ngưng</span>' : '<span class="status online"><span class="dot"></span>Online</span>')
+      : '<span class="status offline"><span class="dot"></span>Offline</span>';
+    const metricStr=`${Number(m.rss_mb||0).toFixed(1)} MB &middot; ${Number(m.cpu_percent||0).toFixed(1)}% CPU &middot; ${m.threads||0} th`;
+    const actionBtn=s.paused
+      ? `<button class="btn btn-light" style="padding:5px 9px;font-size:11px" onclick="controlSatellite('${esc(s.id)}','resume')"><i class="fa-solid fa-play"></i> Nhận Việc</button>`
+      : `<button class="btn btn-light" style="padding:5px 9px;font-size:11px" onclick="controlSatellite('${esc(s.id)}','pause')"><i class="fa-solid fa-pause"></i> Tạm Ngưng</button>`;
+    const logBtn=`<button class="btn btn-blue" style="padding:5px 9px;font-size:11px" onclick="openLogs('${esc(s.id)}')"><i class="fa-solid fa-terminal"></i> Log</button>`;
+    return `<tr><td><b>${esc(s.id)}</b></td><td>${statusHtml}</td><td class="muted">${metricStr}</td><td><div class="actions">${actionBtn} ${logBtn}</div></td></tr>`;
+  }).join('');
+}
+
+async function controlSatellite(id,action){
+  try{
+    await api('/api/admin/uplv/control',{action,satellite_id:id});
+    toast('Đã gửi lệnh '+action+' tới '+id);
+    refresh();
+  }catch(e){toast(e.message);}
+}
+
+function renderJobs(jobs){
+  jobsCache=jobs||[];
+  const el=$('jobDashboard');
+  if(!jobsCache.length){
+    el.innerHTML='<p class="muted">Chưa có job nào được tạo. Hãy nhập tài khoản ở cột bên trái.</p>';
+    $('accountSection').style.display='none';
+    return;
+  }
+  el.innerHTML=jobsCache.map(j=>{
+    const c=j.task_counts||{};
+    const total=Object.values(c).reduce((a,b)=>a+Number(b),0);
+    const succ=Number(c.success||0);
+    const fail=Number(c.failed||0);
+    const stop=Number(c.stopped||0);
+    const pct=total?(succ/total*100):0;
+    const isSelected=j.id===selectedJob;
+    return `
+      <div class="job-card ${isSelected?'active':''}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div><b style="font-size:15px">Mục Tiêu Lv${j.target}</b> &middot; <span class="badge badge-muted">${esc(j.mode.toUpperCase())}</span> &middot; <span class="muted" style="font-size:12px">Job ${esc(j.id.slice(0,8))} · ${j.owner_user_id?'Khách #'+j.owner_user_id:'Admin'}</span></div>
+          <div class="actions">
+            <span class="badge ${j.status==='open'?'badge-success':'badge-muted'}">${esc(j.status.toUpperCase())}</span>
+            ${j.status==='open'?`<button class="btn btn-danger" style="padding:5px 10px;font-size:11px" onclick="stopJob('${j.id}')"><i class="fa-solid fa-stop"></i> Dừng</button>`:''}
+            <button class="btn btn-light" style="padding:5px 10px;font-size:11px" onclick="exportJob('${j.id}')"><i class="fa-solid fa-download"></i> Kết Quả</button>
+            <button class="btn ${isSelected?'btn-blue':'btn-light'}" style="padding:5px 10px;font-size:11px" onclick="selectJob('${j.id}')"><i class="fa-solid fa-list-check"></i> ${isSelected?'Đang Xem':'Xem Acc'}</button>
+          </div>
+        </div>
+        <div class="progress-bar"><div class="progress-val" style="width:${pct.toFixed(1)}%"></div></div>
+        <div class="muted" style="font-size:12px;margin-bottom:12px">Tiến độ xác nhận: <b>${pct.toFixed(1)}%</b> (${succ}/${total} nick đã đạt mục tiêu)</div>
+        <div class="stats-grid">
+          <div class="stat-box"><div class="stat-num">${total}</div><div class="stat-lbl">Tổng Acc</div></div>
+          <div class="stat-box highlight"><div class="stat-num good">${succ}</div><div class="stat-lbl">Đạt Mục Tiêu</div></div>
+          <div class="stat-box"><div class="stat-num">${c.assigned||0}</div><div class="stat-lbl">Đang Xử Lý</div></div>
+          <div class="stat-box"><div class="stat-num warn">${c.screening||0}</div><div class="stat-lbl">Chờ Check KT</div></div>
+          <div class="stat-box"><div class="stat-num">${c.waiting||0}</div><div class="stat-lbl">Chờ Lv5</div></div>
+          <div class="stat-box"><div class="stat-num">${c.ready||0}</div><div class="stat-lbl">Sẵn Sàng Ghép</div></div>
+          <div class="stat-box"><div class="stat-num warn">${c.verifying||0}</div><div class="stat-lbl">Chờ Đối Soát</div></div>
+          <div class="stat-box"><div class="stat-num bad">${fail}</div><div class="stat-lbl">Thất bại</div></div>
+          <div class="stat-box"><div class="stat-num warn">${stop}</div><div class="stat-lbl">Đã dừng</div></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function selectJob(id){
+  selectedJob=id;
+  $('accountJobId').textContent=id.slice(0,8);
+  $('accountSection').style.display='block';
+  accountPage=1;
+  renderJobs(jobsCache);
+  loadAccounts();
+  openModal('accountModalList');
+}
+
+async function stopJob(id){
+  if(!confirm('Dừng công việc này? Các phòng đang chạy sẽ kết thúc an toàn.'))return;
+  try{
+    await api('/api/admin/uplv/control',{action:'stop_job',job_id:id});
+    toast('Đã gửi yêu cầu dừng job');
+    refresh();
+  }catch(e){toast(e.message);}
+}
+
+async function exportJob(id){
+  try{
+    const d=await api('/api/admin/uplv/export',{job_id:id});
+    for(const k of ['success','failed','pending']){
+      const blob=new Blob([d[k]],{type:'text/plain;charset=utf-8'});
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download=`uplv_${id.slice(0,8)}_${k}.txt`;
+      a.click();
+    }
+    toast('Đã tải bộ 3 file kết quả');
+  }catch(e){toast(e.message);}
+}
+
+function scheduleAccounts(){
+  clearTimeout(accountTimer);
+  accountGen++;
+  accountPage=1;
+  accountTimer=setTimeout(loadAccounts,300);
+}
+
+function changeAccountPage(delta){
+  accountPage=Math.max(1,accountPage+delta);
+  loadAccounts();
+}
+
+async function loadAccounts(){
+  if(!selectedJob||!TOKEN||accountBusy)return;
+  accountBusy=true;
+  const gen=++accountGen;
+  const query=$('accountSearch').value.trim();
+  const st=$('accountStatus').value;
+  try{
+    const d=await api('/api/admin/uplv/accounts',{
+      job_id:selectedJob,
+      page:accountPage,
+      page_size:50,
+      search:query,
+      status:st
+    });
+    if(gen!==accountGen)return;
+    accountsCache=d.accounts||[];
+    const total=d.total||0;
+    const pages=Math.max(1,Math.ceil(total/d.page_size));
+    accountPage=d.page;
+    $('accountFilterCount').textContent=`${total} tài khoản khớp`;
+    $('accountPageIndicator').textContent=`Trang ${d.page}/${pages}`;
+    $('accountPrevBtn').disabled=d.page<=1;
+    $('accountNextBtn').disabled=d.page>=pages;
+    const tbody=$('accountRows');
+    if(!accountsCache.length){
+      tbody.innerHTML='<tr><td colspan="7" class="muted" style="text-align:center;padding:24px">Không tìm thấy tài khoản phù hợp</td></tr>';
+      return;
+    }
+    tbody.innerHTML=accountsCache.map((a,i)=>{
+      const info=statesMap[a.status]||{text:a.status,badge:'badge-muted'};
+      const stageText=stagesMap[a.stage]||a.stage||'&mdash;';
+      const roomStr=a.room?`<b>P${a.room}</b>`:'&mdash;';
+      const satStr=a.satellite_id?`<br><small class="muted">${esc(a.satellite_id)}</small>`:'';
+      const timerStr=a.elapsed?`${Math.floor(a.elapsed/60)}:${String(a.elapsed%60).padStart(2,'0')}`:'&mdash;';
+      const detailStr=a.detail||accountReason(a)||'&mdash;';
+      return `
+        <tr onclick="showAccountModal(${i})" style="cursor:pointer">
+          <td><b>${esc(a.username)}</b></td>
+          <td><span class="muted">Lv</span><b>${a.level}</b> / ${a.target}</td>
+          <td><span class="badge ${info.badge}">${info.text}</span></td>
+          <td>${stageText}</td>
+          <td>${roomStr}${satStr}</td>
+          <td>${timerStr}</td>
+          <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(detailStr)}">${esc(detailStr)}</td>
+        </tr>
+      `;
+    }).join('');
+  }catch(e){
+    $('accountRows').innerHTML=`<tr><td colspan="7" class="muted" style="color:var(--red);text-align:center;padding:20px">${esc(e.message)}</td></tr>`;
+  }finally{accountBusy=false;}
+}
+
+function accountReason(a){
+  if(a.status==='screening'||a.status==='verifying'){
+    if(a.next_retry_at>Date.now()/1000)return 'Chờ lượt kiểm tra lúc '+new Date(a.next_retry_at*1000).toLocaleTimeString();
+    return 'Đang xếp hàng chờ lượt kiểm tra';
+  }
+  if(a.status==='ready')return 'Đã sẵn sàng, chờ đủ 5 acc cùng cấp để mở phòng';
+  if(a.status==='waiting')return 'Chờ ô phòng trống để chuẩn bị lên Lv5';
+  if(a.status==='success')return 'Đã xác nhận đạt cấp mục tiêu';
+  return '';
+}
+
+function showAccountModal(idx){
+  const a=accountsCache[idx];if(!a)return;
+  $('modalAccTitle').textContent='Tài Khoản: '+a.username;
+  $('modalAccBody').textContent=[
+    `Tài khoản: ${a.username}`,
+    `Cấp hiện tại: Lv${a.level} (Mục tiêu: Lv${a.target})`,
+    `Trạng thái: ${(statesMap[a.status]||{}).text||a.status}`,
+    `Bước xử lý: ${stagesMap[a.stage]||a.stage||'—'}`,
+    `Phòng: ${a.room?'P'+a.room:'Không chiếm phòng'} (${a.room_status||'trống'})`,
+    `Vệ tinh xử lý: ${a.satellite_id||'Chưa cấp'}`,
+    `Số lượt đối soát: ${a.attempts} (tự tiếp tục, có backoff)`,
+    `Chi tiết chẩn đoán: ${a.detail||accountReason(a)||'Không có lỗi ghi nhận'}`
+  ].join('\n');
+  const btn=$('modalAccLogBtn');
+  if(a.satellite_id){
+    btn.style.display='inline-flex';
+    btn.onclick=()=>{closeModal('accountModal');openLogs(a.satellite_id);};
+  }else{btn.style.display='none';}
+  openModal('accountModal');
+}
+
+function renderRooms(jobs){
+  const el=$('roomsGrid');
+  const activeRooms=[];
+  (jobs||[]).forEach(j=>{
+    (j.rooms||[]).forEach(r=>activeRooms.push({...r,target:j.target,mode:j.mode,job_id:j.id}));
+  });
+  if(!activeRooms.length){
+    el.innerHTML='<p class="muted">Tất cả ô phòng đang rảnh. Khi có đội đủ điều kiện, phòng sẽ xuất hiện tại đây.</p>';
+    return;
+  }
+  el.innerHTML=activeRooms.map(r=>{
+    const isRunning=r.status==='running';
+    const occupied=['pending','running','interrupted'].includes(r.status);
+    if(!occupied)return `<div class="room-card"><div class="actions"><b>Ô Phòng ${r.ordinal}</b><span class="badge badge-muted">ĐÃ GIẢI PHÓNG</span></div><p class="muted" style="margin:10px 0;font-size:12px">Lượt trước đã kết thúc (${esc(r.status)}). Tài khoản có thể đã chuyển pool, phòng khác hoặc có kết quả mới; snapshot cũ không phải trạng thái hiện tại.</p><button class="btn btn-light" onclick="selectJob('${r.job_id}')">Xem trạng thái acc hiện tại</button></div>`;
+    return `
+      <div class="room-card ${isRunning?'running':''}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div><b style="font-size:14px">Ô Phòng ${r.ordinal}</b> &middot; <span class="badge ${isRunning?'badge-pending':'badge-muted'}">${r.status.toUpperCase()}</span></div>
+          <span class="muted" style="font-size:11px">${esc(r.satellite_id||'Chờ VPS')}</span>
+        </div>
+        <div style="margin-bottom:8px">
+          ${(r.users||[]).map((u,i)=>{
+            const p=r.progress[i]||{};
+            const z=r.results[i]||{};
+            const lvl=z.level_after||p.level||0;
+            const st=z.status||p.stage||'Chờ';
+            return `<div class="room-user"><span>${i+1}. <b>${esc(u)}</b></span><span class="muted">Lv${lvl} &middot; ${esc(st)}</span></div>`;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function openLogs(satId){
+  selectedSatellite=satId;
+  $('modalLogTitle').innerHTML=`<i class="fa-solid fa-terminal" style="color:var(--blue)"></i> Log Vệ Tinh: <b>${esc(satId)}</b>`;
+  $('workerUrlInput').value='';
+  $('logErrorMsg').textContent='';
+  $('logTerminal').textContent='Đang tải log...';
+  openModal('logModal');
+  fetchWorkerLogs();
+}
+
+async function fetchWorkerLogs(){
+  if(!selectedSatellite)return;
+  $('logErrorMsg').textContent='';
+  try{
+    const d=await api('/api/admin/uplv/logs',{
+      satellite_id:selectedSatellite,
+      worker_url:$('workerUrlInput').value.trim()
+    });
+    if(d.needs_url){
+      $('logErrorMsg').textContent=d.message||'Không tìm thấy URL đúng Worker ID; kiểm tra danh sách service UpLv tại /admin.';
+      $('logTerminal').textContent='Chưa có URL worker.';
+      return;
+    }
+    const lines=(d.logs||[]).map(l=>{
+      const t=new Date(l.at*1000).toLocaleTimeString();
+      const p=l.room_id?`[P:${l.room_id.slice(0,6)}]`:'';
+      const slot=l.slot>=0?`[Slot ${l.slot+1}]`:'';
+      return `[${t}] ${p}${slot} ${l.text}`;
+    });
+    $('logTerminal').textContent=lines.join('\n')||'Buffer log của worker đang trống.';
+    $('logTerminal').scrollTop=$('logTerminal').scrollHeight;
+  }catch(e){
+    $('logErrorMsg').textContent=e.message;
+  }
+}
+
+function toggleLogAuto(){
+  clearInterval(logAutoTimer);logAutoTimer=null;
+  if($('logAutoCheck').checked&&selectedSatellite){
+    logAutoTimer=setInterval(fetchWorkerLogs,5000);
+  }
+}
+
+let modalFocus={};
+function openModal(id){modalFocus[id]=document.activeElement;$(id).classList.add('open');document.body.style.overflow='hidden';const first=$(id).querySelector('button,input,select');if(first)first.focus();if(id==='workersModal')loadWorkers();}
+let workersLoading=false;
+async function loadWorkers(){if(workersLoading||!TOKEN)return;workersLoading=true;try{const d=await api('/api/admin/uplv/workers');renderSatellites(d.satellites);}catch(e){$('satellitesRows').innerHTML='<tr><td colspan="4" style="color:var(--red)">'+esc(e.message)+'</td></tr>';}finally{workersLoading=false;}}
+function closeModal(id){
+  $(id).classList.remove('open');document.body.style.overflow=document.querySelector('.modal-backdrop.open')?'hidden':'';
+  if(modalFocus[id]?.isConnected)modalFocus[id].focus();
+  if(id==='logModal'){selectedSatellite='';clearInterval(logAutoTimer);$('logAutoCheck').checked=false;}
+}
+
+async function refresh(){
+  if(!TOKEN||isBusy)return;
+  isBusy=true;
+  try{
+    const d=await api('/api/admin/uplv');
+    if(d.user_limits&&!document.activeElement?.closest('.limits-card')&&!$('saveUserLimitsBtn').disabled){for(const [id,key] of [['userMaxAccounts','max_accounts_per_job'],['userMaxJobs','max_jobs_per_user'],['systemMaxJobs','max_system_jobs']])$(id).value=d.user_limits[key];}
+    if(d.clear){$('clearDataBtn').disabled=d.clear.running;$('clearDataStatus').textContent=d.clear.message||'';}
+    $('lastUpdated').textContent='Cập nhật: '+new Date().toLocaleTimeString();
+    if(d.pool){
+      if(document.activeElement!==$('maxRooms'))$('maxRooms').value=d.pool.max_rooms;
+      $('poolSummary').textContent=`Đang dùng ${d.pool.occupied_rooms}/${d.pool.max_rooms} ô phòng &middot; Tối đa ${d.pool.max_rooms*5} tài khoản đồng thời`;
+      $('poolGroups').innerHTML=(d.pool.groups||[]).map(g=>`<span class="badge badge-muted" style="margin-right:4px;margin-bottom:4px">${g.status} &middot; Lv${g.level} &middot; ${g.mode}: ${g.count}</span>`).join('')||'<span class="muted">Hàng chờ chung đang trống</span>';
+    }
+    renderSatellites(d.satellites);
+    if(d.pool){const eligible=d.satellites.filter(s=>s.online&&!s.paused);const capacity=eligible.reduce((sum,s)=>sum+Math.min(5,Number(s.metrics?.capacity||5)),0);$('poolSummary').textContent+=` · ${eligible.length} vệ tinh online nhận việc · năng lực tối đa ${capacity} phòng · hiệu lực ${Math.min(capacity,d.pool.max_rooms)} phòng`;}
+    renderJobs(d.jobs);
+    renderRooms(d.jobs);
+    if(selectedJob){
+      if(!d.jobs.some(j=>j.id===selectedJob)){
+        selectedJob='';$('accountSection').style.display='none';
+      }else{
+        if($('accountModalList').classList.contains('open'))loadAccounts();
+      }
+    }else if(d.jobs.length){
+      selectedJob=d.jobs[0].id;
+      renderJobs(d.jobs);
+    }
+  }catch(e){
+    $('lastUpdated').textContent='Lỗi kết nối: '+e.message;
+  }finally{isBusy=false;}
+}
+
+$('tokenInput').value=TOKEN;
+if(TOKEN){refresh();pollTimer=setInterval(()=>{if(!document.hidden)refresh();},5000);}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if($('logModal').classList.contains('open'))closeModal('logModal');else if($('accountModal').classList.contains('open'))closeModal('accountModal');else if($('workersModal').classList.contains('open'))closeModal('workersModal');else closeModal('accountModalList');}});
+</script>
+</body>
+</html>

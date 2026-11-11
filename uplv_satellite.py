@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 import uplv_config as config
 from uplv_logs import RoomLogs
 
-VERSION = 'uplv-satellite-0.6.2'
+VERSION = 'uplv-satellite-0.6.3'
 
 
 class RevokedLease(RuntimeError):
@@ -45,6 +45,36 @@ class Client:
         if not data.get('ok'):
             raise RuntimeError('Master rejected request')
         return data
+
+    def checkpass_claim(self, body):
+        """Claim a checkpass chunk from the master (UPLV checkpass mode)."""
+        request = urllib.request.Request(
+            self.url + '/api/uplv/checkpass/claim',
+            json.dumps(body).encode(),
+            {'Authorization': 'Bearer ' + self.token,
+             'Content-Type': 'application/json'})
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.load(response)
+
+    def checkpass_report(self, body):
+        """Report checkpass results to the master via standard report endpoint."""
+        request = urllib.request.Request(
+            self.url + '/api/report',
+            json.dumps(body).encode(),
+            {'Authorization': 'Bearer ' + self.token,
+             'Content-Type': 'application/json'})
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.load(response)
+
+    def checkpass_heartbeat(self, body):
+        """Extend lease on active checkpass chunks."""
+        request = urllib.request.Request(
+            self.url + '/api/heartbeat',
+            json.dumps(body).encode(),
+            {'Authorization': 'Bearer ' + self.token,
+             'Content-Type': 'application/json'})
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.load(response)
 
 
 class Metrics:
@@ -283,15 +313,127 @@ class Satellite:
                     ok = False
             return ok
 
+    def _load_checkpass_engine(self):
+        """Lazy-load the checkpass engine modules; returns (api_test, tcp_module) or None."""
+        if hasattr(self, '_checkpass_engine'):
+            return self._checkpass_engine
+        try:
+            import garena_api_test_chrome1 as api_test
+            import garena_tcp_login_chrome as tcp_ui
+            tcp_module = tcp_ui.load_verified_tcp_module()
+            self._checkpass_engine = (api_test, tcp_module)
+            print('[checkpass] Engine loaded successfully', flush=True)
+            return self._checkpass_engine
+        except Exception as exc:
+            print(f'[checkpass] Engine not available: {type(exc).__name__}: {exc}', flush=True)
+            self._checkpass_engine = None
+            return None
+
+    def run_checkpass_chunk(self, claim):
+        """Process a single checkpass chunk using the garena checker engine."""
+        engine = self._load_checkpass_engine()
+        if engine is None:
+            print('[checkpass] Engine not available, skipping chunk', flush=True)
+            return
+        api_test, tcp_module = engine
+        chunk_id = int(claim['chunk_id'])
+        job_id = int(claim['job_id'])
+        accounts = list(claim.get('accounts') or [])
+        print(f'[checkpass] {self.id}: chunk {chunk_id} job {job_id} ({len(accounts)} acc)', flush=True)
+
+        credentials = []
+        for index, raw in enumerate(accounts, 1):
+            raw_str = str(raw).strip()
+            parts = re.split(r'[|:]', raw_str)
+            account = parts[0].strip() if parts else ''
+            password = parts[1].strip() if len(parts) >= 2 else ''
+            credentials.append(api_test.BatchAccount(index, account, password))
+
+        workers = getattr(config, 'WORKERS', 8)
+        start_gap = getattr(config, 'START_GAP', 0.5)
+        timeout = getattr(config, 'TIMEOUT', 20.0)
+
+        buffer = []
+        buffer_lock = threading.Lock()
+        FLUSH_SIZE = 5
+
+        def flush_buffer(done=False):
+            with buffer_lock:
+                if not buffer and not done:
+                    return
+                rows_to_send = list(buffer)
+                buffer.clear()
+            if rows_to_send or done:
+                for attempt in range(3):
+                    try:
+                        self.client.checkpass_report({
+                            'chunk_id': chunk_id,
+                            'rows': [api_test.public_batch_row(r) for r in rows_to_send],
+                            'done': done,
+                        })
+                        break
+                    except Exception:
+                        if attempt == 2:
+                            print(f'[checkpass] Report failed for chunk {chunk_id}', flush=True)
+                        time.sleep(1)
+
+        def on_result(row):
+            need_flush = False
+            with buffer_lock:
+                buffer.append(row)
+                if len(buffer) >= FLUSH_SIZE:
+                    need_flush = True
+            if need_flush:
+                flush_buffer()
+
+        # Heartbeat thread to keep the chunk lease alive
+        heartbeat_stop = threading.Event()
+        def heartbeat_loop():
+            while not heartbeat_stop.is_set():
+                heartbeat_stop.wait(60)
+                if heartbeat_stop.is_set():
+                    break
+                try:
+                    self.client.checkpass_heartbeat({
+                        'satellite_id': self.id,
+                        'chunk_ids': [chunk_id],
+                        'lease_minutes': 5,
+                    })
+                except Exception:
+                    pass
+
+        hb_thread = threading.Thread(target=heartbeat_loop, daemon=True, name='cp-heartbeat')
+        hb_thread.start()
+
+        try:
+            api_test.run_batch_core(
+                credentials, tcp_module, workers, start_gap, timeout,
+                stop_event=self.shutdown, on_result=on_result)
+            # Final flush
+            flush_buffer(done=True)
+        except Exception as exc:
+            print(f'[checkpass] Chunk {chunk_id} error: {type(exc).__name__}', flush=True)
+            flush_buffer(done=True)
+        finally:
+            heartbeat_stop.set()
+            hb_thread.join(timeout=5)
+            for cred in credentials:
+                cred.password = ''
+
+        print(f'[checkpass] Chunk {chunk_id} completed', flush=True)
+
     def run(self):
         capacity = max(1, min(5, int(config.MAX_ROOMS)))
         request_id = uuid.uuid4().hex
         wake = threading.Event()
         last_presence = 0
+        last_checkpass_poll = 0
+        CHECKPASS_POLL_INTERVAL = 5  # seconds between checkpass claim attempts when idle
         def pause(seconds):
             wake.wait(seconds)
-        with ThreadPoolExecutor(max_workers=capacity, thread_name_prefix='uplv-room') as pool:
+        with ThreadPoolExecutor(max_workers=capacity + 2, thread_name_prefix='uplv-room') as pool:
             active = set()
+            checkpass_active = set()
             while not self.shutdown.is_set():
                 wake.clear()
                 self.loop_seen = time.monotonic()
@@ -306,6 +448,33 @@ class Satellite:
                                 # subsequent claim iteration. Its expired lease
                                 # is recovered by the master inspection queue.
                                 print(f'Room task failed: {type(exc).__name__}; continuing claims', flush=True)
+                    for future in list(checkpass_active):
+                        if future.done():
+                            checkpass_active.remove(future)
+                            try:
+                                future.result()
+                            except Exception as exc:
+                                print(f'CheckPass task failed: {type(exc).__name__}; continuing', flush=True)
+
+                    # Try checkpass claim (throttled)
+                    now_mono = time.monotonic()
+                    if len(checkpass_active) < 2 and now_mono - last_checkpass_poll >= CHECKPASS_POLL_INTERVAL:
+                        last_checkpass_poll = now_mono
+                        try:
+                            cp_reply = self.client.checkpass_claim({
+                                'satellite_id': self.id,
+                                'lease_minutes': 5,
+                            })
+                            cp_claim = cp_reply.get('claim')
+                            if cp_claim:
+                                future = pool.submit(self.run_checkpass_chunk, cp_claim)
+                                checkpass_active.add(future)
+                                future.add_done_callback(lambda _: wake.set())
+                                last_checkpass_poll = 0  # Reset to claim again immediately
+                                continue
+                        except Exception:
+                            pass
+
                     # Presence is independent of report spool/game threads.
                     # A failed pending report must remain visible to master.
                     if time.monotonic() - last_presence >= 15:
@@ -317,6 +486,7 @@ class Satellite:
                     if not self.flush_report() or len(active) >= capacity:
                         pause(1)
                         continue
+                    # Normal UPLV room claim
                     reply = self.client.post('claim', {'satellite_id': self.id, 'capacity': capacity,
                                                        'request_id': request_id,
                                                        'pool_protocol': 1,

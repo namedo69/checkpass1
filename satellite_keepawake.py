@@ -46,11 +46,26 @@ def parse_satellite_targets(text: str) -> list[dict[str, str]]:
 def saved_satellite_targets(
     store: Any, default_targets: str, parser: Callable[[str], list[dict[str, str]]]
 ) -> list[dict[str, str]]:
-    row = store.fetchone(
+    normal_row = store.fetchone(
         "SELECT setting_value FROM app_settings WHERE setting_key=?", ("satellite_targets",)
     )
-    text = str(row[0]) if row and row[0] is not None else default_targets
-    return parser(text)
+    vvip_row = store.fetchone(
+        "SELECT setting_value FROM app_settings WHERE setting_key=?", ("vvip_satellite_targets",)
+    )
+    normal_text = str(normal_row[0]) if normal_row and normal_row[0] is not None else default_targets
+    vvip_text = str(vvip_row[0]) if vvip_row and vvip_row[0] is not None else ""
+    uplv_row = store.fetchone(
+        "SELECT setting_value FROM app_settings WHERE setting_key=?", ("uplv_satellite_targets",)
+    )
+    uplv_text = str(uplv_row[0]) if uplv_row and uplv_row[0] is not None else ""
+    combined: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for target in [*parser(normal_text), *parser(vvip_text), *parser(uplv_text)]:
+        key = target["url"].lower().rstrip("/")
+        if key not in seen:
+            seen.add(key)
+            combined.append(target)
+    return combined
 
 
 def save_satellite_targets(store: Any, text: str) -> str:

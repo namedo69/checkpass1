@@ -5,6 +5,9 @@ COPY requirements_uplv.txt ./
 RUN pip install --no-cache-dir -r requirements_uplv.txt
 COPY uplv_satellite.py uplv_engine.py uplv_config.py uplv_health.py uplv_logs.py uplv_kientuong.py ./
 COPY uplv_runtime/ ./uplv_runtime/
+# CheckPass engine files (for UPLV satellites running in checkpass mode)
+COPY garena_api_test_chrome1.py garena_api_test_chrome.py garena_tcp_login_chrome.py garena_tcp.py ./
+COPY garena_tcp_rate_limit_probe.py export_dates.py db.py ./
 RUN python -B -c "from pathlib import Path; [compile(p.read_bytes(), str(p), 'exec') for p in Path('/app').rglob('*.py')]"
 RUN python -B uplv_satellite.py --check-runtime
 CMD ["python", "-B", "uplv_satellite.py"]
