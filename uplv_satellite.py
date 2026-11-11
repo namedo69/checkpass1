@@ -286,9 +286,14 @@ class Satellite:
     def run(self):
         capacity = max(1, min(5, int(config.MAX_ROOMS)))
         request_id = uuid.uuid4().hex
+        wake = threading.Event()
+        last_presence = 0
+        def pause(seconds):
+            wake.wait(seconds)
         with ThreadPoolExecutor(max_workers=capacity, thread_name_prefix='uplv-room') as pool:
             active = set()
             while not self.shutdown.is_set():
+                wake.clear()
                 self.loop_seen = time.monotonic()
                 try:
                     for future in list(active):
@@ -303,12 +308,14 @@ class Satellite:
                                 print(f'Room task failed: {type(exc).__name__}; continuing claims', flush=True)
                     # Presence is independent of report spool/game threads.
                     # A failed pending report must remain visible to master.
-                    self.client.post('presence', {'satellite_id': self.id, 'metrics': self.metrics.snapshot(),
-                                                  'worker_url': os.environ.get('RENDER_EXTERNAL_URL', '')})
-                    self.master_seen = time.monotonic()
-                    self.last_control_error = ''
+                    if time.monotonic() - last_presence >= 15:
+                        self.client.post('presence', {'satellite_id': self.id, 'metrics': self.metrics.snapshot(),
+                                                      'worker_url': os.environ.get('RENDER_EXTERNAL_URL', '')})
+                        self.master_seen = time.monotonic()
+                        last_presence = self.master_seen
+                        self.last_control_error = ''
                     if not self.flush_report() or len(active) >= capacity:
-                        self.shutdown.wait(1 if active else config.POLL_SECONDS)
+                        pause(1)
                         continue
                     reply = self.client.post('claim', {'satellite_id': self.id, 'capacity': capacity,
                                                        'request_id': request_id,
@@ -318,13 +325,15 @@ class Satellite:
                                                        'metrics': self.metrics.snapshot()})
                     request_id = uuid.uuid4().hex
                     if reply.get('room'):
-                        active.add(pool.submit(self.run_room, reply['room']))
+                        future = pool.submit(self.run_room, reply['room'])
+                        active.add(future)
+                        future.add_done_callback(lambda _: wake.set())
                     else:
-                        self.shutdown.wait(config.POLL_SECONDS)
+                        pause(1)
                 except (OSError, ValueError, RuntimeError) as exc:
                     self.last_control_error = type(exc).__name__
                     print(f'Master unavailable: {type(exc).__name__}', flush=True)
-                    self.shutdown.wait(config.POLL_SECONDS)
+                    pause(2)
 
 
 def main():

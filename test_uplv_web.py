@@ -13,6 +13,61 @@ from uplv_kientuong import PlayerSession
 
 
 class WebTests(unittest.TestCase):
+    def test_worker_recovers_transient_without_returning_pending_to_master(self):
+        from uplv_engine import Engine
+        engine = Engine.__new__(Engine)
+        engine._run_once = Mock(side_effect=[
+            {0: (False, 5, 8, 'pool_verifying')},
+            {0: (True, 5, 12, '')},
+        ])
+        stop = Mock()
+        stop.is_set.return_value = False
+        stop.wait.return_value = False
+        completed = Mock()
+        result = engine.run({'accounts': [['user', 'unused']], 'levels': [8],
+                             'targets': [12], 'verify_only': True}, stop, Mock(), completed)
+        self.assertTrue(result[0][0])
+        self.assertEqual(engine._run_once.call_count, 2)
+        self.assertTrue(engine._run_once.call_args.args[0]['verify_only'])
+        completed.assert_called_once_with(0, (True, 5, 12, ''))
+
+    def test_worker_terminal_failure_does_not_loop_or_republish(self):
+        from uplv_engine import Engine
+        engine = Engine.__new__(Engine)
+        engine._run_once = Mock(return_value={0: (False, 5, 8, 'terminal_restricted: blocked')})
+        completed = Mock()
+        result = engine.run({'accounts': [['u','unused']], 'levels': [8], 'targets': [12],
+                             'verify_only': True}, threading.Event(), Mock(), completed)
+        self.assertEqual(engine._run_once.call_count, 1)
+        completed.assert_called_once_with(0, result[0])
+
+    def test_worker_keeps_recovered_full_team_in_same_lease(self):
+        from uplv_engine import Engine
+        engine = Engine.__new__(Engine)
+        pending = {i: (False, 5, 8, 'pool_verifying' if i == 0 else 'pool_ready') for i in range(5)}
+        engine._run_once = Mock(side_effect=[pending, {0: (False, 5, 8, 'pool_ready')},
+                                            {i: (True, 5, 12, '') for i in range(5)}])
+        stop = Mock()
+        stop.is_set.return_value = False
+        stop.wait.return_value = False
+        room = {'accounts': [[f'u{i}', 'unused'] for i in range(5)], 'levels': [5]*5,
+                'targets': [12]*5, 'pool_protocol': 1, 'target': 12}
+        result = engine.run(room, stop, Mock(), Mock())
+        self.assertTrue(all(row[0] for row in result.values()))
+        self.assertIs(engine._run_once.call_args.args[0], room)
+        self.assertEqual(room['levels'], [8]*5)
+
+    def test_worker_recovery_stop_is_cooperative_and_never_starts_new_match(self):
+        from uplv_engine import Engine
+        engine = Engine.__new__(Engine)
+        engine._run_once = Mock(return_value={0: (False, 5, 8, 'pool_verifying')})
+        stop = threading.Event()
+        def progress(*args): stop.set()
+        result = engine.run({'accounts': [['u','unused']], 'levels': [8], 'targets': [12],
+                             'verify_only': True}, stop, progress, Mock())
+        self.assertEqual(engine._run_once.call_count, 1)
+        self.assertFalse(result[0][0])
+
     def test_recovery_game_failure_uses_web_fallback_for_completed_account(self):
         from uplv_engine import Engine
         engine = Engine.__new__(Engine)

@@ -40,6 +40,60 @@ class Engine:
         self.last_login = 0
 
     def run(self, room, stop, progress, completed, replacement=None):
+        """Own transient recovery while the lease/heartbeat remains valid."""
+        if not room.get('pool_protocol') and not room.get('verify_only'):
+            return self._run_once(room, stop, progress, completed, replacement)
+        published = set()
+        def publish(index, row):
+            # Pending is progress, not a finished result. Publish only terminal
+            # outcomes early; the final return carries regroup/stop outcomes.
+            if row[0] or str(row[3]).startswith('terminal_'):
+                if index not in published:
+                    published.add(index)
+                    if completed:
+                        completed(index, row)
+        results = self._run_once(room, stop, progress, publish, replacement)
+        attempts = {}
+        while not stop.is_set():
+            unresolved = [i for i, row in results.items()
+                          if not row[0] and not str(row[3]).startswith('terminal_')
+                          and row[3] not in ('pool_ready', 'screen_ready')]
+            for index in unresolved:
+                if stop.is_set():
+                    break
+                attempts[index] = attempts.get(index, 0) + 1
+                delay = min(30, 2 ** min(attempts[index], 5))
+                progress(index, f'[VERIFYING] Worker tự đối soát lượt {attempts[index]}; thử lại sau {delay}s, giữ quyền xử lý')
+                if stop.wait(delay):
+                    break
+                check = {'accounts': [room['accounts'][index]],
+                         'levels': [results[index][2]],
+                         'targets': [room.get('targets', [room.get('target', 12)] * len(room['accounts']))[index]],
+                         'verify_only': True}
+                recovered = self._run_once(check, stop,
+                    lambda _, message, i=index: progress(i, message),
+                    lambda _, row, i=index: publish(i, row))
+                if 0 in recovered:
+                    results[index] = recovered[0]
+                    publish(index, recovered[0])
+            if stop.is_set():
+                break
+            if any(not row[0] and not str(row[3]).startswith('terminal_')
+                   and row[3] not in ('pool_ready', 'screen_ready') for row in results.values()):
+                continue
+            # A recovery-only lease returns confirmed state to the scheduler.
+            # A full battle team can continue without a new master allocation.
+            if room.get('verify_only') or len(results) != 5 or any(row[0] or str(row[3]).startswith('terminal_') for row in results.values()):
+                break
+            for i, row in results.items():
+                room.setdefault('levels', [0] * len(room['accounts']))[i] = row[2]
+            progress(0, '[STACK3] Đối soát xong cả đội; worker tiếp tục up trong cùng lượt phòng')
+            results = self._run_once(room, stop, progress, publish, replacement)
+        for index, row in results.items():
+            publish(index, row)
+        return results
+
+    def _run_once(self, room, stop, progress, completed, replacement=None):
         run_rooms, run_cs, login, device, retry, checkpoints = self.runtime
         bundles = {}
         bundle_lock = threading.Lock()
