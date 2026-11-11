@@ -67,6 +67,8 @@ ACCOUNT_MAX_ATTEMPTS = 3
 KIENTUONG_MAX_RETRIES = 6
 KIENTUONG_MAX_ATTEMPTS = 1 + KIENTUONG_MAX_RETRIES
 TCP_FAST_REJECTION_RATE_LIMIT_MS = 600
+THROTTLE_MAX_ATTEMPTS = 10
+THROTTLE_RETRY_DELAY = 1.0
 
 
 def _normalized_error_text(value: Any) -> str:
@@ -83,20 +85,30 @@ def _text_suggests_rate_limit(value: Any) -> bool:
     return any(
         marker in text
         for marker in (
-            "rate limit", "rate_limit", "ratelimit", "too many request",
-            "throttl", "request frequency", "qua nhieu yeu cau",
-            "gioi han tan suat", "thu lai sau",
+            "rate limit",
+            "rate_limit",
+            "ratelimit",
+            "too many request",
+            "too_many_requests",
+            "throttl",
+            "request frequency",
+            "qua nhieu yeu cau",
+            "gioi han tan suat",
+            "thu lai sau",
         )
     )
 
 
-def tcp_rate_limit_suspected(error: Any) -> bool:
+def tcp_rate_limit_suspected(error: Any, elapsed_ms: int | float | None = None) -> bool:
     """Recognize explicit rate-limit signals; response speed alone is not one."""
 
-    return bool(
-        getattr(error, "code", None) == 429
-        or _text_suggests_rate_limit(error)
-    )
+    if getattr(error, "code", None) == 429:
+        return True
+    if (getattr(error, "garena_command", 0), getattr(error, "garena_result", 0)) == (0x1BA, 3):
+        return True
+    if _text_suggests_rate_limit(error):
+        return True
+    return False
 
 
 def tcp_fast_login_rejection_should_retry(
@@ -157,6 +169,19 @@ def resilient_tcp_client_type(tcp_module: Any) -> type:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             super().__init__(*args, **kwargs)
             self.ignored_server_commands: list[int] = []
+
+        def get_sso_key(self) -> Any:
+            for attempt in range(THROTTLE_MAX_ATTEMPTS):
+                try:
+                    return super().get_sso_key()
+                except Exception as exc:
+                    if (
+                        (getattr(exc, "garena_command", 0), getattr(exc, "garena_result", 0))
+                        != (0x1BA, 3)
+                        or attempt + 1 >= THROTTLE_MAX_ATTEMPTS
+                    ):
+                        raise
+                    time.sleep(THROTTLE_RETRY_DELAY)
 
         def _request(self, command: int, payload: bytes, key: bytes | None = None) -> bytes:
             if self.socket is None:
@@ -404,6 +429,7 @@ def format_register_time(value: Any) -> str:
 
 def format_player_event_time(value: Any) -> str:
     """Format a player event Unix timestamp with time in Vietnam timezone."""
+
     if isinstance(value, bool):
         return ""
     try:
@@ -418,16 +444,20 @@ def format_player_event_time(value: Any) -> str:
 
 
 def player_ban_fields(player: Any) -> dict[str, str]:
-    """Return formatted ban times only for a player with non-empty banInfo."""
+    """Return ban timestamps only when the player has a non-empty banInfo."""
+
     empty = {"banTime": "", "unbanTime": ""}
     if not isinstance(player, dict):
         return empty
     ban_info = player.get("banInfo")
     if not isinstance(ban_info, dict) or not ban_info:
         return empty
+
+    ban_time = ban_info.get("banTime")
+    unban_time = ban_info.get("unbanTime")
     return {
-        "banTime": format_player_event_time(ban_info.get("banTime")),
-        "unbanTime": format_player_event_time(ban_info.get("unbanTime")),
+        "banTime": format_player_event_time(ban_time),
+        "unbanTime": format_player_event_time(unban_time),
     }
 
 
@@ -458,6 +488,26 @@ class WebSession:
         )
 
     def request(
+        self,
+        url: str,
+        *,
+        method: str = "GET",
+        json_body: Any | None = None,
+        form_body: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[int, str, str, Any]:
+        for attempt in range(THROTTLE_MAX_ATTEMPTS):
+            response = self._request_once(
+                url, method=method, json_body=json_body, form_body=form_body, headers=headers
+            )
+            body = response[3]
+            throttled = isinstance(body, dict) and body.get("error") == "error_too_many_requests"
+            if not throttled or attempt + 1 >= THROTTLE_MAX_ATTEMPTS:
+                return response
+            time.sleep(THROTTLE_RETRY_DELAY)
+        raise RuntimeError("Invalid throttle retry configuration")
+
+    def _request_once(
         self,
         url: str,
         *,
@@ -1130,6 +1180,7 @@ def run_api_tests(tcp_module: Any, account: str, password: str, timeout: float) 
                 results["tcp"]["sso_error"] = (
                     str(exc).strip() or type(exc).__name__
                 )[:500]
+                results["tcp"]["rate_limit_suspected"] = tcp_rate_limit_suspected(exc)
             else:
                 results["tcp"].update(
                     {
@@ -1144,7 +1195,7 @@ def run_api_tests(tcp_module: Any, account: str, password: str, timeout: float) 
     except Exception as exc:
         message = (str(exc).strip() or type(exc).__name__)[:500]
         tcp_elapsed_ms = round((time.monotonic() - started) * 1000)
-        rate_limit_suspected = tcp_rate_limit_suspected(exc)
+        rate_limit_suspected = tcp_rate_limit_suspected(exc, tcp_elapsed_ms)
         retryable_fast_rejection = bool(
             not rate_limit_suspected
             and tcp_fast_login_rejection_should_retry(exc, tcp_elapsed_ms)
@@ -1222,6 +1273,11 @@ def run_api_tests(tcp_module: Any, account: str, password: str, timeout: float) 
             results["elapsed_ms"] = round((time.monotonic() - started) * 1000)
             return results
 
+    if kientuong_requires_grant(results):
+        password = ""
+        results["elapsed_ms"] = round((time.monotonic() - started) * 1000)
+        return results
+
     kientuong_complete = kientuong_player_has_level(player_api)
 
     if not kientuong_complete:
@@ -1281,6 +1337,8 @@ def run_api_tests(tcp_module: Any, account: str, password: str, timeout: float) 
             kientuong_attempts += 1
             try:
                 kientuong_auth, web_player = _do_kientuong()
+                if kientuong_requires_grant({"kientuong": kientuong_auth, "kientuong_player": web_player}):
+                    break
                 if result_rate_limit_suspected(
                     {"auth": kientuong_auth, "player": web_player}
                 ):
@@ -1306,7 +1364,9 @@ def run_api_tests(tcp_module: Any, account: str, password: str, timeout: float) 
             and kientuong_attempts >= KIENTUONG_MAX_ATTEMPTS
         )
         kientuong_auth["no_character_responses"] = no_character_responses
-        kientuong_auth["no_character_confirmed"] = bool(no_character_responses >= 2)
+        kientuong_auth["no_character_confirmed"] = bool(
+            no_character_responses >= 2
+        )
         results["web_auth"]["kientuong"] = kientuong_auth
         results["apis"]["kientuong_player"] = web_player
 
@@ -1524,13 +1584,19 @@ def public_batch_row(row: dict[str, Any]) -> dict[str, str]:
     public["registerDate"] = public["registerDate"].split(" ", 1)[0]
     player_status = public["player_status"].casefold()
     if "khóa" in player_status or "ban" in player_status:
-        public.update({field: str(row.get(field, "") or "") for field in BATCH_BAN_FIELDNAMES})
+        public.update({
+            field: str(row.get(field, "") or "")
+            for field in BATCH_BAN_FIELDNAMES
+        })
     return public
 
 REQUIRED_ACCOUNT_LABEL = "hồ sơ tài khoản"
 REQUIRED_SESSION_LABEL = "session_key"
 REQUIRED_KIENTUONG_LABEL = "Kiện Tướng"
 
+# Every account, including one that returns partial data, must have a terminal
+# retry bound.  Without this, an intermittent Kiện Tướng response could hold a
+# worker indefinitely.
 BATCH_MAX_RETRIES = 3
 BATCH_MAX_ATTEMPTS = 1 + BATCH_MAX_RETRIES
 BATCH_LOGIN_REJECTION_CONFIRMATIONS = 2
@@ -1552,11 +1618,26 @@ def batch_rate_limit_suspected(result: Any) -> bool:
     return result_rate_limit_suspected(result)
 
 
+def kientuong_requires_grant(result: Any) -> bool:
+    """Recognize the OAuth response classified as CTNV by checkpass."""
+    if not isinstance(result, dict):
+        return False
+    if str(result.get("error") or "").strip() == "error_require_grant":
+        return True
+    return any(
+        kientuong_requires_grant(result.get(key))
+        for key in ("body", "kientuong", "kientuong_player", "account_to_kientuong_oauth",
+                    "web_auth", "apis", "tcp_to_web_probe")
+    )
+
+
 def batch_required_missing(result: Any) -> list[str]:
     """Chi can Kien Tuong - Ctnv hoac co level moi la du."""
 
     if not isinstance(result, dict):
         return [REQUIRED_KIENTUONG_LABEL]
+    if kientuong_requires_grant(result):
+        return []
     apis = result.get("apis") or {}
     probe = result.get("tcp_to_web_probe") or {}
     web_auth = result.get("web_auth") or {}
@@ -1700,7 +1781,9 @@ def batch_check_one(
                     else:
                         login_rejection_signature = signature
                         login_rejection_confirmations = 1
-                    row["login_rejection_confirmations"] = str(login_rejection_confirmations)
+                    row["login_rejection_confirmations"] = str(
+                        login_rejection_confirmations
+                    )
                     if login_rejection_confirmations >= BATCH_LOGIN_REJECTION_CONFIRMATIONS:
                         login_rejected = True
                         break
@@ -1718,6 +1801,8 @@ def batch_check_one(
                 login_rejection_signature = None
                 login_rejection_confirmations = 0
                 row["login_rejection_confirmations"] = "0"
+        # Apply the bound to both empty and partial results.  A partial result
+        # proves neither a failed password nor a completed check.
         if attempt_count >= BATCH_MAX_ATTEMPTS:
             gave_up_reason = (
                 f"đã check {BATCH_MAX_ATTEMPTS} lần (tối đa {BATCH_MAX_RETRIES} retry) "
@@ -1725,7 +1810,9 @@ def batch_check_one(
             )
             break
         if time.monotonic() - started >= BATCH_ROW_DEADLINE_SECONDS:
-            gave_up_reason = f"quá {BATCH_ROW_DEADLINE_SECONDS:.0f}s nhưng chưa đọc đủ dữ liệu yêu cầu"
+            gave_up_reason = (
+                f"quá {BATCH_ROW_DEADLINE_SECONDS:.0f}s nhưng chưa đọc đủ dữ liệu yêu cầu"
+            )
             break
         backoff = min(1.5 * attempt_count, 8.0)
         # Phản hồi quá nhanh có thể chưa đáng tin cậy - đợi lâu hơn rồi check lại.
@@ -1852,7 +1939,11 @@ def batch_check_one(
 
         kientuong_ok = bool(kientuong_api.get("ok") or probe_player.get("ok"))
         kientuong_auth = web_auth.get("kientuong") or {}
-        no_character_confirmed = bool(kientuong_auth.get("no_character_confirmed"))
+        grant_required = kientuong_requires_grant(result)
+        no_character_confirmed = bool(kientuong_auth.get("no_character_confirmed")) and not grant_required
+        if grant_required:
+            row["result_type"] = "Lỗi CTNV"
+            row["player_status"] = "Lỗi CTNV (error_require_grant)"
         if no_character_confirmed and not player:
             row["player_status"] = "Chưa tạo nhân vật"
         if not row["level"] and no_character_confirmed:
@@ -2013,9 +2104,7 @@ def _batch_worker(
         with server.batch_lock:
             server.batch_rows.append({
                 "stt": "-", "account": "-", "status": "CHƯA THỂ CHECK", "result_type": "Chưa thể check", "uid": "", "name": "",
-                "level": "",
-        "registerTime": "",
-        "registerDate": "", "session_key": "", "elapsed_ms": "",
+                "level": "", "session_key": "", "elapsed_ms": "",
             })
     finally:
         for credential in credentials:
@@ -2036,7 +2125,7 @@ def _batch_worker(
 def run_batch(args: argparse.Namespace) -> int:
     import garena_tcp_rate_limit_probe as batch_helpers
 
-    credentials = batch_helpers.load_credentials(args.file.resolve(), limit=1_000_000)
+    credentials = batch_helpers.load_credentials(args.file.resolve(), limit=999999999999)
     tcp_module = tcp_ui.load_verified_tcp_module()
 
     print(
@@ -2100,7 +2189,7 @@ button.warnb{background:#9e6a03}button.ghost{background:#21262d}
 th{color:#8b949e;position:sticky;top:0;background:#1c2128;font-weight:600;font-size:11px;letter-spacing:.03em;text-transform:uppercase;z-index:1}
 tr:hover td{background:#1a1f27}
 .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-weight:700;font-size:11px;line-height:1.4}
-tr.ok .badge{background:#1a7f37;color:#fff}tr.fail .badge{background:#da3633;color:#fff}
+tr.ok .badge{background:#1a7f37;color:#fff}tr.fail .badge{background:#da3633;color:#fff}tr.uncheckable .badge{background:#9e6a03;color:#fff}
 #out{white-space:pre-wrap;overflow-wrap:anywhere;background:#010409;border:1px solid #30363d;border-radius:8px;padding:12px;min-height:56px;margin-top:10px;font-size:12.5px}
 </style></head><body><main>
 
@@ -2117,14 +2206,14 @@ tr.ok .badge{background:#1a7f37;color:#fff}tr.fail .badge{background:#da3633;col
 <button id="batchStop" type="button" class="warnb">Dừng</button>
 <button id="batchExport" type="button" class="ghost">Xuất CSV</button>
 <button id="splitBtn" type="button" class="ghost">Chia lọc theo cấp độ</button>
-<button id="exportXlsxBtn" type="button" class="ghost" disabled>Xuất XLSX 5 tab</button>
+<button id="exportXlsxBtn" type="button" class="ghost" disabled>Xuất XLSX 6 tab</button>
 <label class="btnfile">Nhập file<input id="batchImport" type="file" accept=".txt,.csv,text/plain" hidden></label>
 <div id="batchFileName" class="fileinfo">Chưa chọn file.</div>
 <div id="batchStatus">Chưa chạy.</div>
 <div id="batchTiming" class="fileinfo">Thời gian: chưa bắt đầu.</div>
 <div class="wrap"><table><thead><tr><th>STT</th><th>Tài khoản</th><th>Trạng thái</th><th>UID Garena</th><th>Tên Kiện Tướng</th><th>Cấp</th><th>Ngày tạo</th><th>Trạng thái Kiện Tướng</th><th>ms</th></tr></thead>
 <tbody id="batchBody"></tbody></table></div>
-<small>Kết quả hiển thị trực tiếp khi từng tài khoản xong. LOGIN_PREPARE <code>0x100</code> chưa kiểm tra mật khẩu, nhưng nếu Garena từ chối cùng bước và cùng mã qua hai lần thì tài khoản vẫn được kết luận <code>FAIL / Không thể log</code>; quy tắc xác nhận tương tự áp dụng cho LOGIN <code>0x101</code>. HTTP 429, rate limit/throttling, timeout, lỗi mạng/OAuth hoặc thiếu dữ liệu sẽ được retry tối đa 3 lần sau lần check đầu; nếu vẫn chưa rõ sau 4 lượt thì ghi <code>CHƯA THỂ CHECK</code>. Bấm "Dừng" để kết thúc sớm.</small>
+<small>Kết quả hiển thị trực tiếp khi từng tài khoản xong. LOGIN_PREPARE <code>0x100</code> chưa kiểm tra mật khẩu, nhưng nếu Garena từ chối cùng bước và cùng mã qua hai lần thì tài khoản vẫn được kết luận <code>FAIL / Không thể log</code>; quy tắc xác nhận tương tự áp dụng cho LOGIN <code>0x101</code>. HTTP 429, rate limit/throttling, timeout, lỗi mạng/OAuth hoặc thiếu dữ liệu sẽ được retry tối đa 3 lần sau lần check đầu; nếu vẫn chưa rõ sau 4 lượt thì ghi <code>CHƯA THỂ CHECK</code>. XLSX có sáu tab, gồm <code>Không thể log</code> và <code>Chưa thể check</code>; cột Tài khoản trong mỗi tab có dạng <code>user|pass</code>. Bấm "Dừng" để kết thúc sớm.</small>
 
 <div id="splitSection" style="display:none;margin-top:18px">
 <h2 id="splitTitle" style="color:#58a6ff;margin:0 0 10px;font-size:16px"></h2>
@@ -2168,9 +2257,9 @@ async function getState(){const r=await fetch('/api/batch/state',{cache:'no-stor
 function setStatus(t,bad){const el=$('batchStatus');el.textContent=t;el.className=bad?'bad':'';}
 function formatDuration(ms){const total=Math.max(0,Math.round((Number(ms)||0)/1000)),h=Math.floor(total/3600),m=Math.floor((total%3600)/60),s=total%60;return(h?h+' giờ ':'')+String(m).padStart(2,'0')+' phút '+String(s).padStart(2,'0')+' giây';}
 function updateTiming(s){const elapsed=Number(s.elapsed_ms)||0,done=s.rows.length,total=Number(s.total)||0;let text='Thời gian: '+formatDuration(elapsed);if(s.running&&done>0&&total>done){const eta=Math.max(0,Math.round(elapsed/done*(total-done)));text+=' · Ước còn '+formatDuration(eta);}else if(!s.running&&done){text+=' · Đã hoàn tất';}$('batchTiming').textContent=text;}
-function renderRows(rows){const tb=$('batchBody');for(let i=rendered;i<rows.length;i++){const r=rows[i],tr=document.createElement('tr');tr.className=r.status==='OK'?'ok':'fail';const badge='<span class="badge">'+esc(r.status)+'</span>';tr.innerHTML='<td>'+esc(r.stt)+'</td><td>'+esc(r.account)+'</td><td>'+badge+'</td><td>'+[r.uid,r.name,r.level,String(r.registerDate||'').split(' ')[0],r.player_status,r.elapsed_ms].map(esc).join('</td><td>')+'</td>';tb.appendChild(tr);}rendered=rows.length;lastRows=rows;}
+function renderRows(rows){const tb=$('batchBody');for(let i=rendered;i<rows.length;i++){const r=rows[i],tr=document.createElement('tr');tr.className=r.status==='OK'?'ok':(r.status==='CHƯA THỂ CHECK'?'uncheckable':'fail');const badge='<span class="badge">'+esc(r.status)+'</span>';tr.innerHTML='<td>'+esc(r.stt)+'</td><td>'+esc(r.account)+'</td><td>'+badge+'</td><td>'+[r.uid,r.name,r.level,String(r.registerDate||'').split(' ')[0],r.player_status,r.elapsed_ms].map(esc).join('</td><td>')+'</td>';tb.appendChild(tr);}rendered=rows.length;lastRows=rows;}
 async function poll(){try{const s=await getState();if(!s||!s.ok)return;renderRows(s.rows);updateTiming(s);const done=s.rows.length;setStatus(s.running?('Đang chạy: '+done+'/'+s.total+'...'):('Xong: '+done+'/'+s.total+(s.stopped?' (đã dừng sớm)':'')),false);if(s.rows.length) $('exportXlsxBtn').disabled=false;if(!s.running){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}$('batchStart').disabled=false;}}catch(e){}}
-function renderSplitTable(tbodyId,rows){const tb=$(tbodyId);tb.innerHTML='';rows.forEach(r=>{const tr=document.createElement('tr');tr.className=r.status==='OK'?'ok':'fail';const badge='<span class="badge">'+esc(r.status)+'</span>';tr.innerHTML='<td>'+esc(r.stt)+'</td><td>'+esc(r.account)+'</td><td>'+badge+'</td><td>'+[r.uid,r.name,r.level,String(r.registerDate||'').split(' ')[0],r.player_status,r.elapsed_ms].map(esc).join('</td><td>')+'</td>';tb.appendChild(tr);});}
+function renderSplitTable(tbodyId,rows){const tb=$(tbodyId);tb.innerHTML='';rows.forEach(r=>{const tr=document.createElement('tr');tr.className=r.status==='OK'?'ok':(r.status==='CHƯA THỂ CHECK'?'uncheckable':'fail');const badge='<span class="badge">'+esc(r.status)+'</span>';tr.innerHTML='<td>'+esc(r.stt)+'</td><td>'+esc(r.account)+'</td><td>'+badge+'</td><td>'+[r.uid,r.name,r.level,String(r.registerDate||'').split(' ')[0],r.player_status,r.elapsed_ms].map(esc).join('</td><td>')+'</td>';tb.appendChild(tr);});}
 $('splitBtn').addEventListener('click',()=>{
  if(!lastRows.length){setStatus('Chưa có kết quả batch để chia lọc',true);return;}
  const lv=parseInt($('requiredLevel').value,10)||12;
@@ -2545,10 +2634,13 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 with self.server.batch_lock:
                     rows=[dict(r) for r in self.server.batch_rows]
-            met,not_met,locked,special,failed=[],[],[],[],[]
+            met,not_met,locked,special,failed,uncheckable=[],[],[],[],[],[]
             for r in rows:
                 if str(r.get("status") or "").upper() == "FAIL":
                     failed.append(r)
+                    continue
+                if str(r.get("status") or "").upper() == "CHƯA THỂ CHECK":
+                    uncheckable.append(r)
                     continue
                 # Special accounts have neither Garena Account Center nor
                 # Kien Tuong data. Keep them exclusively in their own sheet
@@ -2574,6 +2666,7 @@ class Handler(BaseHTTPRequestHandler):
                 locked_fill=PatternFill(start_color="c2410c",end_color="c2410c",fill_type="solid")
                 special_fill=PatternFill(start_color="8250df",end_color="8250df",fill_type="solid")
                 failed_fill=PatternFill(start_color="da3633",end_color="da3633",fill_type="solid")
+                uncheckable_fill=PatternFill(start_color="d29922",end_color="d29922",fill_type="solid")
                 col_names=["stt","account","status","uid","name","level","registerDate","player_status","deletion_status","elapsed_ms"]
                 col_labels=["STT","Tài khoản","Trạng thái","UID Garena","Tên Kiện Tướng","Cấp","Ngày tạo","Trạng thái KT","Yêu cầu xóa","ms"]
                 sheets=[
@@ -2582,6 +2675,7 @@ class Handler(BaseHTTPRequestHandler):
                     (2,locked,"Bị khóa",locked_fill),
                     (3,special,"Đặc biệt",special_fill),
                     (4,failed,"Không thể log",failed_fill),
+                    (5,uncheckable,"Chưa thể check",uncheckable_fill),
                 ]
                 for idx,data_list,label,fill in sheets:
                     ws=wb.active if idx==0 else wb.create_sheet()
@@ -2763,6 +2857,32 @@ def main() -> int:
             raise SystemExit("SELF-TEST FAIL: no-character response rejected")
         if kientuong_no_character_response({"ok": False, "status": 429, "body": {}}):
             raise SystemExit("SELF-TEST FAIL: rate limit treated as no character")
+        if not batch_rate_limit_suspected({"apis": {"player": {"status": 429}}}):
+            raise SystemExit("SELF-TEST FAIL: HTTP 429 rate limit not detected")
+        test_rejection = RuntimeError("Garena từ chối ở bước LOGIN (lệnh 0x101), mã 1")
+        test_rejection.garena_rejected = True
+        test_rejection.garena_command = 0x101
+        test_rejection.garena_result = 1
+        if tcp_rate_limit_suspected(test_rejection, 250):
+            raise SystemExit("SELF-TEST FAIL: fast TCP rejection treated as rate limit")
+        if not tcp_fast_login_rejection_should_retry(test_rejection, 250):
+            raise SystemExit("SELF-TEST FAIL: fast TCP rejection not retried")
+        if tcp_rate_limit_suspected(test_rejection, 900):
+            raise SystemExit("SELF-TEST FAIL: slow TCP rejection treated as rate limit")
+        if tcp_fast_login_rejection_should_retry(test_rejection, 900):
+            raise SystemExit("SELF-TEST FAIL: slow TCP rejection retried")
+        if not tcp_login_was_rejected(test_rejection):
+            raise SystemExit("SELF-TEST FAIL: LOGIN 0x101 not recognized")
+        test_prepare_rejection = RuntimeError(
+            "Garena từ chối ở bước LOGIN_PREPARE (lệnh 0x100), mã 1"
+        )
+        test_prepare_rejection.garena_rejected = True
+        test_prepare_rejection.garena_command = 0x100
+        test_prepare_rejection.garena_result = 1
+        if tcp_rate_limit_suspected(test_prepare_rejection, 100):
+            raise SystemExit("SELF-TEST FAIL: LOGIN_PREPARE treated as rate limit")
+        if not tcp_login_was_rejected(test_prepare_rejection):
+            raise SystemExit("SELF-TEST FAIL: LOGIN_PREPARE rejection not recognized")
         if configured_server_ports([5555, 5556, 5555]) != [5555, 5556]:
             raise SystemExit("SELF-TEST FAIL: repeated HTTP ports")
         if configured_server_ports(None, ports_env="5555, 6000") != [5555, 6000]:
