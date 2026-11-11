@@ -13,6 +13,30 @@ from uplv_kientuong import PlayerSession
 
 
 class WebTests(unittest.TestCase):
+    def test_recovery_game_failure_uses_web_fallback_for_completed_account(self):
+        from uplv_engine import Engine
+        engine = Engine.__new__(Engine)
+        engine.login_lock = threading.Lock()
+        engine.last_login = 0
+        engine.runtime = (None, None, Mock(return_value=SimpleNamespace(sso_key='unused', open_id='expected', access_token='unused')),
+                          lambda u: {'device_id':'unused'}, None, None)
+        session = SimpleNamespace(check_stop=lambda:None, authenticate_garena_session=lambda *a:None,
+                                  connect=Mock(side_effect=TimeoutError()), close=Mock())
+        web = Mock()
+        web.read.return_value = 12
+        with patch('pve_runtime.loader.load', return_value=SimpleNamespace(LeverSession=lambda *a:session)), \
+             patch('uplv_kientuong.PlayerSession', return_value=web):
+            result = engine.run({'accounts':[['u','unused']], 'levels':[8], 'targets':[12], 'verify_only':True},
+                                threading.Event(), lambda *a:None, lambda *a:None)
+        self.assertTrue(result[0][0])
+        self.assertEqual(result[0][2],12)
+        web.read.assert_called_once()
+        web.close.assert_called_once()
+
+    def test_game_restriction_is_terminal_but_generic_garena_error_is_not(self):
+        from pve_runtime.failure_policy import restricted_account
+        self.assertTrue(restricted_account('Tài khoản game bị khóa / hạn chế: Tài khoản khởi tạo có dấu hiệu bất thường.'))
+        self.assertFalse(restricted_account('Garena từ chối yêu cầu, mã 3 (command=0x1BA)'))
     def test_game_only_team_keeps_sessions_until_target(self):
         created, plays = [], []
         class Session:

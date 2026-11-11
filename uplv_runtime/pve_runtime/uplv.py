@@ -149,6 +149,13 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
             session.close()
             results[index] = (False, before, after, str(exc))
             progress(index, f"[ERROR] Chuẩn bị thất bại: {exc}")
+            from .failure_policy import restricted_account
+            if restricted_account(exc):
+                results[index] = (False, before, max(after, getattr(session, 'level', 0) or 0),
+                                  'terminal_restricted: ' + str(exc))
+                if completed:
+                    completed(index, results[index])
+                return
             if allow_regroup and not stop.is_set():
                 results[index] = (False, before, max(after, getattr(session, 'level', 0) or 0),
                                   UNRESOLVED + ': ' + str(exc))

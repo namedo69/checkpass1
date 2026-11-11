@@ -56,7 +56,9 @@ class Engine:
                         raise RuntimeError('Stopped')
                     self.last_login = time.monotonic()
                 try:
-                    bundle = login(user, password, device(user)['device_id'], timeout=20)
+                    # UpLv now reads levels in-game; requesting web SSO here
+                    # adds a failure point (0x1BA) unrelated to game login.
+                    bundle = login(user, password, device(user)['device_id'], timeout=20, with_sso_key=False)
                     break
                 except Exception as exc:
                     # Code 3 is an unclassified request rejection, not proof
@@ -128,6 +130,7 @@ class Engine:
                 target = room['targets'][index]
                 row = (False, level, level, 'pool_verifying')
                 session = web = None
+                bundle = None
                 try:
                     progress(index, '[VERIFYING] Đối soát cấp/trạng thái cũ; không mở trận')
                     bundle = authenticate(*room['accounts'][index])
@@ -158,9 +161,46 @@ class Engine:
                     progress(index, '[POOL_READY] Đã xác nhận rảnh; chờ ghép cùng cấp' if row[3] == 'pool_ready'
                              else '[STACK4_DONE] Đã đạt mục tiêu' if row[0] else '[VERIFYING] Chưa xác nhận rảnh; retry có giới hạn')
                 except Exception as exc:
-                    if room.get('screen_only'):
+                    from pve_runtime.failure_policy import restricted_account
+                    diagnostic = str(exc) or type(exc).__name__
+                    for account in room['accounts']:
+                        for secret in account:
+                            if secret:
+                                diagnostic = diagnostic.replace(secret, '[REDACTED]')
+                    if restricted_account(exc):
+                        row = (False, room['levels'][index], level, 'terminal_restricted: ' + diagnostic)
+                    elif room.get('screen_only'):
                         row = (False, room['levels'][index], level, 'screen_wait')
-                    progress(index, '[VERIFYING] Đối soát chưa xong: ' + type(exc).__name__)
+                    progress(index, '[ERROR] Tài khoản bị hạn chế: ' + diagnostic if restricted_account(exc)
+                             else '[VERIFYING] Đối soát chưa xong: ' + type(exc).__name__ + ': ' + diagnostic)
+                    if not restricted_account(exc) and not stop.is_set():
+                        try:
+                            from uplv_kientuong import PlayerSession
+                            progress(index, '[VERIFYING] Không đọc được game; kiểm tra cấp Kiện Tướng dự phòng')
+                            if bundle is None:
+                                user, password = room['accounts'][index]
+                                bundle = login(user, password, device(user)['device_id'], timeout=15, with_sso_key=True)
+                            key = getattr(bundle, 'sso_key', '') if bundle is not None else ''
+                            if not key:
+                                from token_login import login_sso_key
+                                key = login_sso_key(*room['accounts'][index], timeout=15)
+                                key = key.sso_key if hasattr(key, 'sso_key') else str(key)
+                            # OAuth/game namespace is bound only when a bundle
+                            # was obtained. Never accept an unbound web player.
+                            if bundle is None:
+                                raise RuntimeError('Chưa có OAuth identity để đối chiếu Kiện Tướng')
+                            web = PlayerSession(key, bundle.open_id, stop)
+                            actual = web.read(time.monotonic() + 20)
+                            level = actual
+                            progress(index, f'[LEVEL] Lv{level}')
+                            if level >= target:
+                                row = (True, room['levels'][index], level, '')
+                                progress(index, '[STACK4_DONE] Kiện Tướng dự phòng xác nhận đạt mục tiêu')
+                            else:
+                                row = (False, room['levels'][index], level, 'pool_verifying')
+                                progress(index, '[VERIFYING] Kiện Tướng đã xác nhận cấp; còn chờ trạng thái trận trong game')
+                        except Exception as fallback:
+                            progress(index, '[VERIFYING] Kiện Tướng dự phòng chưa xong: ' + type(fallback).__name__)
                 finally:
                     if session is not None:
                         session.close()

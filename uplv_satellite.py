@@ -151,6 +151,7 @@ class Satellite:
                         and results.get(str(index), {}).get('status') == 'failed'):
                     return  # The failed original is not merely pending on stop.
                 failure_kind = ('login' if error.startswith('terminal_login:') else
+                                'restricted' if error.startswith('terminal_restricted:') else
                                 'create_character' if error.startswith('terminal_create_character:') else '')
                 pending = stop.is_set() or (not ok and not failure_kind)
                 if error:
