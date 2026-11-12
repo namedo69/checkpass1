@@ -54,13 +54,25 @@ class Engine:
                         completed(index, row)
         results = self._run_once(room, stop, progress, publish, replacement)
         attempts = {}
+        recovery_started = time.monotonic()
+        max_recovery_attempts = 3
+        recovery_budget = 180
         while not stop.is_set():
             unresolved = [i for i, row in results.items()
                           if not row[0] and not str(row[3]).startswith('terminal_')
-                          and row[3] not in ('pool_ready', 'screen_ready')]
+                           and row[3] not in ('pool_ready', 'screen_ready')]
+            if unresolved and (
+                time.monotonic() - recovery_started >= recovery_budget
+                or all(attempts.get(i, 0) >= max_recovery_attempts for i in unresolved)
+            ):
+                for index in unresolved:
+                    progress(index, '[VERIFYING] Hết lượt kiểm tra tại worker; trả về hàng kiểm tra và giải phóng phòng')
+                break
             for index in unresolved:
                 if stop.is_set():
                     break
+                if attempts.get(index, 0) >= max_recovery_attempts or time.monotonic() - recovery_started >= recovery_budget:
+                    continue
                 attempts[index] = attempts.get(index, 0) + 1
                 delay = min(30, 2 ** min(attempts[index], 5))
                 progress(index, f'[VERIFYING] Worker tự đối soát lượt {attempts[index]}; thử lại sau {delay}s, giữ quyền xử lý')
@@ -221,13 +233,16 @@ class Engine:
                         for secret in account:
                             if secret:
                                 diagnostic = diagnostic.replace(secret, '[REDACTED]')
-                    if restricted_account(exc):
+                    create_rejected = 'tạo nhân vật bị từ chối' in str(exc).casefold()
+                    if create_rejected:
+                        row = (False, room['levels'][index], level, 'terminal_create_character: ' + diagnostic)
+                    elif restricted_account(exc):
                         row = (False, room['levels'][index], level, 'terminal_restricted: ' + diagnostic)
                     elif room.get('screen_only'):
                         row = (False, room['levels'][index], level, 'screen_wait')
                     progress(index, '[ERROR] Tài khoản bị hạn chế: ' + diagnostic if restricted_account(exc)
                              else '[VERIFYING] Đối soát chưa xong: ' + type(exc).__name__ + ': ' + diagnostic)
-                    if not restricted_account(exc) and not stop.is_set():
+                    if not create_rejected and not restricted_account(exc) and not stop.is_set():
                         try:
                             from uplv_kientuong import PlayerSession
                             progress(index, '[VERIFYING] Không đọc được game; kiểm tra cấp Kiện Tướng dự phòng')
