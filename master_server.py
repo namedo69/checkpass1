@@ -4563,82 +4563,82 @@ class MasterHandler(BaseHTTPRequestHandler):
             min_level = max(1, min(1000, int(query.get("min_level", ["12"])[0])))
         except (TypeError, ValueError):
             min_level = 12
-        # Map category filter to internal group names
-        CATEGORY_TO_GROUP = {
-            "OK": "Đạt", "NOT_MET": "Không đạt", "CTNV": "CTNV",
-            "GRANT_ERROR": "Lỗi CTNV", "LOCKED": "Bị khóa",
-            "FAIL": "Không thể log", "PENDING": "Chưa thể check",
-        }
+
         store = self.server.store
+
+        # Build SQL category expression (same as _handle_job_rows)
+        status_sql = "COALESCE(json_extract(row_json,'$.status'),'')"
+        result_type_sql = "LOWER(COALESCE(json_extract(row_json,'$.result_type'),''))"
+        player_status_sql = "LOWER(COALESCE(json_extract(row_json,'$.player_status'),''))"
+        level_text_sql = "COALESCE(json_extract(row_json,'$.level'),'')"
+        if isinstance(store, PostgreSQLStore):
+            like_any = "%%"
+            numeric_level_sql = (
+                f"CASE WHEN {level_text_sql} ~ '^[0-9]+$' "
+                f"THEN CAST({level_text_sql} AS INTEGER) ELSE 0 END"
+            )
+        else:
+            like_any = "%"
+            numeric_level_sql = f"CAST({level_text_sql} AS INTEGER)"
+        category_sql = (
+            "CASE "
+            f"WHEN {status_sql}='CHƯA THỂ CHECK' OR {result_type_sql}='chưa thể check' THEN 'PENDING' "
+            f"WHEN UPPER({status_sql})!='OK' OR {result_type_sql} IN ('sai pass','không thể log') THEN 'FAIL' "
+            f"WHEN {result_type_sql}='lỗi ctnv' THEN 'GRANT_ERROR' "
+            f"WHEN {player_status_sql} LIKE '{like_any}khóa{like_any}' "
+            f"OR {player_status_sql} LIKE '{like_any}ban{like_any}' "
+            f"OR {player_status_sql} LIKE '{like_any}cấm{like_any}' THEN 'LOCKED' "
+            f"WHEN LOWER({level_text_sql})='ctnv' "
+            f"OR {player_status_sql} LIKE '{like_any}chưa tạo nhân vật{like_any}' THEN 'CTNV' "
+            f"WHEN {numeric_level_sql}>=? THEN 'OK' "
+            "ELSE 'NOT_MET' END"
+        )
+
+        # Build WHERE filter
+        filter_sql = ""
+        filter_args: tuple[Any, ...] = (min_level,)
+        if category_filter != "ALL":
+            filter_sql = f" AND ({category_sql})=?"
+            filter_args = (min_level, category_filter)
+
         rows_raw = store.fetch(
-            "SELECT chunk_id, row_json FROM results WHERE job_id=? ORDER BY id", (job_id,)
+            "SELECT r.chunk_id, r.row_json, c.account FROM results r "
+            "JOIN chunks c ON c.id=r.chunk_id "
+            f"WHERE r.job_id=?{filter_sql} ORDER BY r.id",
+            (job_id, *filter_args),
         )
-        chunks_raw = store.fetch(
-            "SELECT id, account FROM chunks WHERE job_id=?", (job_id,)
-        )
-        credentials_by_chunk: dict[int, list[str]] = {}
-        for chunk_id, credentials_json in chunks_raw:
+
+        lines: list[str] = []
+        for _chunk_id, row_json, credentials_json in rows_raw:
+            row = json.loads(row_json)
             try:
                 credentials = json.loads(credentials_json)
             except (TypeError, json.JSONDecodeError):
                 credentials = []
-            credentials_by_chunk[int(chunk_id)] = credentials if isinstance(credentials, list) else []
-        grouped_rows: dict[str, list[dict[str, Any]]] = {
-            "Đạt": [], "Không đạt": [], "CTNV": [], "Lỗi CTNV": [], "Chưa thể check": [], "Bị khóa": [], "Không thể log": [],
-        }
-        for chunk_id, row_json in rows_raw:
-            row = json.loads(row_json)
             try:
                 row_index = int(str(row.get("stt") or "0")) - 1
             except (TypeError, ValueError):
                 row_index = -1
-            credentials = credentials_by_chunk.get(int(chunk_id), [])
             if 0 <= row_index < len(credentials):
                 row["_export_credential"] = str(credentials[row_index])
             level = str(row.get("level") or "").strip()
             player_status = str(row.get("player_status") or "").strip()
             is_ctnv = level.casefold() == "ctnv" or player_status.casefold() == "chưa tạo nhân vật"
-            result_type = str(row.get("result_type") or "").strip().casefold()
-            if result_type in {"sai pass", "không thể log"} or str(row.get("status") or "").strip().upper() == "FAIL":
-                grouped_rows["Không thể log"].append(row)
-            elif result_type == "chưa thể check" or str(row.get("status") or "").strip().upper() == "CHƯA THỂ CHECK":
-                grouped_rows["Chưa thể check"].append(row)
-            elif player_status == "Bị khóa":
-                grouped_rows["Bị khóa"].append(row)
-            elif result_type == "lỗi ctnv":
-                grouped_rows["Lỗi CTNV"].append(row)
-            elif is_ctnv:
-                grouped_rows["CTNV"].append(row)
-            elif level.isdigit() and int(level) >= min_level:
-                grouped_rows["Đạt"].append(row)
-            else:
-                grouped_rows["Không đạt"].append(row)
-        all_categories = ("Đạt", "Không đạt", "CTNV", "Lỗi CTNV", "Chưa thể check", "Bị khóa", "Không thể log")
-        if category_filter != "ALL":
-            export_categories = (CATEGORY_TO_GROUP[category_filter],)
-        else:
-            export_categories = all_categories
-        lines: list[str] = []
-        for category in export_categories:
-            for row in grouped_rows[category]:
-                level = str(row.get("level") or "").strip()
-                player_status = str(row.get("player_status") or "").strip()
-                is_ctnv = level.casefold() == "ctnv" or player_status.casefold() == "chưa tạo nhân vật"
-                name = "CTNV" if is_ctnv else str(row.get("name") or "").strip()
-                status = player_status or str(row.get("status") or "").strip()
-                values = [
-                    str(row.get("_export_credential") or row.get("account") or "").strip(),
-                    str(row.get("uid") or "").strip(),
-                    name,
-                    level,
-                    status,
-                ]
-                if player_status == "Bị khóa":
-                    values.extend((
-                        f"Ban: {str(row.get('banTime') or '').strip()}",
-                        f"Mở ban: {str(row.get('unbanTime') or '').strip()}",
-                    ))
-                lines.append(" || ".join(values))
+            name = "CTNV" if is_ctnv else str(row.get("name") or "").strip()
+            status = player_status or str(row.get("status") or "").strip()
+            values = [
+                str(row.get("_export_credential") or row.get("account") or "").strip(),
+                str(row.get("uid") or "").strip(),
+                name,
+                level,
+                status,
+            ]
+            if player_status == "Bị khóa":
+                values.extend((
+                    f"Ban: {str(row.get('banTime') or '').strip()}",
+                    f"Mở ban: {str(row.get('unbanTime') or '').strip()}",
+                ))
+            lines.append(" || ".join(values))
         body = "\n".join(lines) + ("\n" if lines else "")
         data = body.encode("utf-8-sig")
         category_suffix = "" if category_filter == "ALL" else f"_{category_filter.lower()}"
