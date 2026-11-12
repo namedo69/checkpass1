@@ -1,0 +1,3661 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5">
+<title>CHECK.SP1S.SHOP - Check ban tốc độ cao</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg?v=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+:root {
+  /* Brand Flame Colors */
+  --primary: #E53935;
+  --primary-dark: #C62828;
+  --primary-light: #FF5252;
+  --secondary: #EA580C;
+  --secondary-dark: #C2410C;
+  --secondary-light: #F97316;
+  --gold: #D97706;
+  --danger: #DC2626;
+  --danger-dark: #B91C1C;
+  --warning: #D97706;
+  --success: #059669;
+  --success-dark: #047857;
+  --info: #2563EB;
+  --purple: #7C3AED;
+
+  /* Modern Clean Light Surfaces */
+  --bg: #F8FAFC;
+  --bg-secondary: #FFFFFF;
+  --bg-card: #FFFFFF;
+  --bg-card-hover: #F8FAFC;
+  --bg-input: #F1F5F9;
+  --bg-tertiary: #F1F5F9;
+  --text: #0F172A;
+  --text-secondary: #475569;
+  --text-muted: #64748B;
+  --border: #E2E8F0;
+  --border-light: #CBD5E1;
+  --border-glow: rgba(234, 88, 12, 0.4);
+
+  /* Clean Soft Shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow: 0 4px 16px -2px rgba(15, 23, 42, 0.08), 0 2px 6px -1px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 20px 30px -6px rgba(15, 23, 42, 0.12), 0 8px 12px -4px rgba(15, 23, 42, 0.06);
+  --glow-primary: 0 4px 14px rgba(229, 57, 53, 0.25);
+  --glow-secondary: 0 4px 14px rgba(234, 88, 12, 0.25);
+
+  --radius-sm: 8px;
+  --radius: 14px;
+  --radius-lg: 20px;
+  --detail-motion-duration: 300ms;
+  --detail-motion-easing: cubic-bezier(0.4, 0, 0.2, 1);
+  --jobs-expand-duration: 480ms;
+  --jobs-expand-easing: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: radial-gradient(circle at 10% 10%, rgba(229, 57, 53, 0.04) 0%, transparent 45%),
+              radial-gradient(circle at 90% 15%, rgba(234, 88, 12, 0.04) 0%, transparent 45%),
+              var(--bg);
+  color: var(--text);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  min-height: 100vh;
+  line-height: 1.5;
+  overflow-x: hidden;
+  padding: 0 0 40px 0;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+/* Navbar / Header */
+.navbar {
+  position: sticky;
+  top: 0;
+  z-index: 900;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 0;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+}
+
+.container {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.navbar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.brand-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 20px;
+  box-shadow: var(--glow-primary);
+  flex-shrink: 0;
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand-title {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  background: linear-gradient(105deg, #DC2626 0%, #EA580C 28%, #FBBF24 46%, #EA580C 64%, #D97706 100%);
+  background-size: 240% 100%;
+  background-position: 0% 50%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  line-height: 1.2;
+  animation: brandTitleShimmer 4.2s ease-in-out infinite;
+  will-change: background-position, filter;
+}
+
+@keyframes brandTitleShimmer {
+  0%, 100% {
+    background-position: 0% 50%;
+    filter: drop-shadow(0 0 0 rgba(234, 88, 12, 0));
+  }
+  50% {
+    background-position: 100% 50%;
+    filter: drop-shadow(0 2px 5px rgba(234, 88, 12, 0.22));
+  }
+}
+
+.brand-subtitle {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.badge-role {
+  background: rgba(234, 88, 12, 0.1);
+  border: 1px solid rgba(234, 88, 12, 0.3);
+  color: #C2410C;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 7px;
+  border-radius: 99px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.navbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Key Pill Badge */
+.key-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+  padding: 6px 14px;
+  border-radius: 99px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.2s ease;
+}
+.key-pill:hover {
+  border-color: var(--secondary);
+  background: #FFF7ED;
+  color: var(--text);
+  transform: translateY(-1px);
+}
+.key-pill .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 6px rgba(5, 150, 105, 0.6);
+  animation: pulse-dot 2s infinite;
+}
+.key-pill .status-dot.empty {
+  background: var(--warning);
+  box-shadow: 0 0 6px rgba(217, 119, 6, 0.6);
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 18px;
+  border-radius: var(--radius-sm);
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  text-decoration: none;
+  line-height: 1.4;
+  user-select: none;
+  white-space: nowrap;
+}
+.btn:active {
+  transform: scale(0.98);
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+  color: #fff;
+  box-shadow: 0 3px 12px rgba(229, 57, 53, 0.3);
+}
+.btn-primary:hover {
+  background: linear-gradient(135deg, var(--primary-light) 0%, var(--secondary-light) 100%);
+  box-shadow: 0 5px 16px rgba(229, 57, 53, 0.45);
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-sm);
+}
+.btn-secondary:hover {
+  background: #F1F5F9;
+  color: var(--text);
+  border-color: var(--border-light);
+  transform: translateY(-1px);
+}
+
+.btn-danger {
+  background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%);
+  color: #fff;
+  box-shadow: 0 3px 12px rgba(220, 38, 38, 0.25);
+}
+.btn-danger:hover {
+  background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
+  box-shadow: 0 5px 16px rgba(220, 38, 38, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-success {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  color: #fff;
+  box-shadow: 0 3px 12px rgba(5, 150, 105, 0.25);
+}
+.btn-success:hover {
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  box-shadow: 0 5px 16px rgba(5, 150, 105, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-info {
+  background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
+  color: #fff;
+  box-shadow: 0 3px 12px rgba(37, 99, 235, 0.25);
+}
+.btn-info:hover {
+  background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
+  box-shadow: 0 5px 16px rgba(37, 99, 235, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-purple {
+  background: linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%);
+  color: #fff;
+  box-shadow: 0 3px 12px rgba(124, 58, 237, 0.25);
+}
+.btn-purple:hover {
+  background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%);
+  box-shadow: 0 5px 16px rgba(124, 58, 237, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-sm {
+  padding: 6px 13px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+.icon-btn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 8px;
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+.icon-btn:hover {
+  background: #F1F5F9;
+  color: var(--text);
+  border-color: var(--border-light);
+}
+
+/* Top Section: Notice + Overview Stats */
+.top-section-row {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 3fr);
+  gap: 16px;
+  width: 100%;
+  align-items: stretch;
+  margin: 20px 0 24px;
+}
+.top-section-row.notice-hidden {
+  grid-template-columns: 1fr;
+}
+.top-section-row.notice-hidden #noticeBox {
+  display: none !important;
+}
+
+/* Banner / Notice */
+.notice-box {
+  margin: 0;
+  height: 100%;
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  position: relative;
+  box-shadow: var(--shadow-sm);
+}
+.notice-icon {
+  font-size: 22px;
+  color: #D97706;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.notice-content {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #78350F;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.notice-content strong {
+  color: #92400E;
+}
+.notice-title {
+  color: #92400E;
+  font-weight: 800;
+  font-size: 13.5px;
+  margin-bottom: 5px;
+}
+.notice-body {
+  white-space: pre-line;
+}
+.notice-badges {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.notice-tag {
+  background: #FEF3C7;
+  border: 1px solid #FCD34D;
+  color: #92400E;
+  font-size: 11px;
+  padding: 2px 10px;
+  border-radius: 99px;
+  font-weight: 600;
+}
+.notice-tag.kientuong-ready {
+  background: #DCFCE7;
+  border-color: #86EFAC;
+  color: #166534;
+}
+.notice-tag.kientuong-down {
+  background: #FEE2E2;
+  border-color: #FCA5A5;
+  color: #B91C1C;
+  animation: kientuong-alert 1.5s infinite;
+}
+.notice-tag.kientuong-checking {
+  background: #FEF3C7;
+  border-color: #FCD34D;
+  color: #92400E;
+}
+@keyframes kientuong-alert {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(185, 28, 28, 0); }
+  50% { box-shadow: 0 0 0 4px rgba(185, 28, 28, 0.18); }
+}
+
+/* Top Overview Stats Grid (1 Cột 5 Hàng cạnh Notice) */
+.overview-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: repeat(5, 1fr);
+  gap: 10px;
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  align-items: stretch;
+}
+.overview-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  transition: all 0.25s ease;
+  position: relative;
+  box-shadow: var(--shadow-sm);
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+}
+.overview-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-light);
+  box-shadow: var(--shadow);
+}
+.overview-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+.overview-icon.jobs { background: #EDE9FE; color: #7C3AED; }
+.overview-icon.running { background: #FEF3C7; color: #D97706; }
+.overview-icon.done { background: #D1FAE5; color: #059669; }
+.overview-icon.accounts { background: #FEE2E2; color: #DC2626; }
+.overview-icon.pending-accounts { background: #DBEAFE; color: #2563EB; }
+
+.overview-info {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  height: auto;
+}
+.overview-info > div {
+  width: 100%;
+  height: auto;
+}
+.overview-num {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.15;
+}
+.overview-running-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.overview-running-breakdown strong { color: var(--text); }
+.overview-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Workspace Layout */
+.workspace {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  align-items: start;
+  width: 100%;
+  height: auto;
+}
+.workspace.detail-open {
+  grid-template-columns: minmax(340px, 390px) minmax(0, 1fr);
+}
+.workspace:not(.detail-open) .jobs-card {
+  width: 100%;
+}
+.workspace:not(.detail-open) .jobs-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 12px;
+}
+.workspace.detail-open .jobs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.workspace.detail-open .jobs-card {
+  animation: jobsColumnSettle var(--detail-motion-duration) var(--detail-motion-easing) both;
+}
+.jobs-card.list-expand {
+  animation: jobsColumnExpand var(--jobs-expand-duration) var(--jobs-expand-easing) both;
+}
+
+/* Cards */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px;
+  box-shadow: var(--shadow);
+  position: relative;
+  width: 100%;
+  height: auto;
+  box-sizing: border-box;
+}
+
+.card-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.card-title {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+}
+.card-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  font-weight: normal;
+}
+
+/* Job List */
+.jobs-search-bar {
+  margin-bottom: 12px;
+  position: relative;
+}
+.jobs-status-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -2px 0 12px;
+  flex-wrap: wrap;
+}
+.jobs-status-filter button {
+  padding: 5px 12px;
+  border-radius: 99px;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.jobs-status-filter button:hover {
+  color: var(--text);
+  border-color: var(--border-light);
+}
+.jobs-status-filter button.active {
+  background: var(--secondary);
+  border-color: var(--secondary);
+  color: #FFFFFF;
+  box-shadow: 0 2px 8px rgba(234, 88, 12, 0.25);
+}
+.jobs-search-input {
+  width: 100%;
+  padding: 8px 12px 8px 34px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12.5px;
+  transition: all 0.2s;
+}
+.jobs-search-input:focus {
+  outline: none;
+  border-color: var(--secondary);
+  background: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.12);
+}
+.jobs-search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.jobs-list {
+  max-height: 720px;
+  overflow-y: auto;
+  width: 100%;
+  padding-right: 4px;
+  box-sizing: border-box;
+}
+
+/* Job Card Item */
+.job-item {
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  width: 100%;
+  height: auto;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.job-item:hover {
+  background: #F8FAFC;
+  border-color: var(--secondary);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+.job-item.active {
+  background: #FFF7ED;
+  border-color: var(--secondary);
+  box-shadow: 0 0 0 1px var(--secondary), 0 6px 18px rgba(234, 88, 12, 0.12);
+}
+.job-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: linear-gradient(180deg, var(--primary), var(--secondary));
+}
+
+.job-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.job-id-tag {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.job-id-tag i {
+  color: var(--secondary);
+  font-size: 13px;
+}
+
+/* Status Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.badge-running {
+  background: #FEF3C7;
+  color: #B45309;
+  border: 1px solid #FCD34D;
+}
+.badge-done {
+  background: #D1FAE5;
+  color: #047857;
+  border: 1px solid #6EE7B7;
+}
+
+.job-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.job-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Progress Bar */
+.progress-container {
+  margin: 10px 0 6px;
+}
+.progress-track {
+  height: 8px;
+  background: #E2E8F0;
+  border-radius: 99px;
+  overflow: hidden;
+  position: relative;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #EA580C 0%, #059669 100%);
+  border-radius: 99px;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.progress-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+.progress-label strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* Small Stats Pills on Job Card */
+.job-pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.job-pill {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #F1F5F9;
+  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+}
+.job-pill.ok { color: #047857; border-color: #A7F3D0; background: #ECFDF5; }
+.job-pill.fail { color: #B91C1C; border-color: #FECACA; background: #FEF2F2; }
+.job-pill.pending { color: #B45309; border-color: #FDE68A; background: #FFFBEB; }
+
+/* Detail Card */
+.detail-card {
+  position: sticky;
+  top: 80px;
+  transform-origin: top right;
+  will-change: transform, opacity;
+  width: 100%;
+  height: auto;
+  box-sizing: border-box;
+}
+.detail-card.detail-enter {
+  animation: detailCardEnter var(--detail-motion-duration) var(--detail-motion-easing) both;
+}
+.detail-card.detail-leave {
+  animation: detailCardLeave var(--detail-motion-duration) var(--detail-motion-easing) both;
+  pointer-events: none;
+}
+@keyframes detailCardEnter {
+  from { opacity: 0; transform: translateX(24px) scale(0.985); filter: blur(2px); }
+  to { opacity: 1; transform: translateX(0) scale(1); filter: blur(0); }
+}
+@keyframes detailCardLeave {
+  from { opacity: 1; transform: translateX(0) scale(1); filter: blur(0); }
+  to { opacity: 0; transform: translateX(24px) scale(0.985); filter: blur(2px); }
+}
+@keyframes jobsColumnSettle {
+  from { opacity: 0.88; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes jobsColumnExpand {
+  from { opacity: 0.92; clip-path: inset(0 60% 0 0 round var(--radius)); }
+  to { opacity: 1; clip-path: inset(0 0 0 0 round var(--radius)); }
+}
+.detail-head-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+.detail-kicker {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--secondary);
+}
+.detail-title {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+  margin: 3px 0 6px;
+}
+.detail-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+.detail-meta-row span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Detail Progress Box */
+.detail-progress-box {
+  background: #F8FAFC;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+/* Detail Stats 6 Grid */
+.detail-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.stat-box {
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 10px;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.2s;
+}
+.stat-box:hover {
+  border-color: var(--border-light);
+  transform: translateY(-1px);
+}
+.stat-box .num {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.2;
+}
+.stat-box .lbl {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.stat-box.ok .num { color: #059669; }
+.stat-box.fail .num { color: #DC2626; }
+.stat-box.pending .num { color: #D97706; }
+.stat-box.blue .num { color: #2563EB; }
+
+/* Detail Actions Toolbar */
+.detail-actions-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  background: #F8FAFC;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  flex-wrap: wrap;
+}
+.actions-left, .actions-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.level-input-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+.level-input-wrap input {
+  width: 50px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+.level-input-wrap input:focus {
+  outline: none;
+}
+
+/* Results Filter Toolbar */
+.results-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+.filter-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.filter-tab {
+  padding: 4px 12px;
+  border-radius: 99px;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.filter-tab:hover {
+  color: var(--text);
+  border-color: var(--border-light);
+}
+.filter-tab.active {
+  background: var(--secondary);
+  border-color: var(--secondary);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(234, 88, 12, 0.35);
+}
+
+.results-search-wrap {
+  position: relative;
+  min-width: 220px;
+}
+.results-search-wrap input {
+  width: 100%;
+  padding: 6px 12px 6px 32px;
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--text);
+}
+.results-search-wrap input:focus {
+  outline: none;
+  border-color: var(--secondary);
+  box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.12);
+}
+.results-search-wrap i {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* Table */
+.table-scroll-container {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: auto;
+  max-height: 420px;
+  background: #FFFFFF;
+}
+table.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  text-align: left;
+}
+table.data-table th {
+  position: sticky;
+  top: 0;
+  background: #F8FAFC;
+  color: var(--text-muted);
+  padding: 10px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+  z-index: 10;
+  white-space: nowrap;
+}
+table.data-table td {
+  padding: 9px 12px;
+  border-bottom: 1px solid #F1F5F9;
+  color: var(--text);
+  vertical-align: middle;
+}
+table.data-table tbody tr {
+  transition: background 0.15s ease;
+}
+table.data-table tbody tr:hover {
+  background: #F8FAFC;
+}
+
+.account-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: monospace;
+  font-size: 12px;
+}
+.copy-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  font-size: 12px;
+}
+.copy-btn:hover {
+  color: var(--secondary);
+  background: #FFF7ED;
+}
+
+.tag-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.tag-badge.ok {
+  background: #D1FAE5;
+  color: #047857;
+  border: 1px solid #A7F3D0;
+}
+.tag-badge.not-met {
+  background: #FEF9C3;
+  color: #A16207;
+  border: 1px solid #FDE047;
+}
+.tag-badge.ctnv {
+  background: #EDE9FE;
+  color: #6D28D9;
+  border: 1px solid #C4B5FD;
+}
+.tag-badge.locked {
+  background: #FFEDD5;
+  color: #C2410C;
+  border: 1px solid #FDBA74;
+}
+.ban-time-details {
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.45;
+  white-space: nowrap;
+}
+.tag-badge.fail {
+  background: #FEE2E2;
+  color: #B91C1C;
+  border: 1px solid #FECACA;
+}
+.tag-badge.pending {
+  background: #FEF3C7;
+  color: #B45309;
+  border: 1px solid #FDE68A;
+}
+.filter-count {
+  font-size: 11px;
+  opacity: 0.85;
+  margin-left: 3px;
+  font-weight: 700;
+}
+
+.level-badge {
+  background: #FEF3C7;
+  border: 1px solid #FCD34D;
+  color: #B45309;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 11px;
+}
+
+/* Pagination */
+.pagination-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.page-info {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Modals */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease;
+}
+.modal-backdrop.open {
+  display: flex;
+}
+
+body.system-modal-locked {
+  overflow: hidden !important;
+  height: 100vh !important;
+}
+body.system-modal-locked > *:not(#systemLockModal):not(#toast) {
+  pointer-events: none !important;
+  user-select: none !important;
+  filter: blur(5px) grayscale(35%);
+  transition: filter 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-box {
+  width: min(520px, 100%);
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  position: relative;
+  animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  max-height: min(90vh, 850px);
+  max-height: min(90dvh, 850px);
+}
+.modal-box.modal-wide {
+  width: min(800px, 100%);
+}
+.modal-box::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--primary), var(--secondary), #D97706);
+}
+
+.sheet-handle {
+  display: none;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.modal-head {
+  padding: 18px 24px 14px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.modal-head h2 {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.modal-head p {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.modal-body {
+  padding: 18px 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  flex: 1 1 auto;
+}
+.modal-body::-webkit-scrollbar {
+  width: 6px;
+}
+.modal-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.modal-body::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 99px;
+}
+.modal-body::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+.modal-quick-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.modal-quick-actions-left,
+.modal-quick-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.submit-billing-card {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid #fed7aa;
+  border-radius: 12px;
+  background: #fffaf5;
+}
+.submit-billing-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.hide-mobile {
+  display: inline;
+}
+.show-mobile {
+  display: none !important;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+.form-label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.form-input {
+  width: 100%;
+  padding: 10px 14px;
+  background: #F8FAFC;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13.5px;
+  transition: all 0.2s;
+}
+.form-input:focus {
+  outline: none;
+  border-color: var(--secondary);
+  background: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.12);
+}
+
+.modal-textarea {
+  width: 100%;
+  height: 180px;
+  background: #F8FAFC;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  color: var(--text);
+  font-family: monospace;
+  font-size: 13px;
+  resize: vertical;
+  line-height: 1.5;
+  transition: all 0.2s;
+}
+.modal-textarea:focus {
+  outline: none;
+  border-color: var(--secondary);
+  background: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.12);
+}
+
+.textarea-footer-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.textarea-counter {
+  font-weight: 700;
+  color: var(--secondary);
+}
+
+.modal-footer {
+  padding: 12px 24px 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  background: #FFFFFF;
+}
+
+/* Toast */
+#toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: #0F172A;
+  color: #FFFFFF;
+  padding: 12px 20px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+  box-shadow: var(--shadow-lg);
+  display: none;
+  z-index: 2000;
+  align-items: center;
+  gap: 10px;
+  animation: slideInToast 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes slideInToast {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-muted);
+  font-size: 13.5px;
+}
+.empty-state i {
+  font-size: 32px;
+  margin-bottom: 10px;
+  display: block;
+  opacity: 0.5;
+}
+
+/* Spin animation */
+.fa-spin-fast {
+  animation: fa-spin 0.8s infinite linear;
+}
+
+/* Responsive */
+@media (max-width: 1100px) {
+  .detail-stats-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 1024px) {
+  .top-section-row {
+    grid-template-columns: 1fr;
+  }
+  .overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto;
+  }
+  .workspace.detail-open {
+    grid-template-columns: 1fr;
+  }
+  .workspace:not(.detail-open) .jobs-list {
+    grid-template-columns: 1fr;
+  }
+  .detail-card {
+    position: static;
+  }
+  .jobs-card.list-expand {
+    animation: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .navbar-inner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .navbar-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+  .overview-grid {
+    grid-template-columns: 1fr;
+  }
+  .detail-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .detail-actions-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .actions-left, .actions-right {
+    width: 100%;
+    justify-content: stretch;
+  }
+  .actions-left .btn, .actions-right .btn {
+    flex: 1;
+  }
+  .results-search-wrap {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+  .modal-box {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-radius: 20px 20px 0 0 !important;
+    max-height: 92dvh !important;
+    max-height: 92vh !important;
+    border-bottom: none !important;
+    border-left: none !important;
+    border-right: none !important;
+  }
+  .modal-box.modal-wide {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  .modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .sheet-handle {
+    display: block;
+    width: 42px;
+    height: 4px;
+    border-radius: 99px;
+    background: #CBD5E1;
+    margin: 8px auto 0;
+    flex-shrink: 0;
+  }
+  .modal-head {
+    padding: 10px 16px 8px;
+    align-items: center;
+  }
+  .modal-head h2 {
+    font-size: 15.5px;
+    gap: 8px;
+  }
+  .modal-head p {
+    font-size: 11px;
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: calc(100vw - 80px);
+  }
+  .modal-body {
+    padding: 10px 14px 12px;
+  }
+  .modal-quick-actions {
+    margin-bottom: 6px;
+  }
+  .modal-quick-actions .btn {
+    padding: 4px 9px;
+    font-size: 11.5px;
+  }
+  .modal-textarea {
+    height: 120px;
+    min-height: 85px;
+    max-height: 180px;
+    font-size: 15px;
+    padding: 9px 11px;
+    border-radius: 8px;
+  }
+  .textarea-footer-info {
+    font-size: 11px;
+    margin-top: 5px;
+    gap: 6px;
+  }
+  .submit-billing-card {
+    margin-top: 8px;
+    padding: 9px 11px;
+    border-radius: 9px;
+  }
+  .submit-billing-head {
+    margin-bottom: 4px;
+  }
+  .submit-billing-head .form-label {
+    font-size: 11.5px;
+  }
+  #selectedPlanBanner {
+    font-size: 12px !important;
+    margin-bottom: 4px !important;
+    line-height: 1.35;
+  }
+  #billingQuote {
+    margin-top: 6px !important;
+    font-size: 11.5px !important;
+    line-height: 1.35;
+  }
+  .modal-footer {
+    padding: 10px 14px max(12px, env(safe-area-inset-bottom, 12px));
+    gap: 8px;
+    display: flex;
+    box-shadow: 0 -4px 12px rgba(15, 23, 42, 0.05);
+  }
+  .modal-footer .btn-file-import {
+    margin-right: 0 !important;
+    flex: 1 1 auto;
+    font-size: 12px;
+    padding: 7px 10px;
+  }
+  .modal-footer .btn-cancel {
+    padding: 7px 10px;
+    font-size: 12px;
+  }
+  .modal-footer .btn-submit-job {
+    flex: 1.6 1 auto;
+    font-size: 13px;
+    padding: 8px 12px;
+    font-weight: 700;
+  }
+  .hide-mobile {
+    display: none !important;
+  }
+  .show-mobile {
+    display: inline !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-title,
+  .workspace.detail-open .jobs-card,
+  .jobs-card.list-expand,
+  .detail-card.detail-enter,
+  .detail-card.detail-leave {
+    animation: none !important;
+  }
+}
+</style>
+<style id="noticeCustomStyle"></style>
+</head>
+<body>
+
+<!-- Header Navbar -->
+<header class="navbar">
+  <div class="container navbar-inner">
+    <div class="brand" onclick="window.scrollTo({top:0,behavior:'smooth'})">
+      <div class="brand-icon">
+        <i class="fa-solid fa-fire-flame-curved"></i>
+      </div>
+      <div class="brand-text">
+        <div class="brand-title">CHECK.SP1S.SHOP</div>
+        <div class="brand-subtitle">
+          <span>Check ban tốc độ cao</span>
+          <span class="badge-role">MASTER</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="navbar-actions">
+      <div class="key-pill" id="ownerBadgeWrap" title="Tài khoản và số dư SP1S">
+        <span class="status-dot" id="keyDot"></span>
+        <i class="fa-solid fa-user" style="color:#EA580C"></i>
+        <span id="ownerBadgeText">Đang tải tài khoản...</span>
+      </div>
+
+      <button class="btn btn-warning btn-sm" id="topupBtn" style="display:none;background:#f59e0b;color:#ffffff;border:none" onclick="openDepositModal()" title="Nạp tiền vào tài khoản SP1S">
+        <i class="fa-solid fa-bolt"></i> Nạp Tiền
+      </button>
+
+      <button class="btn btn-primary btn-sm" id="createJobBtn" onclick="openSubmitModal()">
+        <i class="fa-solid fa-plus"></i> Tạo Job Mới
+      </button>
+
+      <button class="btn btn-danger btn-sm" id="clearAllDataBtn" style="display:none" onclick="clearAllData()" title="Chỉ dành cho Admin">
+        <i class="fa-solid fa-trash-can"></i> Xóa Tất Cả
+      </button>
+
+      <button class="btn btn-info btn-sm" id="adminPageBtn" style="display:none" onclick="openAdminPage()" title="Quản lý thông báo và server vệ tinh">
+        <i class="fa-solid fa-sliders"></i> Quản Trị
+      </button>
+
+      <button class="btn btn-secondary btn-sm" id="sessionActionBtn" onclick="sessionAction()" title="Tài khoản SP1S">
+        <i class="fa-solid fa-right-to-bracket"></i> Đăng nhập
+      </button>
+
+      <button class="btn btn-secondary btn-sm" id="registerActionBtn" onclick="registerAction()" title="Tạo tài khoản SP1S">
+        <i class="fa-solid fa-user-plus"></i> Đăng ký
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+  <!-- Top Section: Notice Banner + Overview Stats Grid (5 Cards) -->
+  <div class="top-section-row" id="topSectionRow">
+    <!-- System Notice Banner -->
+    <div class="notice-box" id="noticeBox">
+      <div class="notice-content" id="noticeContent">
+        <div>
+          <div class="notice-title" id="noticeTitle">⚠️ CHÍNH SÁCH HỆ THỐNG &amp; LƯU Ý CHECK:</div>
+          <div class="notice-body" id="noticeBody">Dữ liệu job và kết quả chỉ được lưu trong ngày hiện tại. Sang ngày mới, job đã hoàn thành sẽ tự xóa; job đang chạy được giữ lại đến khi hoàn thành rồi mới xóa.
+• Tool check không sử dụng proxy: chỉ khuyến khích check thông tin xấu và mailxt. Nếu TTT sau khi check mà lpass, Admin không chịu trách nhiệm.
+• Nếu gặp tài khoản bị treo quá lâu không trả kết quả, hãy bấm nút Dừng đơn và tạo đơn mới để tránh nghẽn tiến trình.</div>
+        </div>
+        <div class="notice-badges">
+          <span class="notice-tag"><i class="fa-regular fa-clock"></i> Lưu trữ: Trong ngày</span>
+          <span class="notice-tag"><i class="fa-solid fa-bolt"></i> Siêu tốc độ TCP</span>
+          <span class="notice-tag"><i class="fa-solid fa-shield"></i> Mã hóa an toàn</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top Overview Stats (5 Cards Row) -->
+    <div class="overview-grid">
+      <div class="overview-card">
+        <div class="overview-icon jobs"><i class="fa-solid fa-layer-group"></i></div>
+        <div class="overview-info">
+          <div class="overview-num" id="topTotalJobs">0</div>
+          <div class="overview-label">Tổng số Jobs</div>
+        </div>
+      </div>
+      <div class="overview-card">
+        <div class="overview-icon running"><i class="fa-solid fa-bolt-lightning"></i></div>
+        <div class="overview-info">
+          <div class="overview-num" id="topRunningJobs">0</div>
+          <div class="overview-label">Jobs đang chạy</div>
+          <div class="overview-running-breakdown">
+            <span>Thường: <strong id="topNormalRunningJobs">0</strong></span>
+            <span>VVIP: <strong id="topVvipRunningJobs">0</strong></span>
+          </div>
+        </div>
+      </div>
+      <div class="overview-card">
+        <div class="overview-icon done"><i class="fa-solid fa-circle-check"></i></div>
+        <div class="overview-info">
+          <div class="overview-num" id="topDoneJobs">0</div>
+          <div class="overview-label">Jobs hoàn thành</div>
+        </div>
+      </div>
+      <div class="overview-card">
+        <div class="overview-icon accounts"><i class="fa-solid fa-users"></i></div>
+        <div class="overview-info">
+          <div class="overview-num" id="topTotalAccs">0</div>
+          <div class="overview-label">Tài khoản tổng</div>
+        </div>
+      </div>
+      <div class="overview-card">
+        <div class="overview-icon pending-accounts"><i class="fa-solid fa-hourglass-half"></i></div>
+        <div class="overview-info">
+          <div class="overview-num" id="topPendingAccs">0</div>
+          <div class="overview-label">Tài khoản chờ kiểm tra</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Workspace Grid -->
+  <div class="workspace" id="jobsWorkspace">
+    <!-- Cột Trái: Danh Sách Jobs -->
+    <div class="card jobs-card">
+      <div class="card-header-row">
+        <div>
+          <div class="card-title"><i class="fa-solid fa-list-check" style="color:var(--secondary)"></i> Danh Sách Jobs</div>
+          <div class="card-subtitle">Bấm vào từng job để theo dõi tiến độ và tải kết quả</div>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="loadJobs()" title="Làm mới danh sách">
+          <i class="fa-solid fa-rotate" id="refreshJobsIcon"></i> Làm mới
+        </button>
+      </div>
+
+      <div class="jobs-search-bar">
+        <i class="fa-solid fa-magnifying-glass jobs-search-icon"></i>
+        <input type="text" id="jobsSearchInput" class="jobs-search-input" placeholder="Tìm theo Job ID hoặc tài khoản..." oninput="filterJobsList()">
+      </div>
+
+      <div class="jobs-status-filter" id="jobsStatusFilter" aria-label="Lọc job theo trạng thái">
+        <button type="button" class="active" data-status="all" onclick="setJobsStatusFilter('all')">Tất cả</button>
+        <button type="button" data-status="running" onclick="setJobsStatusFilter('running')"><i class="fa-solid fa-bolt"></i> Đang chạy</button>
+        <button type="button" data-status="done" onclick="setJobsStatusFilter('done')"><i class="fa-solid fa-check"></i> Hoàn thành</button>
+      </div>
+
+      <div id="jobsList" class="jobs-list">
+        <div class="empty-state"><i class="fa-solid fa-circle-notch fa-spin-fast"></i><br>Đang kết nối và tải danh sách jobs...</div>
+      </div>
+    </div>
+
+    <!-- Cột Phải: Chi Tiết Job -->
+    <div class="card detail-card" id="detailCard" style="display:none">
+      <div class="detail-head-top">
+        <div>
+          <div class="detail-kicker">Chi Tiết Job #<span id="detailJobId">--</span></div>
+          <div class="detail-title" id="detailTitle">Kết Quả Kiểm Tra</div>
+          <div class="detail-meta-row">
+            <span id="detailStatus"></span>
+            <span><i class="fa-regular fa-clock"></i> <span id="detailDuration">--:--:--</span></span>
+            <span id="detailOwner"></span>
+          </div>
+        </div>
+        <button class="icon-btn" title="Đóng chi tiết" onclick="closeDetail()">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="detail-progress-box" id="detailProgress"></div>
+
+      <div class="detail-stats-grid" id="detailStats"></div>
+
+      <div class="detail-actions-bar">
+        <div class="actions-left">
+          <button class="btn btn-secondary btn-sm" onclick="refreshDetail()">
+            <i class="fa-solid fa-rotate" id="detailRefreshIcon"></i> Làm mới
+          </button>
+          <button class="btn btn-danger btn-sm" id="stopJobBtn" onclick="stopCurrentJob()" style="display:none">
+            <i class="fa-solid fa-stop"></i> Dừng Job
+          </button>
+        </div>
+        <div class="actions-right">
+          <select id="exportCategory" class="input" style="height:32px;font-size:12px;padding:0 8px;min-width:130px;border-radius:7px">
+            <option value="all">Tất cả loại</option>
+            <option value="OK">Đạt (OK)</option>
+            <option value="NOT_MET">Chưa đạt</option>
+            <option value="CTNV">Chưa tạo NV</option>
+            <option value="GRANT_ERROR">Lỗi CTNV</option>
+            <option value="LOCKED">Bị khóa</option>
+            <option value="FAIL">Không thể log</option>
+            <option value="PENDING">Chưa thể check</option>
+          </select>
+          <button class="btn btn-info btn-sm" onclick="exportTxt()">
+            <i class="fa-solid fa-file-arrow-down"></i> Xuất TXT
+          </button>
+          <div class="level-input-wrap" title="Lọc level tối thiểu (tự động cập nhật bảng & xuất Excel)">
+            <span>LV từ</span>
+            <input id="exportMinLevel" type="number" min="1" max="1000" value="12" oninput="applyLevelFilter()">
+          </div>
+          <button class="btn btn-purple btn-sm" onclick="exportXlsx()">
+            <i class="fa-solid fa-file-excel"></i> Xuất Excel
+          </button>
+        </div>
+      </div>
+
+      <!-- Results Toolbar -->
+      <div class="results-toolbar">
+        <div class="filter-tabs">
+          <div class="filter-tab active" data-filter="all" onclick="setResultFilter('all')">Tất cả <span class="filter-count" id="count_all"></span></div>
+          <div class="filter-tab" data-filter="OK" onclick="setResultFilter('OK')"><i class="fa-solid fa-circle-check" style="color:#059669"></i> OK <span class="filter-count" id="count_OK"></span></div>
+          <div class="filter-tab" data-filter="NOT_MET" onclick="setResultFilter('NOT_MET')"><i class="fa-solid fa-triangle-exclamation" style="color:#D97706"></i> Chưa đạt <span class="filter-count" id="count_NOT_MET"></span></div>
+          <div class="filter-tab" data-filter="CTNV" onclick="setResultFilter('CTNV')"><i class="fa-solid fa-user-plus" style="color:#7C3AED"></i> Chưa tạo nhân vật <span class="filter-count" id="count_CTNV"></span></div>
+          <div class="filter-tab" data-filter="GRANT_ERROR" onclick="setResultFilter('GRANT_ERROR')"><i class="fa-solid fa-triangle-exclamation" style="color:#D97706"></i> Lỗi CTNV <span class="filter-count" id="count_GRANT_ERROR"></span></div>
+          <div class="filter-tab" data-filter="LOCKED" onclick="setResultFilter('LOCKED')"><i class="fa-solid fa-lock" style="color:#C2410C"></i> Bị khóa <span class="filter-count" id="count_LOCKED"></span></div>
+          <div class="filter-tab" data-filter="FAIL" onclick="setResultFilter('FAIL')"><i class="fa-solid fa-circle-xmark" style="color:#DC2626"></i> Không thể log <span class="filter-count" id="count_FAIL"></span></div>
+          <div class="filter-tab" data-filter="PENDING" onclick="setResultFilter('PENDING')"><i class="fa-solid fa-hourglass-half" style="color:#64748B"></i> Chưa thể check <span class="filter-count" id="count_PENDING"></span></div>
+          <div class="filter-tab" data-filter="INVALID" onclick="setResultFilter('INVALID')"><i class="fa-solid fa-user-slash" style="color:#B91C1C"></i> USER không hợp lệ <span class="filter-count" id="count_INVALID"></span></div>
+          <div class="filter-tab" data-filter="JUNK" onclick="setResultFilter('JUNK')"><i class="fa-solid fa-filter-circle-xmark" style="color:#7F1D1D"></i> DATA rác <span class="filter-count" id="count_JUNK"></span></div>
+        </div>
+        <div class="results-search-wrap">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <input type="text" id="resultSearchInput" placeholder="Tìm tài khoản, UID, tên..." oninput="filterCurrentRows()">
+        </div>
+      </div>
+
+      <!-- Results Table Container -->
+      <div id="detailRows">
+        <div class="empty-state"><i class="fa-solid fa-circle-notch fa-spin-fast"></i><br>Đang tải dữ liệu kết quả...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Nạp Tiền Trực Tiếp -->
+<div class="modal-backdrop" id="depositModal" onclick="if(event.target===this)closeDepositModal()">
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="depositModalTitle" style="max-width:480px">
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <div class="modal-head">
+      <div>
+        <h2 id="depositModalTitle"><i class="fa-solid fa-qrcode" style="color:var(--secondary)"></i> Nạp Tiền SP1S</h2>
+        <p>Quét mã VietQR chuyển khoản tự động cộng tiền sau vài giây</p>
+      </div>
+      <button class="icon-btn" title="Đóng" onclick="closeDepositModal()"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    
+    <!-- Bước 1: Nhập số tiền -->
+    <div class="modal-body" id="depositStepInput" style="padding:18px 20px">
+      <div style="margin-bottom:14px">
+        <label class="form-label" for="depositAmountInput">Số tiền muốn nạp (VNĐ)</label>
+        <div style="position:relative">
+          <input id="depositAmountInput" class="form-input" type="number" min="10000" step="5000" value="20000" placeholder="Tối thiểu 10.000đ" oninput="updateDepositPromotionEstimate()" style="font-size:16px;font-weight:600;padding-right:40px">
+          <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-weight:600;color:var(--text-muted)">đ</span>
+        </div>
+        <small id="depositMinNotice" style="color:var(--text-muted);display:block;margin-top:4px">Tối thiểu: 10.000đ</small>
+        <div id="depositPromotionNotice" style="display:none;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:9px 10px;margin-top:9px;color:#9a3412;font-size:12px;line-height:1.45"></div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:8px;margin-bottom:16px">
+        <button type="button" class="btn btn-secondary btn-xs" onclick="setDepositAmount(10000)">10.000đ</button>
+        <button type="button" class="btn btn-secondary btn-xs" onclick="setDepositAmount(20000)">20.000đ</button>
+        <button type="button" class="btn btn-secondary btn-xs" onclick="setDepositAmount(50000)">50.000đ</button>
+        <button type="button" class="btn btn-secondary btn-xs" onclick="setDepositAmount(100000)">100.000đ</button>
+        <button type="button" class="btn btn-secondary btn-xs" onclick="setDepositAmount(200000)">200.000đ</button>
+        <button type="button" class="btn btn-secondary btn-xs" onclick="setDepositAmount(500000)">500.000đ</button>
+      </div>
+
+      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px;font-size:13px;color:#1e40af;line-height:1.4">
+        <i class="fa-solid fa-circle-info"></i> Hệ thống liên kết trực tiếp với cổng thanh toán <strong>SP1S</strong>. Tiền sẽ vào thẳng số dư tài khoản của bạn ngay khi ngân hàng báo nhận.
+      </div>
+    </div>
+
+    <!-- Bước 2: Hiển thị mã QR và thông tin chuyển khoản -->
+    <div class="modal-body" id="depositStepQR" style="display:none;padding:18px 20px;text-align:center">
+      <div id="depositQRWrap" style="background:#f8fafc;padding:12px;border-radius:12px;border:1px solid #e2e8f0;display:inline-block;margin-bottom:12px">
+        <img id="depositQRImg" src="" alt="VietQR" style="width:230px;height:230px;object-fit:contain;display:block;margin:0 auto;border-radius:8px">
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:14px">
+        <span class="status-dot" style="background:#eab308;animation:pulse 1.5s infinite"></span>
+        <span style="font-size:13px;font-weight:600;color:#854d0e" id="depositWaitingText">Đang đợi thanh toán...</span>
+      </div>
+
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px;font-size:13px;text-align:left;line-height:1.6">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+          <span style="color:var(--text-muted)">Ngân hàng:</span>
+          <strong id="depositBankName" style="color:var(--text)"></strong>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <span style="color:var(--text-muted)">Số tài khoản:</span>
+          <div>
+            <strong id="depositAccNum" style="color:var(--text)"></strong>
+            <button class="btn btn-secondary btn-xs" style="padding:1px 6px;margin-left:6px;font-size:11px" onclick="copyDepositText('depositAccNum')">Copy</button>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+          <span style="color:var(--text-muted)">Chủ tài khoản:</span>
+          <strong id="depositAccName" style="color:var(--text)"></strong>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+          <span style="color:var(--text-muted)">Số tiền:</span>
+          <strong id="depositDisplayAmount" style="color:var(--secondary)"></strong>
+        </div>
+        <div id="depositBonusRow" style="display:none;justify-content:space-between;margin-bottom:4px">
+          <span style="color:var(--text-muted)">Thưởng Checkpass:</span>
+          <strong id="depositBonusAmount" style="color:#16a34a"></strong>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;background:#fef3c7;padding:6px 8px;border-radius:6px;border:1px solid #fde68a;margin-top:6px">
+          <span style="color:#92400e;font-size:12px;font-weight:600">Nội dung CK:</span>
+          <div>
+            <strong id="depositRef" style="color:#92400e;font-family:monospace;font-size:13px"></strong>
+            <button class="btn btn-secondary btn-xs" style="padding:1px 6px;margin-left:6px;font-size:11px;background:#ffffff" onclick="copyDepositText('depositRef')">Copy</button>
+          </div>
+        </div>
+      </div>
+      <p style="font-size:12px;color:var(--danger);margin-top:8px;font-weight:500">
+        ⚠️ Bắt buộc giữ nguyên đúng nội dung chuyển khoản để hệ thống tự động cộng tiền!
+      </p>
+    </div>
+
+    <!-- Bước 3: Thành công -->
+    <div class="modal-body" id="depositStepSuccess" style="display:none;padding:24px 20px;text-align:center">
+      <div style="width:60px;height:60px;border-radius:50%;background:#dcfce7;color:#16a34a;display:inline-flex;align-items:center;justify-content:center;font-size:28px;margin-bottom:12px">
+        <i class="fa-solid fa-check"></i>
+      </div>
+      <h3 style="color:#16a34a;font-size:18px;margin-bottom:6px">Nạp tiền thành công!</h3>
+      <p id="depositSuccessText" style="font-size:14px;color:var(--text-muted);margin-bottom:16px"></p>
+      <button class="btn btn-primary btn-sm" onclick="closeDepositModal()">Hoàn tất</button>
+    </div>
+
+    <div class="modal-footer" id="depositModalFooter">
+      <button class="btn btn-secondary btn-sm" onclick="closeDepositModal()">Hủy</button>
+      <button class="btn btn-primary btn-sm" id="btnConfirmDeposit" onclick="submitDepositCreate()">
+        <i class="fa-solid fa-arrow-right"></i> Tạo Mã QR
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Chọn Hình Thức Thanh Toán -->
+<div class="modal-backdrop" id="billingSelectModal" onclick="if(event.target===this)closeModal('billingSelectModal')">
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="billingSelectModalTitle">
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <div class="modal-head">
+      <div>
+        <h2 id="billingSelectModalTitle"><i class="fa-solid fa-wallet" style="color:var(--secondary)"></i> Chọn Hình Thức Thanh Toán</h2>
+        <p>Chọn phương thức tính phí phù hợp cho phiên check tài khoản của bạn</p>
+      </div>
+      <button class="icon-btn" title="Đóng" onclick="closeModal('billingSelectModal')"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body" style="padding:16px 20px">
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <!-- Lựa chọn 1: Theo số lượng -->
+        <div onclick="selectBillingModeAndProceed('quantity')" style="border:2px solid #e2e8f0;border-radius:12px;padding:16px;cursor:pointer;transition:all 0.2s;background:#ffffff;display:flex;align-items:flex-start;gap:14px" onmouseover="this.style.borderColor='var(--secondary)';this.style.background='#fff7ed'" onmouseout="this.style.borderColor='#e2e8f0';this.style.background='#ffffff'">
+          <div style="width:40px;height:40px;border-radius:10px;background:#ffedd5;color:var(--secondary);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">
+            <i class="fa-solid fa-list-check"></i>
+          </div>
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <strong style="font-size:15px;color:var(--text)">Theo số lượng tài khoản</strong>
+              <span style="font-size:12px;font-weight:700;color:var(--secondary);background:#fff7ed;padding:4px 8px;border-radius:6px;border:1px solid #fed7aa;text-align:left;line-height:1.45">
+                <span style="display:block">Đúng pass 0,3đ</span>
+                <span style="display:block">Không thể log 0,1đ</span>
+              </span>
+            </div>
+            <div style="font-size:13px;color:var(--text-muted);margin-top:4px;line-height:1.4">
+              Tính <strong>0,3đ</strong> cho nick đúng pass (Đủ LV, Chưa đạt, Bị khóa, CTNV) và <strong>0,1đ</strong> cho nick Không thể log (chi phí check đúng sai). Chưa thể check không tính phí. <strong>Phù hợp: &lt; 16.000 tài khoản.</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Lựa chọn 2: Theo thời gian -->
+        <div onclick="selectBillingModeAndProceed('time')" style="border:2px solid #e2e8f0;border-radius:12px;padding:16px;cursor:pointer;transition:all 0.2s;background:#ffffff;display:flex;align-items:flex-start;gap:14px" onmouseover="this.style.borderColor='var(--primary)';this.style.background='#f0fdf4'" onmouseout="this.style.borderColor='#e2e8f0';this.style.background='#ffffff'">
+          <div style="width:40px;height:40px;border-radius:10px;background:#dcfce7;color:#16a34a;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">
+            <i class="fa-solid fa-stopwatch"></i>
+          </div>
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <strong style="font-size:15px;color:var(--text)">Theo thời gian (Thuê giờ)</strong>
+              <span style="font-size:12px;font-weight:700;color:#16a34a;background:#f0fdf4;padding:2px 8px;border-radius:6px;border:1px solid #bbf7d0">5.000đ / 30 phút</span>
+            </div>
+            <div style="font-size:13px;color:var(--text-muted);margin-top:4px;line-height:1.4">
+              Không giới hạn số lượng tài khoản check trong suốt thời gian thuê. <strong>Phù hợp: &gt; 16.000 tài khoản.</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Lựa chọn 3: VVIP -->
+        <div onclick="selectBillingModeAndProceed('vvip')" style="border:2px solid #ddd6fe;border-radius:12px;padding:16px;cursor:pointer;transition:all 0.2s;background:#faf5ff;display:flex;align-items:flex-start;gap:14px" onmouseover="this.style.borderColor='#7c3aed';this.style.background='#f3e8ff'" onmouseout="this.style.borderColor='#ddd6fe';this.style.background='#faf5ff'">
+          <div style="width:40px;height:40px;border-radius:10px;background:#ede9fe;color:#7c3aed;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">
+            <i class="fa-solid fa-crown"></i>
+          </div>
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <strong style="font-size:15px;color:#6d28d9">VVIP – Hàng đợi riêng</strong>
+              <span style="font-size:12px;font-weight:700;color:#7c3aed;background:#f5f3ff;padding:2px 8px;border-radius:6px;border:1px solid #c4b5fd">10.000đ / 30 phút</span>
+            </div>
+            <div style="font-size:13px;color:var(--text-muted);margin-top:4px;line-height:1.4">
+              Không giới hạn tài khoản trong thời gian thuê. Job chỉ được xử lý bởi service VVIP chuyên dụng.
+              <br><strong style="color:#7c3aed"><i class="fa-solid fa-circle-up"></i> Giới hạn tài khoản/lệnh được mở rộng.</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer" style="justify-content:flex-end">
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('billingSelectModal')">Đóng</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Tạo Job -->
+<div class="modal-backdrop" id="submitModal" onclick="if(event.target===this)closeModal('submitModal')">
+  <div class="modal-box modal-wide" role="dialog" aria-modal="true" aria-labelledby="submitModalTitle">
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <div class="modal-head">
+      <div>
+        <h2 id="submitModalTitle"><i class="fa-solid fa-clipboard-list" style="color:var(--secondary)"></i> Thêm Tài Khoản Kiểm Tra</h2>
+        <p>Định dạng linh động: <code>user|pass</code>, <code>user:pass</code>, <code>user:pass|mail</code>… Dấu <code>:</code> và <code>|</code> đều được tự nhận diện.</p>
+        <p><strong>Quy tắc USER:</strong> 6–18 ký tự; chỉ gồm <code>a-z</code>, <code>A-Z</code>, <code>0-9</code>, <code>_</code>, <code>-</code>, <code>.</code>; phải bắt đầu/kết thúc bằng chữ hoặc số và có ít nhất một chữ cái.</p>
+        <p><strong>Lọc DATA rác:</strong> placeholder/lỗi giải mã, URL-domain-callback, token/profile trình duyệt, lỗi bảng mã và mật khẩu dưới 6 ký tự. Password có thể chỉ gồm chữ và số; USER và PASS được phép giống nhau; không dùng dấu <code>:</code> hoặc <code>|</code>. Cho phép nhiều USER chung password hoặc một USER có nhiều password.</p>
+      </div>
+      <button class="icon-btn" title="Đóng" onclick="closeModal('submitModal')"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-quick-actions">
+        <div class="modal-quick-actions-left">
+          <button type="button" class="btn btn-secondary btn-xs" onclick="pasteClipboardAccounts()" title="Dán nhanh nội dung từ bộ nhớ tạm">
+            <i class="fa-solid fa-paste"></i> Dán nhanh
+          </button>
+          <button type="button" class="btn btn-secondary btn-xs" onclick="document.getElementById('accFile').click()" title="Tải danh sách từ file .txt hoặc .csv">
+            <i class="fa-solid fa-file-arrow-up"></i> Tải file
+          </button>
+        </div>
+        <div class="modal-quick-actions-right">
+          <button type="button" class="btn btn-secondary btn-xs" onclick="clearAccountsInput()" title="Xóa nội dung đã nhập">
+            <i class="fa-solid fa-trash-can"></i> Xóa
+          </button>
+        </div>
+      </div>
+
+      <textarea id="accInput" class="modal-textarea" placeholder="Nhập tài khoản, mỗi dòng 1 nick:&#10;account1|password1&#10;account2|password2&#10;account3:password3" oninput="updateAccountCounter()"></textarea>
+      
+      <div class="textarea-footer-info">
+        <div>
+          <span><i class="fa-solid fa-shield-check" style="color:var(--success)"></i> Tự động lọc dòng trống &amp; định dạng chuẩn</span>
+        </div>
+        <div>
+          Đã nhận: <span class="textarea-counter" id="accCounter">0 tài khoản</span>
+        </div>
+      </div>
+
+      <input type="file" id="accFile" accept=".txt,.csv,text/plain" style="display:none" onchange="importAccountsFile()">
+
+      <div class="submit-billing-card">
+        <div class="submit-billing-head">
+          <div class="form-label" style="margin-bottom:0">Hình thức tính phí:</div>
+          <button type="button" class="btn btn-secondary btn-xs" id="btnChangeBillingMode" onclick="openBillingSelectModal(true)" style="padding:3px 10px;font-size:12px">
+            <i class="fa-solid fa-arrows-rotate"></i> Đổi gói
+          </button>
+        </div>
+        <div id="selectedPlanBanner" style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:8px"></div>
+        <input type="hidden" name="billingMode" id="billingModeHidden" value="quantity">
+        <div id="timeBlockWrap" style="display:none;margin-top:10px">
+          <label class="form-label" for="blockCount" style="font-size:12px">Số block 30 phút muốn gia hạn/thuê thêm</label>
+          <input id="blockCount" class="form-input" type="number" min="1" max="48" value="1" oninput="scheduleQuote()" style="padding:6px 10px">
+        </div>
+        <div id="billingQuote" style="margin-top:10px;font-size:13px;color:#475569">Nhập danh sách để xem chi phí dự kiến.</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary btn-sm btn-cancel" onclick="closeModal('submitModal')">Hủy</button>
+      <button class="btn btn-primary btn-sm btn-submit-job" id="btnSend" onclick="sendJob()">
+        <i class="fa-solid fa-paper-plane"></i> Gửi Check Ngay
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="systemLockModal" style="display:none;z-index:2147483647;background:rgba(10,15,29,0.95);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)">
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="systemLockTitle" style="max-width:560px;width:100%;border-radius:20px;border:1px solid #334155;background:#0f172a;color:#f8fafc;box-shadow:0 30px 80px rgba(0,0,0,0.85);text-align:center;overflow:hidden">
+    <div style="background:linear-gradient(135deg,rgba(239,68,68,0.2),rgba(245,158,11,0.15));border-bottom:1px solid #1e293b;padding:26px 20px 20px">
+      <div style="font-size:52px;color:#f59e0b;margin-bottom:12px;filter:drop-shadow(0 0 16px rgba(245,158,11,0.4))">
+        <i class="fa-solid fa-triangle-exclamation fa-bounce"></i>
+      </div>
+      <h2 id="systemLockTitle" style="font-size:22px;font-weight:800;color:#fff;letter-spacing:0.02em;margin:0">THÔNG BÁO TỪ HỆ THỐNG</h2>
+    </div>
+    <div class="modal-body" id="systemLockBody" style="padding:26px 24px;font-size:15px;line-height:1.7;color:#e2e8f0;text-align:left;background:#0f172a;max-height:65vh;overflow-y:auto">
+    </div>
+    <div style="padding:14px 20px;background:#0b1120;border-top:1px solid #1e293b;color:#94a3b8;font-size:12px;display:flex;align-items:center;justify-content:center;gap:8px">
+      <i class="fa-solid fa-shield-halved" style="color:var(--primary)"></i> CHECK.SP1S.SHOP &bull; Trang web đang tạm khóa
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="maintenanceModal">
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="maintenanceModalTitle" style="max-width:520px;text-align:center">
+    <div class="modal-body" style="padding:34px 28px">
+      <div style="font-size:52px;color:#f59e0b;margin-bottom:14px"><i class="fa-solid fa-database fa-beat-fade"></i></div>
+      <h2 id="maintenanceModalTitle" style="margin:0 0 12px">Hệ thống đang bảo trì dữ liệu</h2>
+      <p style="margin:0;color:var(--text-muted);line-height:1.7">Hệ thống đang thực hiện dọn dẹp dữ liệu hôm trước, vui lòng quay lại sau <strong id="maintenanceCountdown">00:30:00</strong>.</p>
+      <div style="margin-top:18px;padding:10px 14px;border-radius:10px;background:#fff7ed;color:#9a3412;font-weight:700">
+        <i class="fa-regular fa-clock"></i> Thời gian bảo trì hằng ngày: 00:00–00:30
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Floating Toast -->
+<div id="toast"><i class="fa-solid fa-circle-info"></i> <span id="toastText"></span></div>
+
+<script>
+const initialParams = new URLSearchParams(window.location.search);
+const keyFromUrl = initialParams.get('key');
+const loginError = initialParams.get('login_error');
+// Normal users authenticate with the HttpOnly SP1S session cookie. A token in
+// the URL is retained only for the separate master-admin workflow.
+let TOKEN = keyFromUrl || '';
+let currentSession = null;
+let quoteTimer = null;
+if (keyFromUrl || loginError || initialParams.get('login')) {
+  history.replaceState(null, '', window.location.pathname);
+}
+
+function getHeaders() {
+  const headers = { 'Content-Type': 'application/json' };
+  if (TOKEN) headers.Authorization = 'Bearer ' + TOKEN;
+  return headers;
+}
+
+let currentJobId = null;
+let detailPage = 1;
+let detailTimer = null;
+let detailRequestSeq = 0;
+let detailTransitionTimer = null;
+let pendingJobId = null;
+const DETAIL_TRANSITION_MS = 300;
+const JOBS_EXPAND_MS = 480;
+let jobsCache = [];
+let jobsLoading = false;
+let jobsStatusFilter = 'all';
+let isAdminKey = false;
+let canCreateJobs = false;
+let maxAccountsPerJob = null;
+let maxVvipAccountsPerJob = null;
+let minAccountsPerJob = 1;
+let minVvipAccountsPerJob = 1;
+let currentRawRows = [];
+let currentFilter = 'all';
+let currentSearch = '';
+let levelFilterTimer = null;
+const DETAIL_PAGE_SIZE = 100;
+const DETAIL_PROGRESS_REFRESH_MS = 1500;
+const DETAIL_ROWS_REFRESH_MS = 6000;
+let detailRowsLoadedAt = 0;
+
+function toast(msg, ms = 3200, type = 'info') {
+  const t = document.getElementById('toast');
+  const txt = document.getElementById('toastText');
+  txt.textContent = msg;
+  t.style.display = 'inline-flex';
+  setTimeout(() => { t.style.display = 'none'; }, ms);
+}
+
+function openModal(id) {
+  const modal = document.getElementById(id);
+  if (!modal) return;
+  modal.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal(id) {
+  if (id === 'systemLockModal') return;
+  const modal = document.getElementById(id);
+  if (modal) modal.classList.remove('open');
+  if (!document.querySelector('.modal-backdrop.open')) {
+    document.body.style.overflow = '';
+  }
+}
+
+function applySystemLockModal(modalConfig) {
+  const modal = document.getElementById('systemLockModal');
+  if (!modal) return;
+  const isEnabled = Boolean(modalConfig && modalConfig.enabled);
+  if (isEnabled) {
+    const titleEl = document.getElementById('systemLockTitle');
+    const bodyEl = document.getElementById('systemLockBody');
+    if (titleEl) titleEl.textContent = modalConfig.title || 'THÔNG BÁO TỪ HỆ THỐNG';
+    if (bodyEl) bodyEl.innerHTML = modalConfig.html || '<div style="text-align:center"><p>Hệ thống đang tạm bảo trì để nâng cấp dịch vụ.<br>Vui lòng quay lại sau ít phút!</p></div>';
+    modal.classList.add('open');
+    modal.style.display = 'flex';
+    document.body.classList.add('system-modal-locked');
+    document.body.style.overflow = 'hidden';
+    document.querySelectorAll('.modal-backdrop.open').forEach(m => {
+      if (m.id !== 'systemLockModal') m.classList.remove('open');
+    });
+  } else {
+    modal.classList.remove('open');
+    modal.style.display = 'none';
+    document.body.classList.remove('system-modal-locked');
+    if (!document.querySelector('.modal-backdrop.open')) {
+      document.body.style.overflow = '';
+    }
+  }
+}
+
+// --- Direct In-App Deposit Flow ---
+let depositPollTimer = null;
+let currentDepositRef = null;
+let depositMinimumAmount = 10000;
+let depositPromotion = { enabled: false, minimum_amount: 0, bonus_percent: 0 };
+
+async function openDepositModal() {
+  if (!currentSession && !TOKEN) {
+    toast('⚠️ Vui lòng đăng nhập SP1S trước khi nạp tiền');
+    window.location.href = '/auth/login';
+    return;
+  }
+  // Reset step
+  document.getElementById('depositStepInput').style.display = 'block';
+  document.getElementById('depositStepQR').style.display = 'none';
+  document.getElementById('depositStepSuccess').style.display = 'none';
+  document.getElementById('depositModalFooter').style.display = 'flex';
+  const btn = document.getElementById('btnConfirmDeposit');
+  btn.disabled = false;
+  btn.innerHTML = '<i class="fa-solid fa-arrow-right"></i> Tạo Mã QR';
+
+  openModal('depositModal');
+  try {
+    const res = await api('/api/deposit/config');
+    if (res.ok && res.minimum_deposit_amount) {
+      const minFormatted = Number(res.minimum_deposit_amount).toLocaleString('vi-VN');
+      const notice = document.getElementById('depositMinNotice');
+      if (notice) notice.textContent = 'Tối thiểu: ' + minFormatted + 'đ';
+      const input = document.getElementById('depositAmountInput');
+      depositMinimumAmount = Number(res.minimum_deposit_amount);
+      if (input) input.min = depositMinimumAmount;
+    }
+    depositPromotion = res.checkpass_deposit_promotion || depositPromotion;
+    updateDepositPromotionEstimate();
+  } catch (_) {}
+}
+
+function closeDepositModal() {
+  if (depositPollTimer) {
+    clearInterval(depositPollTimer);
+    depositPollTimer = null;
+  }
+  currentDepositRef = null;
+  closeModal('depositModal');
+}
+
+function setDepositAmount(amount) {
+  const input = document.getElementById('depositAmountInput');
+  if (input) input.value = amount;
+  updateDepositPromotionEstimate();
+}
+
+function updateDepositPromotionEstimate() {
+  const box = document.getElementById('depositPromotionNotice');
+  if (!box) return;
+  if (!depositPromotion.enabled || Number(depositPromotion.bonus_percent || 0) <= 0) {
+    box.style.display = 'none';
+    return;
+  }
+  const amount = Number(document.getElementById('depositAmountInput')?.value || 0);
+  const minimum = Number(depositPromotion.minimum_amount || 0);
+  const percent = Number(depositPromotion.bonus_percent || 0);
+  const bonus = amount >= minimum ? Math.round(amount * percent * 10) / 1000 : 0;
+  box.style.display = 'block';
+  box.innerHTML = '<i class="fa-solid fa-gift"></i> Nạp từ <strong>' + minimum.toLocaleString('vi-VN') +
+    'đ</strong> được tặng <strong>' + percent.toLocaleString('vi-VN') + '%</strong> vào ví Checkpass.' +
+    (bonus > 0 ? '<br>Đơn này nhận thêm <strong>' + bonus.toLocaleString('vi-VN', { maximumFractionDigits: 1 }) + 'đ</strong>.' : '') +
+    '<br><small>Tiền thưởng không dùng để mua sản phẩm khác của shop.</small>';
+}
+
+function copyDepositText(elId) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const text = el.textContent.trim();
+  navigator.clipboard.writeText(text).then(() => {
+    toast('📋 Đã sao chép: ' + text);
+  }).catch(() => {
+    toast('⚠️ Không sao chép được');
+  });
+}
+
+async function submitDepositCreate() {
+  const input = document.getElementById('depositAmountInput');
+  const amount = Number(input?.value || 0);
+  if (!Number.isSafeInteger(amount) || amount < depositMinimumAmount) {
+    toast('⚠️ Số tiền nạp tối thiểu là ' + depositMinimumAmount.toLocaleString('vi-VN') + 'đ');
+    return;
+  }
+  const btn = document.getElementById('btnConfirmDeposit');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang tạo mã...';
+
+  try {
+    const res = await api('/api/deposit/create', {
+      method: 'POST',
+      body: JSON.stringify({ amount }),
+    });
+    if (!res.ok) {
+      throw new Error(res.error || 'Không thể tạo đơn nạp');
+    }
+    // Hiển thị bước 2: QR & info
+    currentDepositRef = res.reference;
+    document.getElementById('depositQRImg').src = res.qr_url;
+    document.getElementById('depositBankName').textContent = res.bank_name;
+    document.getElementById('depositAccNum').textContent = res.account_number;
+    document.getElementById('depositAccName').textContent = res.account_name;
+    document.getElementById('depositDisplayAmount').textContent = Number(res.amount).toLocaleString('vi-VN') + 'đ';
+    const bonus = Number(res.checkpass_bonus_amount || 0);
+    document.getElementById('depositBonusRow').style.display = bonus > 0 ? 'flex' : 'none';
+    document.getElementById('depositBonusAmount').textContent = '+' + bonus.toLocaleString('vi-VN', { maximumFractionDigits: 1 }) + 'đ';
+    document.getElementById('depositRef').textContent = res.reference;
+
+    document.getElementById('depositStepInput').style.display = 'none';
+    document.getElementById('depositStepQR').style.display = 'block';
+    document.getElementById('depositModalFooter').style.display = 'none';
+
+    // Bắt đầu thăm dò trạng thái tự động mỗi 3 giây
+    startDepositPolling(res.reference);
+  } catch (err) {
+    toast('❌ ' + err.message);
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-arrow-right"></i> Tạo Mã QR';
+  }
+}
+
+function startDepositPolling(reference) {
+  if (depositPollTimer) clearInterval(depositPollTimer);
+  depositPollTimer = setInterval(async () => {
+    try {
+      const res = await api('/api/deposit/status/' + encodeURIComponent(reference));
+      if (res.ok && res.status === 'completed') {
+        clearInterval(depositPollTimer);
+        depositPollTimer = null;
+        // Thành công: chuyển sang Step 3
+        document.getElementById('depositStepQR').style.display = 'none';
+        document.getElementById('depositStepSuccess').style.display = 'block';
+        const bonus = Number(res.checkpass_bonus_amount || 0);
+        document.getElementById('depositSuccessText').textContent =
+          'Đã cộng ' + Number(res.amount).toLocaleString('vi-VN') + 'đ vào tài khoản SP1S của bạn' +
+          (bonus > 0 ? ' và tặng thêm ' + bonus.toLocaleString('vi-VN', { maximumFractionDigits: 1 }) + 'đ vào ví Checkpass!' : '!');
+        toast('🎉 Nạp tiền thành công!');
+        // Refresh lại session và quote ngay lập tức
+        await loadSession(false);
+        scheduleQuote();
+      }
+    } catch (_) {}
+  }, 3000);
+}
+
+function openSubmitModal() {
+  if (!currentSession && !TOKEN) {
+    toast('⚠️ Vui lòng đăng nhập tài khoản SP1S trước khi tạo job');
+    window.location.href = '/auth/login';
+    return;
+  }
+  if (!canCreateJobs) {
+    toast('⚠️ Phiên SP1S chưa sẵn sàng. Vui lòng đăng nhập lại.');
+    return;
+  }
+  // Nếu là admin hoặc đã có quyền theo giờ đang active -> mở thẳng submitModal
+  const normalEntitlement = currentSession?.entitlements?.normal || currentSession?.entitlement || null;
+  const vvipEntitlement = currentSession?.entitlements?.vvip || currentSession?.vvip_entitlement || null;
+  const hasActiveEntitlement = Boolean(normalEntitlement?.id || vvipEntitlement?.id);
+  if (isAdminKey || hasActiveEntitlement) {
+    const defaultMode = isAdminKey ? 'vvip' : (normalEntitlement?.id ? 'time' : (vvipEntitlement?.id ? 'vvip' : 'quantity'));
+    applyBillingMode(defaultMode);
+    showSubmitModalBox();
+    return;
+  }
+  // Đối với tài khoản thông thường chưa có quyền theo giờ: mở modal chọn gói thanh toán trước
+  openBillingSelectModal(false);
+}
+
+function openBillingSelectModal(fromEdit = false) {
+  if (fromEdit) {
+    closeModal('submitModal');
+  }
+  openModal('billingSelectModal');
+}
+
+function selectBillingModeAndProceed(mode) {
+  closeModal('billingSelectModal');
+  applyBillingMode(mode);
+  showSubmitModalBox();
+}
+
+function applyBillingMode(mode) {
+  const hiddenInput = document.getElementById('billingModeHidden');
+  if (hiddenInput) hiddenInput.value = mode;
+
+  const banner = document.getElementById('selectedPlanBanner');
+  const changeBtn = document.getElementById('btnChangeBillingMode');
+  const normalEntitlement = currentSession?.entitlements?.normal || currentSession?.entitlement || null;
+  const vvipEntitlement = currentSession?.entitlements?.vvip || currentSession?.vvip_entitlement || null;
+  const selectedEntitlement = mode === 'vvip' ? vvipEntitlement : (mode === 'time' ? normalEntitlement : null);
+  const hasActiveEntitlement = Boolean(selectedEntitlement && selectedEntitlement.id);
+
+  if (isAdminKey) {
+    const queueLabel = mode === 'vvip' ? ' · Hàng đợi VVIP' : ' · Hàng đợi thường';
+    if (banner) banner.innerHTML = '<span style="color:' + (mode === 'vvip' ? '#7c3aed' : '#16a34a') + '"><i class="fa-solid fa-crown"></i> Gói Quản trị viên (Miễn phí hoàn toàn)' + queueLabel + '</span>';
+    if (changeBtn) changeBtn.style.display = 'inline-flex';
+  } else if (hasActiveEntitlement) {
+    const label = mode === 'vvip' ? 'VVIP' : 'theo giờ';
+    if (banner) banner.innerHTML = '<span style="color:' + (mode === 'vvip' ? '#7c3aed' : '#16a34a') + '"><i class="fa-solid fa-clock"></i> Đang có quyền ' + label + ' (miễn phí tới ' + new Date(selectedEntitlement.expires_at).toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit'}) + ')</span>';
+    if (changeBtn) changeBtn.style.display = 'inline-flex';
+  } else if (mode === 'vvip') {
+    if (banner) banner.innerHTML = '<span style="color:#7c3aed"><i class="fa-solid fa-crown"></i> VVIP (10.000đ / block 30 phút - hàng đợi riêng)</span>';
+    if (changeBtn) changeBtn.style.display = 'inline-flex';
+  } else if (mode === 'time') {
+    if (banner) banner.innerHTML = '<span style="color:#16a34a"><i class="fa-solid fa-stopwatch"></i> Theo thời gian (5.000đ / block 30 phút - không giới hạn acc)</span>';
+    if (changeBtn) changeBtn.style.display = 'inline-flex';
+  } else {
+    if (banner) banner.innerHTML = '<span style="color:var(--secondary)"><i class="fa-solid fa-list-check"></i> Theo số lượng (Đúng pass 0,3đ · Không thể log 0,1đ)</span>';
+    if (changeBtn) changeBtn.style.display = 'inline-flex';
+  }
+
+  const timeWrap = document.getElementById('timeBlockWrap');
+  if (timeWrap) {
+    timeWrap.style.display = ((mode === 'time' || mode === 'vvip') && !hasActiveEntitlement && !isAdminKey) ? 'block' : 'none';
+  }
+  updateAccountCounter();
+}
+
+function showSubmitModalBox() {
+  openModal('submitModal');
+  setTimeout(() => {
+    const accInput = document.getElementById('accInput');
+    if (accInput) {
+      if (window.innerWidth > 640) {
+        accInput.focus();
+      }
+      updateAccountCounter();
+    }
+  }, 60);
+}
+
+async function pasteClipboardAccounts() {
+  const accInput = document.getElementById('accInput');
+  if (!accInput) return;
+  try {
+    if (!navigator.clipboard || !navigator.clipboard.readText) {
+      toast('Vui lòng chạm giữ ô nhập để Dán thủ công.');
+      accInput.focus();
+      return;
+    }
+    const clip = await navigator.clipboard.readText();
+    if (!clip || !clip.trim()) {
+      toast('⚠️ Bộ nhớ tạm (clipboard) đang trống!');
+      return;
+    }
+    if (accInput.value.trim()) {
+      accInput.value = accInput.value.trimEnd() + '\n' + clip.trim();
+    } else {
+      accInput.value = clip.trim();
+    }
+    updateAccountCounter();
+    toast('✅ Đã dán tài khoản từ bộ nhớ tạm!');
+  } catch (err) {
+    toast('⚠️ Chạm giữ ô nhập để dán thủ công.');
+    accInput.focus();
+  }
+}
+
+function clearAccountsInput() {
+  const accInput = document.getElementById('accInput');
+  if (!accInput) return;
+  if (!accInput.value.trim()) return;
+  accInput.value = '';
+  updateAccountCounter();
+  toast('🧹 Đã xóa danh sách tài khoản');
+}
+
+function analyzeAccountsInput(text) {
+  const usernamePattern = /^(?=.{6,18}$)(?=.*[A-Za-z])[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
+  const domainPattern = /^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}[A-Za-z0-9])?\.){2,}[A-Za-z]{2,24}(?::\d{1,5})?(?:[\/#?].*)?$/;
+  const placeholders = new Set(['unknown', 'none', 'null', 'missing', 'missingpass', 'notsaved', 'fail', 'failed', 'decryption', 'decrypt', 'decryptionfailed']);
+  const protocols = new Set(['http', 'https', 'ttp', 'ttps', 'ftp', 'sso']);
+  const lines = text ? text.split(/\r?\n/).filter(line => {
+    const value = line.trim();
+    return value.length > 0 && !value.startsWith('#');
+  }) : [];
+  const parsed = lines.map((rawLine, index) => {
+    const line = rawLine.trim();
+    const parts = line.split(/[|:]/);
+    return { lineNumber: index + 1, username: (parts[0] || '').trim(), password: (parts[1] || '').trim() };
+  });
+  const marker = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const isJunk = item => {
+    const username = item.username;
+    const password = item.password;
+    const userLower = username.toLowerCase();
+    const passLower = password.toLowerCase();
+    if (placeholders.has(marker(username)) || placeholders.has(marker(password))) return true;
+    if (protocols.has(passLower) || passLower.startsWith('http://') || passLower.startsWith('https://')) return true;
+    if (domainPattern.test(username)) return true;
+    if (/\.(?:html?|php\d?|aspx?|jsp)$/i.test(username)) return true;
+    if (['direct', 'redirect', 'callback'].includes(userLower) && ['link', 'url', 'callback', 'redirect'].includes(passLower)) return true;
+    if (/^Google_\[Chrome\]_Profile\d*$/i.test(password)) return true;
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(password)) return true;
+    if (password.length >= 40 && (/^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+){1,2}$/.test(password) || /^[A-Za-z0-9_+/=-]{48,}$/.test(password))) return true;
+    if (['\uFFFD', '\u00EF\u00BF\u00BD', '\u00C3', '\u00C2', '\u00D0', '\u0430\u0451']
+      .some(markerValue => username.includes(markerValue)) || /[\u0400-\u04FF]/.test(username)) return true;
+    if (password.length < 6) return true;
+    return false;
+  };
+  const junkIndexes = new Set();
+  let invalid = 0;
+  parsed.forEach((item, index) => {
+    if (isJunk(item)) junkIndexes.add(index);
+    else if (!usernamePattern.test(item.username)) invalid++;
+  });
+  const junk = junkIndexes.size;
+  const valid = lines.length - invalid - junk;
+  return { total: lines.length, valid, invalid, junk };
+}
+
+function analyzeUsernameInput(text) {
+  return analyzeAccountsInput(text);
+}
+
+function filteredAccountSummary(analysis) {
+  let summary = formatNumber(analysis.valid) + ' hợp lệ';
+  if (analysis.invalid) summary += ' · ' + formatNumber(analysis.invalid) + ' USER không hợp lệ';
+  if (analysis.junk) summary += ' · ' + formatNumber(analysis.junk) + ' DATA rác';
+  return summary;
+}
+
+function updateAccountCounter() {
+  const text = (document.getElementById('accInput')?.value || '').trim();
+  const analysis = analyzeAccountsInput(text);
+  const el = document.getElementById('accCounter');
+  if (el) {
+    const selectedMode = selectedBillingMode();
+    const activeLimit = selectedMode === 'vvip' ? maxVvipAccountsPerJob : (!isAdminKey ? maxAccountsPerJob : null);
+    const overLimit = Number.isInteger(activeLimit) && analysis.valid > activeLimit;
+    el.textContent = filteredAccountSummary(analysis) + (
+      Number.isInteger(activeLimit)
+        ? ' / tối đa ' + formatNumber(activeLimit) + (selectedMode === 'vvip' ? ' VVIP' : '')
+        : ''
+    );
+    el.style.color = overLimit || analysis.invalid || analysis.junk ? 'var(--danger)' : '';
+  }
+  scheduleQuote();
+}
+
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') {
+    if (document.body.classList.contains('system-modal-locked')) return;
+    document.querySelectorAll('.modal-backdrop.open').forEach(m => closeModal(m.id));
+  }
+});
+
+async function api(path, opt = {}) {
+  const r = await fetch(path, { credentials: 'same-origin', headers: getHeaders(), ...opt });
+  const text = await r.text();
+  let j;
+  try {
+    j = text ? JSON.parse(text) : { ok: false, error: 'Server trả về rỗng (status ' + r.status + ')' };
+  } catch(e) {
+    j = { ok: false, error: 'Lỗi parse JSON: ' + (text.slice(0, 200) || 'empty') + ' (status ' + r.status + ')' };
+  }
+  if (r.status === 401) {
+    toast('❌ ' + (j.error || 'Phiên đăng nhập SP1S đã hết hạn'));
+  } else if (!r.ok && !j.error) {
+    j.error = 'Lỗi ' + r.status + ': ' + text.slice(0, 200);
+  }
+  return j;
+}
+
+function updateOwnerBadge() {
+  const txt = document.getElementById('ownerBadgeText');
+  const dot = document.getElementById('keyDot');
+  const action = document.getElementById('sessionActionBtn');
+  const registerAction = document.getElementById('registerActionBtn');
+  if (txt) {
+    if (currentSession && currentSession.user) {
+      const balance = Number(currentSession.available_balance ?? currentSession.balance ?? 0)
+        .toLocaleString('vi-VN', { maximumFractionDigits: 1 });
+      const bonus = Number(currentSession.available_checkpass_bonus_balance ?? currentSession.checkpass_bonus_balance ?? 0);
+      txt.textContent = (currentSession.user.name || currentSession.user.email) + ' · ' + balance + 'đ khả dụng' +
+        (bonus > 0 ? ' (KM ' + bonus.toLocaleString('vi-VN', { maximumFractionDigits: 1 }) + 'đ)' : '');
+    } else if (TOKEN) txt.textContent = 'Quản trị viên';
+    else txt.textContent = 'Chưa đăng nhập';
+  }
+  if (dot) {
+    dot.className = (currentSession || TOKEN) ? 'status-dot' : 'status-dot empty';
+  }
+  if (action) action.innerHTML = currentSession
+    ? '<i class="fa-solid fa-right-from-bracket"></i> Đăng xuất'
+    : '<i class="fa-solid fa-right-to-bracket"></i> Đăng nhập';
+  if (registerAction) registerAction.style.display = (currentSession || TOKEN) ? 'none' : 'inline-flex';
+  const topupBtn = document.getElementById('topupBtn');
+  if (topupBtn) topupBtn.style.display = (currentSession && currentSession.user && !isAdminKey) ? 'inline-flex' : 'none';
+}
+
+function setClearAllButton(visible) {
+  const btn = document.getElementById('clearAllDataBtn');
+  if (btn) btn.style.display = visible ? 'inline-flex' : 'none';
+  const adminBtn = document.getElementById('adminPageBtn');
+  if (adminBtn) adminBtn.style.display = visible ? 'inline-flex' : 'none';
+}
+
+function setCreateJobAvailability(allowed) {
+  canCreateJobs = allowed === true;
+  const btn = document.getElementById('createJobBtn');
+  if (!btn) return;
+  btn.disabled = !canCreateJobs;
+  btn.title = canCreateJobs ? '' : 'Hãy đăng nhập tài khoản SP1S để tạo job';
+}
+
+function openAdminPage() {
+  window.location.href = '/admin';
+}
+
+function renderKientuongNoticeStatus(content, status) {
+  if (!content) return;
+  let badges = content.querySelector('.notice-badges');
+  if (!badges) {
+    badges = document.createElement('div');
+    badges.className = 'notice-badges';
+    content.appendChild(badges);
+  }
+  let tag = badges.querySelector('[data-kientuong-status]');
+  if (!tag) {
+    tag = document.createElement('span');
+    tag.dataset.kientuongStatus = '1';
+    badges.appendChild(tag);
+  }
+  const state = status?.state === 'down' ? 'down' : (status?.state === 'ready' ? 'ready' : 'checking');
+  tag.className = 'notice-tag kientuong-' + state;
+  if (state === 'down') {
+    tag.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Kiện tướng: đang sập';
+  } else if (state === 'ready') {
+    tag.innerHTML = '<i class="fa-solid fa-circle-check"></i> Kiện tướng: sẵn sàng';
+  } else {
+    tag.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Kiện tướng: đang kiểm tra';
+  }
+  const checkedAt = Number(status?.checked_at || 0);
+  tag.title = checkedAt > 0 ? 'Cập nhật: ' + new Date(checkedAt * 1000).toLocaleString('vi-VN') : '';
+}
+
+async function loadPublicNotice() {
+  try {
+    const response = await fetch('/api/public/notice', { cache: 'no-store' });
+    const data = await response.json();
+    if (!response.ok || !data.ok || !data.notice) return;
+    const notice = data.notice;
+    const box = document.getElementById('noticeBox');
+    if (box) box.style.display = notice.enabled === false ? 'none' : 'flex';
+    const row = document.getElementById('topSectionRow');
+    if (row) row.classList.toggle('notice-hidden', notice.enabled === false);
+    const content = document.getElementById('noticeContent');
+    if (content) {
+      if (typeof notice.html === 'string' && notice.html.trim()) content.innerHTML = notice.html;
+      else {
+        const title = document.getElementById('noticeTitle');
+        const body = document.getElementById('noticeBody');
+        if (title) title.textContent = notice.title || '';
+        if (body) body.textContent = notice.body || '';
+      }
+      renderKientuongNoticeStatus(content, notice.kientuong || {});
+    }
+    const customStyle = document.getElementById('noticeCustomStyle');
+    if (customStyle) customStyle.textContent = typeof notice.css === 'string' ? notice.css : '';
+    const modalConfig = notice.modal_notice || (notice.modal_notice_enabled !== undefined ? {
+      enabled: Boolean(notice.modal_notice_enabled),
+      title: notice.modal_notice_title,
+      html: notice.modal_notice_html,
+    } : null);
+    applySystemLockModal(modalConfig);
+  } catch (_) {
+    // Giữ nội dung mặc định nếu mạng tạm thời lỗi.
+  }
+}
+
+async function loadSession(loadJobsAfter = true) {
+  try {
+    const response = await fetch('/api/session', { credentials: 'same-origin', headers: getHeaders(), cache: 'no-store' });
+    const data = await response.json();
+    if (!response.ok || !data.authenticated) throw new Error(data.error || 'Chưa đăng nhập');
+    currentSession = data;
+    isAdminKey = data.is_admin === true;
+    canCreateJobs = true;
+    const configuredLimit = Number(data.max_accounts_per_job);
+    maxAccountsPerJob = Number.isInteger(configuredLimit) && configuredLimit > 0 ? configuredLimit : null;
+    const configuredVvipLimit = Number(data.max_vvip_accounts_per_job);
+    maxVvipAccountsPerJob = Number.isInteger(configuredVvipLimit) && configuredVvipLimit > 0 ? configuredVvipLimit : null;
+    const configuredMinimum = Number(data.min_accounts_per_job);
+    minAccountsPerJob = Number.isInteger(configuredMinimum) && configuredMinimum > 0 ? configuredMinimum : 1;
+    const configuredVvipMinimum = Number(data.min_vvip_accounts_per_job);
+    minVvipAccountsPerJob = Number.isInteger(configuredVvipMinimum) && configuredVvipMinimum > 0 ? configuredVvipMinimum : 1;
+    setCreateJobAvailability(true);
+    setClearAllButton(isAdminKey);
+    updateOwnerBadge();
+    updateAccountCounter();
+    if (loadJobsAfter) await loadJobs();
+    return true;
+  } catch (_) {
+    currentSession = null;
+    setCreateJobAvailability(false);
+    setClearAllButton(false);
+    updateOwnerBadge();
+    return false;
+  }
+}
+
+async function sessionAction() {
+  if (!currentSession) {
+    window.location.href = '/auth/login';
+    return;
+  }
+  await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin', headers: getHeaders(), body: '{}' });
+  currentSession = null;
+  updateOwnerBadge();
+  setCreateJobAvailability(false);
+  window.location.reload();
+}
+
+function registerAction() {
+  window.location.href = '/auth/register';
+}
+
+loadPublicNotice();
+setInterval(loadPublicNotice, 10000);
+updateOwnerBadge();
+if (loginError) setTimeout(() => toast('❌ ' + loginError, 6000), 0);
+
+function importAccountsFile() {
+  const input = document.getElementById('accFile');
+  const file = input && input.files && input.files[0];
+  if (!file) return;
+  if (file.size > 32 * 1024 * 1024) {
+    toast('❌ File tối đa cho phép là 32 MB');
+    input.value = '';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const content = String(reader.result || '').replace(/^\uFEFF/, '');
+    document.getElementById('accInput').value = content;
+    updateAccountCounter();
+    toast('✅ Đã nhập thành công file ' + file.name);
+    input.value = '';
+  };
+  reader.onerror = () => {
+    toast('❌ Không đọc được file');
+    input.value = '';
+  };
+  reader.readAsText(file);
+}
+
+function selectedBillingMode() {
+  const hidden = document.getElementById('billingModeHidden');
+  if (hidden && hidden.value) return hidden.value;
+  return 'quantity';
+}
+
+function scheduleQuote() {
+  clearTimeout(quoteTimer);
+  quoteTimer = setTimeout(refreshQuote, 250);
+}
+
+async function refreshQuote() {
+  const target = document.getElementById('billingQuote');
+  if (!target || (!currentSession && !TOKEN)) return;
+  const mode = selectedBillingMode();
+  const text = (document.getElementById('accInput')?.value || '').trim();
+  const submittedCount = analyzeAccountsInput(text).valid;
+  const blockCount = Math.max(1, Math.min(48, Number(document.getElementById('blockCount')?.value || 1)));
+  if (mode === 'quantity' && submittedCount < 1) {
+    target.textContent = 'Nhập danh sách để xem chi phí dự kiến.';
+    target.dataset.affordable = '1';
+    target.dataset.hasEntitlement = '0';
+    return;
+  }
+  target.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang tính chi phí...';
+  try {
+    const data = await api('/api/quote', {
+      method: 'POST',
+      body: JSON.stringify(mode !== 'quantity'
+        ? { mode, block_count: blockCount }
+        : { mode, submitted_count: submittedCount })
+    });
+    if (!data.ok) throw new Error(data.error || 'Không tính được chi phí');
+    const amount = Number(data.amount || 0).toLocaleString('vi-VN', { maximumFractionDigits: 1 });
+    const available = Number(data.available_balance || currentSession?.available_balance || 0)
+      .toLocaleString('vi-VN', { maximumFractionDigits: 1 });
+    let message = data.mode === 'admin' || isAdminKey
+      ? '<strong style="color:#047857"><i class="fa-solid fa-crown"></i> Quyền Quản trị viên: Miễn phí hoàn toàn, không giới hạn tài khoản.</strong>'
+      : data.covered_by_time
+      ? '<strong style="color:#047857">Đang có quyền ' + (mode === 'vvip' ? 'VVIP' : 'theo giờ') + ': không trừ thêm tiền.</strong>'
+      : '<strong style="color:#dc2626">Chi phí dự kiến: ' + amount + 'đ</strong> · Số dư khả dụng: ' + available + 'đ';
+    if (mode === 'quantity') {
+      message += '<br><small>Đây là mức tạm giữ tối đa; thực tế = số đúng pass × 0,3đ + số Không thể log × 0,1đ. Đúng pass gồm Đủ LV, Chưa đạt, Bị khóa và CTNV; Chưa thể check không tính phí.</small>';
+      if (data.entitlement) message += '<br><strong style="color:#b45309">Bạn đang có quyền theo giờ; nên chọn Theo thời gian để tối ưu chi phí.</strong>';
+    }
+    if (!data.affordable) {
+      message += '<br><strong style="color:#b91c1c">Số dư không đủ để chạy.</strong> ' +
+        '<button type="button" class="btn btn-warning btn-xs" onclick="openDepositModal()" style="margin-left:6px;padding:2px 8px;font-size:12px;background:#f59e0b;color:#fff;border:none">' +
+        '<i class="fa-solid fa-bolt"></i> Nạp Ngay</button>';
+    }
+    target.innerHTML = message;
+    target.dataset.affordable = data.affordable ? '1' : '0';
+    target.dataset.hasEntitlement = data.entitlement ? '1' : '0';
+  } catch (error) {
+    target.textContent = error.message;
+    target.dataset.affordable = '0';
+  }
+}
+
+async function sendJob() {
+  const text = document.getElementById('accInput').value.trim();
+  if (!text) {
+    toast('⚠️ Vui lòng nhập danh sách tài khoản!');
+    return;
+  }
+  const billingMode = selectedBillingMode();
+  const btn = document.getElementById('btnSend');
+  const blockCount = Math.max(1, Math.min(48, Number(document.getElementById('blockCount')?.value || 1)));
+  const quote = document.getElementById('billingQuote');
+  if (quote?.dataset.affordable === '0') {
+    toast('❌ Số dư SP1S không đủ để chạy job này');
+    return;
+  }
+  let confirmQuantityWhileTimed = false;
+  if (billingMode === 'quantity' && quote?.dataset.hasEntitlement === '1') {
+    confirmQuantityWhileTimed = confirm('Tài khoản đang có quyền chạy theo giờ. Bạn vẫn muốn trả phí theo số lượng?');
+    if (!confirmQuantityWhileTimed) return;
+  }
+  const selectedSessionEntitlement = billingMode === 'vvip'
+    ? (currentSession?.entitlements?.vvip || currentSession?.vvip_entitlement)
+    : (currentSession?.entitlements?.normal || currentSession?.entitlement);
+  const hasTimeAccess = quote?.dataset.hasEntitlement === '1' || Boolean(selectedSessionEntitlement);
+  if (!isAdminKey && (billingMode === 'time' || billingMode === 'vvip') && !hasTimeAccess) {
+    const rentalCost = blockCount * (billingMode === 'vvip' ? 10000 : 5000);
+    if (!confirm('Tài khoản chưa có quyền ' + (billingMode === 'vvip' ? 'VVIP' : 'theo giờ') + '. Thuê ' + (blockCount * 30) +
+      ' phút với giá ' + formatNumber(rentalCost) + 'đ và chạy job này?')) return;
+  }
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin-fast"></i> Đang gửi...';
+  try {
+    const submit = confirmFilteredAccounts => api('/api/jobs', {
+        method: 'POST',
+        body: JSON.stringify({
+          text,
+          billing_mode: billingMode,
+          block_count: blockCount,
+          confirm_quantity_while_timed: confirmQuantityWhileTimed,
+          confirm_filtered_accounts: confirmFilteredAccounts,
+        })
+      });
+    let d = await submit(false);
+    if (!d.ok && ['FILTERED_ACCOUNTS_REQUIRE_CONFIRMATION', 'INVALID_USERNAMES_REQUIRE_CONFIRMATION'].includes(d.code)) {
+      const invalidExamples = (d.invalid_usernames || []).slice(0, 6).map(item =>
+        '• USER sai · Dòng ' + item.line_number + ': ' + item.username + ' — ' + item.reason
+      );
+      const junkExamples = (d.junk_accounts || []).slice(0, 6).map(item =>
+        '• DATA rác · Dòng ' + item.line_number + ': ' + item.username + ' — ' + item.reason
+      );
+      const examples = invalidExamples.concat(junkExamples).join('\n');
+      const more = d.invalid_usernames_truncated || d.junk_accounts_truncated ||
+        Number(d.invalid_accounts || 0) > invalidExamples.length ||
+        Number(d.junk_accounts_count || 0) > junkExamples.length
+        ? '\n• ...và các dòng bị loại khác'
+        : '';
+      const accepted = confirm(
+        'Rà soát trước khi tạo job:\n' +
+        '• ' + formatNumber(d.invalid_accounts || 0) + ' USER không hợp lệ\n' +
+        '• ' + formatNumber(d.junk_accounts_count || 0) + ' DATA rác\n\n' +
+        examples + more + '\n\nNếu tiếp tục, các dòng này sẽ không được chạy/tính phí và được lưu vào nhóm tương ứng. Bạn vẫn muốn tạo job?'
+      );
+      if (!accepted) return;
+      d = await submit(true);
+    }
+    if (d.ok) {
+      const invalidNote = Number(d.invalid_accounts || 0) > 0
+        ? ' · đã loại ' + formatNumber(d.invalid_accounts) + ' USER không hợp lệ'
+        : '';
+      const junkNote = Number(d.junk_accounts_count || 0) > 0
+        ? ' · ' + formatNumber(d.junk_accounts_count) + ' DATA rác'
+        : '';
+      toast('🚀 Đã tạo Job #' + d.job_id + ' (' + formatNumber(d.total) + ' acc)' + invalidNote + junkNote + '!');
+      await loadSession(false);
+      document.getElementById('accInput').value = '';
+      updateAccountCounter();
+      closeModal('submitModal');
+      await loadJobs();
+      viewJob(d.job_id);
+    } else {
+      toast('❌ ' + d.error);
+    }
+  } catch(e) {
+    toast('❌ Lỗi gửi job: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Gửi Check Ngay';
+  }
+}
+
+function formatJobDuration(start, end) {
+  const startTime = Number(start);
+  const endTime = Number(end) || (Date.now() / 1000);
+  if (!Number.isFinite(startTime) || startTime <= 0) return '--:--:--';
+  const total = Math.max(0, Math.floor(endTime - startTime));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  return String(hours).padStart(2, '0') + ':' + String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+}
+
+function jobSpeedPerMinute(processed, start, end) {
+  const startTime = Number(start);
+  if (!Number.isFinite(startTime) || startTime <= 0) return 0;
+  const endTime = Number(end) || Date.now() / 1000;
+  const elapsedSeconds = Math.max(1, endTime - startTime);
+  return Math.round(Math.max(0, Number(processed) || 0) * 60 / elapsedSeconds);
+}
+
+function updateJobDurations() {
+  document.querySelectorAll('.job-duration').forEach(el => {
+    el.textContent = formatJobDuration(el.dataset.start, el.dataset.end);
+  });
+  const curDur = document.getElementById('detailDuration');
+  if (curDur && curDur.dataset.start) {
+    curDur.textContent = formatJobDuration(curDur.dataset.start, curDur.dataset.end);
+  }
+}
+
+function jobDurationHtml(job) {
+  return '<span class="job-duration" data-start="' + Number(job.created_at || 0) + '" data-end="' + Number(job.finished_at || 0) + '"></span>';
+}
+
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString('vi-VN');
+}
+
+function formatDate(value) {
+  const d = new Date(Number(value || 0) * 1000);
+  return Number.isNaN(d.getTime()) ? 'Không rõ' : d.toLocaleString('vi-VN', {
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+  });
+}
+
+function progressPercent(done, total) {
+  return total > 0 ? Math.min(100, Math.max(0, Math.round(done * 100 / total))) : 0;
+}
+
+function esc(value) {
+  const chars = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  return String(value ?? '').replace(/[&<>"']/g, ch => chars[ch]);
+}
+
+function copyToClipboard(text, btnElement) {
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(() => {
+    toast('📋 Đã sao chép: ' + text, 1800);
+    if (btnElement) {
+      const orig = btnElement.innerHTML;
+      btnElement.innerHTML = '<i class="fa-solid fa-check" style="color:#059669"></i>';
+      setTimeout(() => { btnElement.innerHTML = orig; }, 1500);
+    }
+  }).catch(() => {
+    toast('❌ Không thể sao chép');
+  });
+}
+
+function updateOverviewStats(jobs, overview) {
+  const hasSystemOverview = overview && typeof overview === 'object';
+  let totalJobs = hasSystemOverview ? Number(overview.total_jobs || 0) : jobs.length;
+  let running = hasSystemOverview ? Number(overview.running_jobs || 0) : 0;
+  let normalRunning = hasSystemOverview ? Number(overview.normal_running_jobs || 0) : 0;
+  let vvipRunning = hasSystemOverview ? Number(overview.vvip_running_jobs || 0) : 0;
+  let done = hasSystemOverview ? Number(overview.done_jobs || 0) : 0;
+  let totalAccs = hasSystemOverview ? Number(overview.total_accounts || 0) : 0;
+  let pendingAccs = hasSystemOverview ? Number(overview.pending_accounts || 0) : 0;
+  if (!hasSystemOverview) {
+    jobs.forEach(j => {
+      if (j.status === 'done') done++;
+      else {
+        running++;
+        if (j.queue_type === 'vvip') vvipRunning++;
+        else normalRunning++;
+      }
+      totalAccs += Number(j.total || 0);
+      if (j.status !== 'done') {
+        pendingAccs += Math.max(0, Number(j.total || 0) - Number(j.processed || 0));
+      }
+    });
+  }
+  document.getElementById('topTotalJobs').textContent = formatNumber(totalJobs);
+  document.getElementById('topRunningJobs').textContent = formatNumber(running);
+  document.getElementById('topNormalRunningJobs').textContent = formatNumber(normalRunning);
+  document.getElementById('topVvipRunningJobs').textContent = formatNumber(vvipRunning);
+  document.getElementById('topDoneJobs').textContent = formatNumber(done);
+  document.getElementById('topTotalAccs').textContent = formatNumber(totalAccs);
+  document.getElementById('topPendingAccs').textContent = formatNumber(Math.max(0, pendingAccs));
+}
+
+function filterJobsList() {
+  renderJobs();
+}
+
+function setJobsStatusFilter(status) {
+  jobsStatusFilter = status;
+  document.querySelectorAll('#jobsStatusFilter button').forEach(button => {
+    button.classList.toggle('active', button.dataset.status === status);
+  });
+  renderJobs();
+}
+
+function renderJobs() {
+  const el = document.getElementById('jobsList');
+  const query = (document.getElementById('jobsSearchInput')?.value || '').trim().toLowerCase();
+  let filtered = jobsCache.filter(j => {
+    if (jobsStatusFilter === 'done') return j.status === 'done';
+    if (jobsStatusFilter === 'running') return j.status !== 'done';
+    return true;
+  });
+  if (query) {
+    filtered = filtered.filter(j => {
+      const idStr = String(j.id);
+      const ownerStr = String(j.owner_preview || '').toLowerCase();
+      return idStr.includes(query) || ownerStr.includes(query);
+    });
+  }
+
+  if (!filtered.length) {
+    const hasFilter = query || jobsStatusFilter !== 'all';
+    el.innerHTML = '<div class="empty-state"><i class="fa-solid fa-box-open"></i><br>' + (hasFilter ? 'Không tìm thấy job phù hợp' : 'Chưa có job nào trong hệ thống') + '</div>';
+    return;
+  }
+
+  el.innerHTML = filtered.map(j => {
+    const id = Number(j.id);
+    const total = Number(j.total || 0);
+    const processed = Math.min(total, Number(j.processed ?? ((j.ok || 0) + (j.fail || 0) + (j.uncheckable || 0))));
+    const percent = progressPercent(processed, total);
+    const isDone = j.status === 'done';
+    const isStopping = j.status === 'stopping';
+    const status = isDone
+      ? '<span class="badge badge-done"><i class="fa-solid fa-check"></i> Hoàn tất</span>'
+      : (isStopping
+        ? '<span class="badge badge-running"><i class="fa-solid fa-stop fa-beat"></i> Đang dừng</span>'
+        : '<span class="badge badge-running"><i class="fa-solid fa-bolt fa-spin-fast"></i> Đang chạy</span>');
+    const owner = j.owner_preview ? (' · <i class="fa-solid fa-user" style="font-size:10px"></i> ' + esc(j.owner_preview)) : '';
+    let billing = '';
+    if (j.queue_type === 'vvip') {
+      billing = ' · <strong style="color:#7c3aed"><i class="fa-solid fa-crown"></i> VVIP</strong>' +
+        (j.access_until ? ' đến ' + esc(formatDate(j.access_until)) : '');
+    } else if (j.billing_mode === 'quantity') {
+      billing = j.billing_state === 'settled'
+        ? ' · Phí ' + formatNumber(j.final_amount) + 'đ'
+        : ' · <span style="color:#b45309">Đang quyết toán</span>';
+    } else if (j.billing_mode === 'time' && j.access_until) {
+      billing = ' · Quyền đến ' + esc(formatDate(j.access_until));
+    }
+    const activeClass = currentJobId === id ? 'active' : '';
+
+    return '<div class="job-item ' + activeClass + '" role="button" tabindex="0" onclick="viewJob(' + id + ')">' +
+      '<div class="job-head">' +
+        '<span class="job-id-tag"><i class="fa-solid fa-hashtag"></i>Job #' + id + '</span>' +
+        status +
+      '</div>' +
+      '<div class="job-meta">' +
+        '<span><i class="fa-regular fa-calendar"></i> ' + esc(formatDate(j.created_at)) + owner + billing + '</span>' +
+        '<span><i class="fa-regular fa-clock"></i> ' + jobDurationHtml(j) + '</span>' +
+      '</div>' +
+      '<div class="progress-container">' +
+        '<div class="progress-track"><div class="progress-fill" style="width:' + percent + '%"></div></div>' +
+        '<div class="progress-label">' +
+          '<span>Đã xử lý <strong>' + formatNumber(processed) + ' / ' + formatNumber(total) + '</strong> acc</span>' +
+          '<strong>' + percent + '%</strong>' +
+        '</div>' +
+      '</div>' +
+      '<div class="job-pills">' +
+        '<span class="job-pill ok"><i class="fa-solid fa-circle-check"></i> ' + formatNumber(j.ok) + '</span>' +
+        '<span class="job-pill fail"><i class="fa-solid fa-circle-xmark"></i> ' + formatNumber(j.fail) + '</span>' +
+        '<span class="job-pill pending"><i class="fa-solid fa-hourglass"></i> ' + formatNumber(j.uncheckable) + '</span>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+  updateJobDurations();
+}
+
+async function loadJobs() {
+  if (!TOKEN && !currentSession) return;
+  if (jobsLoading) return;
+  jobsLoading = true;
+  const icon = document.getElementById('refreshJobsIcon');
+  if (icon) icon.className = 'fa-solid fa-rotate fa-spin-fast';
+  try {
+    const d = await api('/api/jobs_list');
+    if (!d.ok) throw new Error(d.error || 'Không tải được danh sách jobs');
+    jobsCache = Array.isArray(d.jobs) ? d.jobs : [];
+    updateOverviewStats(jobsCache, d.overview);
+    renderJobs();
+  } catch(e) {
+    if (!jobsCache.length) {
+      document.getElementById('jobsList').innerHTML = '<div class="empty-state"><i class="fa-solid fa-circle-exclamation" style="color:var(--danger)"></i><br>Lỗi: ' + esc(e.message) + '</div>';
+    }
+  } finally {
+    jobsLoading = false;
+    if (icon) icon.className = 'fa-solid fa-rotate';
+  }
+}
+
+function detailMotionDelay() {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : DETAIL_TRANSITION_MS;
+}
+
+function jobsExpandDelay() {
+  return window.matchMedia('(prefers-reduced-motion: reduce), (max-width: 1024px)').matches ? 0 : JOBS_EXPAND_MS;
+}
+
+function restartDetailAnimation(detailCard, className) {
+  detailCard.classList.remove('detail-enter', 'detail-leave');
+  void detailCard.offsetWidth;
+  detailCard.classList.add(className);
+}
+
+function showJobDetail(id) {
+  currentJobId = Number(id);
+  pendingJobId = null;
+  detailPage = 1;
+  detailRowsLoadedAt = 0;
+  const workspace = document.getElementById('jobsWorkspace');
+  const jobsCard = workspace.querySelector('.jobs-card');
+  if (jobsCard) jobsCard.classList.remove('list-expand');
+  workspace.classList.add('detail-open');
+  const dc = document.getElementById('detailCard');
+  dc.style.display = 'block';
+  restartDetailAnimation(dc, 'detail-enter');
+  document.getElementById('detailJobId').textContent = id;
+  document.getElementById('detailRows').innerHTML = '<div class="empty-state"><i class="fa-solid fa-circle-notch fa-spin-fast"></i><br>Đang tải dữ liệu kết quả...</div>';
+  renderJobs();
+  if (window.matchMedia('(max-width:1024px)').matches) {
+    dc.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  refreshDetail();
+}
+
+function finishDetailExit() {
+  detailTransitionTimer = null;
+  const workspace = document.getElementById('jobsWorkspace');
+  const dc = document.getElementById('detailCard');
+  dc.classList.remove('detail-leave');
+  if (pendingJobId !== null) {
+    const nextJobId = pendingJobId;
+    showJobDetail(nextJobId);
+    return;
+  }
+  workspace.classList.remove('detail-open');
+  dc.style.display = 'none';
+  const jobsCard = workspace.querySelector('.jobs-card');
+  if (jobsCard) {
+    jobsCard.classList.remove('list-expand');
+    void jobsCard.offsetWidth;
+    jobsCard.classList.add('list-expand');
+    setTimeout(() => jobsCard.classList.remove('list-expand'), jobsExpandDelay());
+  }
+}
+
+function startDetailExit() {
+  detailRequestSeq++;
+  if (detailTimer) { clearTimeout(detailTimer); detailTimer = null; }
+  const dc = document.getElementById('detailCard');
+  restartDetailAnimation(dc, 'detail-leave');
+  if (detailTransitionTimer) clearTimeout(detailTransitionTimer);
+  detailTransitionTimer = setTimeout(finishDetailExit, detailMotionDelay());
+}
+
+function viewJob(id) {
+  const nextJobId = Number(id);
+  const workspace = document.getElementById('jobsWorkspace');
+  const dc = document.getElementById('detailCard');
+  const isVisible = workspace.classList.contains('detail-open') && dc.style.display !== 'none';
+
+  if (isVisible && dc.classList.contains('detail-leave')) {
+    pendingJobId = nextJobId;
+    return;
+  }
+  if (isVisible && currentJobId !== null && currentJobId !== nextJobId) {
+    pendingJobId = nextJobId;
+    startDetailExit();
+    return;
+  }
+  if (currentJobId === nextJobId && isVisible) {
+    refreshDetail();
+    return;
+  }
+  if (detailTransitionTimer) { clearTimeout(detailTransitionTimer); detailTransitionTimer = null; }
+  showJobDetail(nextJobId);
+}
+
+function closeDetail() {
+  pendingJobId = null;
+  currentJobId = null;
+  detailRequestSeq++;
+  detailPage = 1;
+  if (detailTimer) { clearTimeout(detailTimer); detailTimer = null; }
+  const workspace = document.getElementById('jobsWorkspace');
+  const dc = document.getElementById('detailCard');
+  renderJobs();
+  if (!workspace.classList.contains('detail-open') || dc.style.display === 'none') {
+    finishDetailExit();
+    return;
+  }
+  if (!dc.classList.contains('detail-leave')) startDetailExit();
+}
+
+function scheduleDetail(id) {
+  if (detailTimer) clearTimeout(detailTimer);
+  detailTimer = setTimeout(() => {
+    if (currentJobId === id) refreshDetail(false);
+  }, DETAIL_PROGRESS_REFRESH_MS);
+}
+
+function getRowCategory(row, minLevel = 12) {
+  const st = String(row.status || '').toUpperCase();
+  const ps = String(row.player_status || '').toLowerCase();
+  const rt = String(row.result_type || '').toLowerCase();
+  const lvStr = String(row.level || '').trim();
+  const lvNum = /^\d+$/.test(lvStr) ? Number(lvStr) : NaN;
+
+  if (rt === 'invalid username') return 'INVALID';
+  if (rt === 'junk data') return 'JUNK';
+
+  if (st === 'CHƯA THỂ CHECK' || rt === 'chưa thể check') {
+    return 'PENDING';
+  }
+  if (st !== 'OK' || rt === 'sai pass' || rt === 'không thể log') {
+    return 'FAIL';
+  }
+  if (rt === 'lỗi ctnv') return 'GRANT_ERROR';
+  if (ps.includes('khóa') || ps.includes('ban') || ps.includes('cấm')) {
+    return 'LOCKED';
+  }
+  if (lvStr.toLowerCase() === 'ctnv' || ps.includes('chưa tạo nhân vật')) {
+    return 'CTNV';
+  }
+  if (Number.isFinite(lvNum) && lvNum >= minLevel) {
+    return 'OK';
+  }
+  return 'NOT_MET';
+}
+
+function updateFilterTabCounts(categoryCounts, totalAll) {
+  const counts = {
+    all: Number(totalAll || 0),
+    OK: Number(categoryCounts?.OK || 0),
+    NOT_MET: Number(categoryCounts?.NOT_MET || 0),
+    CTNV: Number(categoryCounts?.CTNV || 0),
+    GRANT_ERROR: Number(categoryCounts?.GRANT_ERROR || 0),
+    LOCKED: Number(categoryCounts?.LOCKED || 0),
+    FAIL: Number(categoryCounts?.FAIL || 0),
+    PENDING: Number(categoryCounts?.PENDING || 0),
+    INVALID: Number(categoryCounts?.INVALID || 0),
+    JUNK: Number(categoryCounts?.JUNK || 0)
+  };
+  for (const k of Object.keys(counts)) {
+    const el = document.getElementById('count_' + k);
+    if (el) el.textContent = '(' + formatNumber(counts[k]) + ')';
+  }
+}
+
+function setResultFilter(filter) {
+  currentFilter = filter;
+  detailPage = 1;
+  document.querySelectorAll('.filter-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.filter === filter);
+  });
+  refreshDetail();
+}
+
+function applyLevelFilter() {
+  detailPage = 1;
+  if (levelFilterTimer) clearTimeout(levelFilterTimer);
+  levelFilterTimer = setTimeout(refreshDetail, 350);
+}
+
+function filterCurrentRows() {
+  currentSearch = (document.getElementById('resultSearchInput')?.value || '').trim().toLowerCase();
+  renderFilteredRows();
+}
+
+function renderFilteredRows() {
+  const minLevel = parseInt(document.getElementById('exportMinLevel')?.value, 10) || 12;
+  let rows = currentRawRows;
+  if (currentSearch) {
+    rows = rows.filter(r => {
+      const acc = String(r.account || '').toLowerCase();
+      const uid = String(r.uid || '').toLowerCase();
+      const name = String(r.name || '').toLowerCase();
+      return acc.includes(currentSearch) || uid.includes(currentSearch) || name.includes(currentSearch);
+    });
+  }
+
+  const container = document.getElementById('detailRows');
+  if (!rows.length) {
+    container.innerHTML = '<div class="empty-state"><i class="fa-solid fa-magnifying-glass"></i><br>Không có kết quả nào phù hợp với bộ lọc</div>';
+    return;
+  }
+
+  let h = '<div class="table-scroll-container"><table class="data-table"><thead><tr>' +
+    '<th>STT</th><th>Tài khoản</th><th>Trạng thái</th><th>UID</th><th>Tên nhân vật</th><th>Cấp độ</th><th>Ngày tạo</th><th>Thông tin Acc</th>' +
+    '</tr></thead><tbody>';
+
+  rows.forEach(row => {
+    const cat = getRowCategory(row, minLevel);
+    let tagClass = 'tag-badge fail';
+    let tagIcon = '<i class="fa-solid fa-circle-xmark"></i>';
+    let tagText = esc(row.status || '');
+
+    if (cat === 'OK') {
+      tagClass = 'tag-badge ok';
+      tagIcon = '<i class="fa-solid fa-circle-check"></i>';
+      tagText = 'OK';
+    } else if (cat === 'NOT_MET') {
+      tagClass = 'tag-badge not-met';
+      tagIcon = '<i class="fa-solid fa-triangle-exclamation"></i>';
+      tagText = 'Chưa đạt';
+    } else if (cat === 'GRANT_ERROR') {
+      tagClass = 'tag-badge not-met';
+      tagIcon = '<i class="fa-solid fa-triangle-exclamation"></i>';
+      tagText = 'Lỗi CTNV';
+    } else if (cat === 'CTNV') {
+      tagClass = 'tag-badge ctnv';
+      tagIcon = '<i class="fa-solid fa-user-plus"></i>';
+      tagText = 'CTNV';
+    } else if (cat === 'LOCKED') {
+      tagClass = 'tag-badge locked';
+      tagIcon = '<i class="fa-solid fa-lock"></i>';
+      tagText = 'Bị khóa';
+    } else if (cat === 'PENDING') {
+      tagClass = 'tag-badge pending';
+      tagIcon = '<i class="fa-solid fa-hourglass"></i>';
+      tagText = 'Chưa thể check';
+    } else if (cat === 'INVALID') {
+      tagClass = 'tag-badge fail';
+      tagIcon = '<i class="fa-solid fa-user-slash"></i>';
+      tagText = 'USER không hợp lệ';
+    } else if (cat === 'JUNK') {
+      tagClass = 'tag-badge fail';
+      tagIcon = '<i class="fa-solid fa-filter-circle-xmark"></i>';
+      tagText = 'DATA rác';
+    } else {
+      tagClass = 'tag-badge fail';
+      tagIcon = '<i class="fa-solid fa-circle-xmark"></i>';
+      tagText = 'Không thể log';
+    }
+
+    const acc = esc(row.account || '');
+    const copyData = (row.full_credential || row.account || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const copyBtn = copyData ? '<button class="copy-btn" onclick="copyToClipboard(\'' + copyData + '\', this)" title="Sao chép toàn bộ dòng thông tin (user|pass|mail|...)"><i class="fa-regular fa-copy"></i></button>' : '';
+    const lvl = row.level ? '<span class="level-badge">Lv.' + esc(row.level) + '</span>' : '-';
+
+    let playerStatusHtml = esc(row.player_status || '-');
+    const psLower = String(row.player_status || '').toLowerCase();
+    if (psLower.includes('khóa') || psLower.includes('ban')) {
+      playerStatusHtml = '<span class="tag-badge locked"><i class="fa-solid fa-lock"></i> ' + esc(row.player_status) + '</span>';
+      const banTimes = [];
+      if (row.banTime) banTimes.push('<div>Ban: ' + esc(row.banTime) + '</div>');
+      if (row.unbanTime) banTimes.push('<div>Mở ban: ' + esc(row.unbanTime) + '</div>');
+      if (banTimes.length) playerStatusHtml += '<div class="ban-time-details">' + banTimes.join('') + '</div>';
+    } else if (psLower.includes('chưa tạo nhân vật') || psLower === 'ctnv' || cat === 'CTNV') {
+      playerStatusHtml = '<span class="tag-badge ctnv"><i class="fa-solid fa-user-plus"></i> CTNV</span>';
+    } else if (psLower.trim() === 'bình thường') {
+      playerStatusHtml = '<span class="tag-badge ok"><i class="fa-solid fa-circle-check"></i> ' + esc(row.player_status) + '</span>';
+    }
+
+    h += '<tr>' +
+      '<td>' + esc(row.stt ?? '') + '</td>' +
+      '<td><span class="account-cell"><strong>' + acc + '</strong>' + copyBtn + '</span></td>' +
+      '<td><span class="' + tagClass + '">' + tagIcon + ' ' + tagText + '</span></td>' +
+      '<td>' + esc(row.uid || '-') + '</td>' +
+      '<td>' + esc(row.name || '-') + '</td>' +
+      '<td>' + lvl + '</td>' +
+      '<td>' + esc(String(row.registerDate || '-').split(' ')[0]) + '</td>' +
+      '<td>' + playerStatusHtml + '</td>' +
+    '</tr>';
+  });
+
+  h += '</tbody></table></div>';
+  container.innerHTML = h;
+}
+
+async function refreshDetail(forceRows = true) {
+  if (!currentJobId) return;
+  const id = currentJobId;
+  const requestSeq = ++detailRequestSeq;
+  if (detailTimer) { clearTimeout(detailTimer); detailTimer = null; }
+  const icon = document.getElementById('detailRefreshIcon');
+  if (icon) icon.className = 'fa-solid fa-rotate fa-spin-fast';
+  const minLevel = Math.max(1, Math.min(1000, parseInt(document.getElementById('exportMinLevel')?.value, 10) || 12));
+  const rowsUrl = '/api/jobs/' + id + '/rows?page=' + detailPage +
+    '&per_page=' + DETAIL_PAGE_SIZE +
+    '&filter=' + encodeURIComponent(currentFilter) +
+    '&min_level=' + minLevel;
+  const shouldLoadRows = forceRows || !detailRowsLoadedAt ||
+    (Date.now() - detailRowsLoadedAt >= DETAIL_ROWS_REFRESH_MS);
+
+  try {
+    // Always let the lightweight progress request finish first.  The server's
+    // stores serialize reads, so starting the heavier rows request in parallel
+    // could otherwise acquire the DB lock first and delay the progress counters.
+    const s = await api('/api/jobs/' + id);
+    if (id !== currentJobId || requestSeq !== detailRequestSeq) return;
+    if (!s.ok) throw new Error(s.error || 'Không tải được chi tiết job');
+
+    const c = s.chunks || {};
+    const r = s.results || {};
+    const total = Number(s.total || 0);
+    const processed = Math.min(total, Number(r.count || 0));
+    const percent = progressPercent(processed, total);
+    const speedPerMinute = jobSpeedPerMinute(processed, s.created_at, s.finished_at);
+
+    const stopBtn = document.getElementById('stopJobBtn');
+    if (stopBtn) {
+      stopBtn.style.display = (s.status === 'open') ? 'inline-flex' : 'none';
+      stopBtn.disabled = false;
+    }
+
+    document.getElementById('detailStatus').innerHTML = (s.status === 'open')
+      ? '<span class="badge badge-running"><i class="fa-solid fa-bolt fa-spin-fast"></i> Đang chạy</span>'
+      : ((s.status === 'stopping')
+        ? '<span class="badge badge-running"><i class="fa-solid fa-stop fa-beat"></i> Đang dừng</span>'
+        : '<span class="badge badge-done"><i class="fa-solid fa-check"></i> Hoàn tất</span>');
+
+    document.getElementById('detailOwner').innerHTML = s.owner_preview ? ('<i class="fa-solid fa-user" style="color:#EA580C"></i> ' + esc(s.owner_preview)) : '';
+
+    const dur = document.getElementById('detailDuration');
+    dur.dataset.start = Number(s.created_at || 0);
+    dur.dataset.end = Number(s.finished_at || 0);
+    dur.textContent = formatJobDuration(dur.dataset.start, dur.dataset.end);
+
+    let billingDetail = '';
+    if (s.queue_type === 'vvip') {
+      billingDetail = '<div style="margin-top:10px;font-size:13px;color:#7c3aed"><i class="fa-solid fa-crown"></i> <strong>VVIP – hàng đợi riêng</strong>' +
+        (s.access_until ? ' · Quyền đến <strong>' + esc(formatDate(s.access_until)) + '</strong>' : '') + '</div>';
+    } else if (s.billing_mode === 'quantity') {
+      billingDetail = '<div style="margin-top:10px;font-size:13px">Tính theo số lượng · ' +
+        (s.billing_state === 'settled'
+          ? '<strong>Đã quyết toán ' + formatNumber(s.final_amount) + 'đ</strong>'
+          : '<strong style="color:#b45309">Đang chờ SP1S quyết toán</strong>') + '</div>';
+    } else if (s.billing_mode === 'time') {
+      billingDetail = '<div style="margin-top:10px;font-size:13px">Tính theo thời gian · Quyền đến <strong>' +
+        esc(formatDate(s.access_until)) + '</strong></div>';
+    }
+    document.getElementById('detailProgress').innerHTML =
+      '<div class="progress-label" style="margin-bottom:6px">' +
+        '<span>Tiến độ xử lý: <strong>' + formatNumber(processed) + ' / ' + formatNumber(total) + '</strong> tài khoản</span>' +
+        '<strong>' + percent + '%</strong>' +
+      '</div>' +
+      '<div class="progress-track" style="height:10px">' +
+        '<div class="progress-fill" style="width:' + percent + '%"></div>' +
+      '</div>' + billingDetail;
+
+    document.getElementById('detailStats').innerHTML =
+      '<div class="stat-box blue"><div class="num">' + formatNumber(total) + '</div><div class="lbl">Tổng tài khoản</div></div>' +
+      '<div class="stat-box" title="Tốc độ trung bình từ lúc tạo job"><div class="num">' + formatNumber(speedPerMinute) + '</div><div class="lbl">Tốc độ/phút</div></div>' +
+      '<div class="stat-box ok"><div class="num">' + formatNumber(r.ok || 0) + '</div><div class="lbl">OK (Đúng)</div></div>' +
+      '<div class="stat-box fail"><div class="num">' + formatNumber(r.fail || 0) + '</div><div class="lbl">Không thể log</div></div>' +
+      '<div class="stat-box pending"><div class="num">' + formatNumber(r.uncheckable || 0) + '</div><div class="lbl">Chưa thể check</div></div>' +
+      '<div class="stat-box fail"><div class="num">' + formatNumber(r.invalid || 0) + '</div><div class="lbl">USER không hợp lệ</div></div>' +
+      '<div class="stat-box fail"><div class="num">' + formatNumber(r.junk || 0) + '</div><div class="lbl">DATA rác</div></div>' +
+      '<div class="stat-box"><div class="num">' + formatNumber(c.pending) + ' / ' + formatNumber(c.claimed) + '</div><div class="lbl">Chunks chờ / chạy</div></div>';
+
+    if (shouldLoadRows) {
+      const rd = await api(rowsUrl);
+      if (id !== currentJobId || requestSeq !== detailRequestSeq) return;
+      if (!rd.ok) throw new Error(rd.error || 'Không tải được kết quả');
+      currentRawRows = Array.isArray(rd.rows) ? rd.rows : [];
+      updateFilterTabCounts(rd.category_counts || {}, rd.total_all);
+      renderFilteredRows();
+      detailRowsLoadedAt = Date.now();
+
+      // Render Pagination nếu có
+      const totalPages = rd.total_pages || 1;
+      if (totalPages > 1) {
+        const pag = '<div class="pagination-wrap">' +
+          '<span class="page-info">Trang <strong>' + rd.page + '</strong> / ' + totalPages + ' (' + formatNumber(rd.total) + ' kết quả)</span>' +
+          '<div style="display:flex;gap:8px">' +
+            '<button class="btn btn-secondary btn-sm" ' + (rd.page <= 1 ? 'disabled' : '') + ' onclick="goDetailPage(' + (rd.page - 1) + ')"><i class="fa-solid fa-chevron-left"></i> Trước</button>' +
+            '<button class="btn btn-secondary btn-sm" ' + (rd.page >= totalPages ? 'disabled' : '') + ' onclick="goDetailPage(' + (rd.page + 1) + ')">Sau <i class="fa-solid fa-chevron-right"></i></button>' +
+          '</div>' +
+        '</div>';
+        document.getElementById('detailRows').insertAdjacentHTML('beforeend', pag);
+      }
+    }
+
+    if (s.status === 'open' || s.status === 'stopping') scheduleDetail(id);
+  } catch(e) {
+    if (id !== currentJobId || requestSeq !== detailRequestSeq) return;
+    document.getElementById('detailRows').innerHTML = '<div class="empty-state"><i class="fa-solid fa-triangle-exclamation" style="color:var(--danger)"></i><br>Lỗi: ' + esc(e.message) + '</div>';
+    scheduleDetail(id);
+  } finally {
+    if (icon) icon.className = 'fa-solid fa-rotate';
+  }
+}
+
+function goDetailPage(page) {
+  detailPage = Math.max(1, page);
+  refreshDetail();
+}
+
+function exportTxt() {
+  if (currentJobId) {
+    const category = document.getElementById('exportCategory').value || 'all';
+    const input = document.getElementById('exportMinLevel');
+    const minLevel = Number(input && input.value) || 12;
+    let query = '?category=' + encodeURIComponent(category) + '&min_level=' + minLevel;
+    if (TOKEN) query += '&token=' + encodeURIComponent(TOKEN);
+    window.open('/api/jobs/' + currentJobId + '/export.txt' + query);
+  }
+}
+
+function exportXlsx() {
+  if (!currentJobId) return;
+  const input = document.getElementById('exportMinLevel');
+  const minLevel = Number(input && input.value);
+  if (!Number.isInteger(minLevel) || minLevel < 1 || minLevel > 1000) {
+    toast('⚠️ Level tối thiểu phải từ 1 đến 1000');
+    return;
+  }
+  const tokenPart = TOKEN ? ('&token=' + encodeURIComponent(TOKEN)) : '';
+  window.open('/api/jobs/' + currentJobId + '/export.xlsx?min_level=' + minLevel + tokenPart);
+}
+
+async function stopCurrentJob() {
+  if (!currentJobId || !confirm('Dừng job này ngay? Các acc chưa xong sẽ được kết thúc.')) return;
+  const b = document.getElementById('stopJobBtn');
+  b.disabled = true;
+  try {
+    const d = await api('/api/jobs/' + currentJobId + '/stop', { method: 'POST', body: '{}' });
+    if (!d.ok) throw new Error(d.error || 'Không thể dừng job');
+    toast(d.status === 'stopping' ? '⏹ Đã nhận yêu cầu, đang hoàn tất dừng job' : '⏹ Job đã dừng');
+    refreshDetail();
+    loadJobs();
+  } catch(e) {
+    toast('❌ ' + e.message);
+    b.disabled = false;
+  }
+}
+
+async function clearAllData() {
+  if (!confirm('⚠️ BẠN CÓ CHẮC CHẮN MUỐN XÓA TOÀN BỘ JOBS VÀ KẾT QUẢ? Không thể hoàn tác.')) return;
+  const btn = document.getElementById('clearAllDataBtn');
+  btn.disabled = true;
+  try {
+    const d = await api('/api/admin/clear_all', { method: 'POST', body: '{}' });
+    if (!d.ok) {
+      toast('❌ ' + (d.error || 'Không thể xóa dữ liệu'));
+      return;
+    }
+    closeDetail();
+    document.getElementById('jobsList').innerHTML = '<div class="empty-state"><i class="fa-solid fa-box-open"></i><br>Chưa có job nào</div>';
+    toast('✅ Đã xóa toàn bộ dữ liệu (' + (d.jobs || 0) + ' job, ' + (d.results || 0) + ' kết quả)');
+    loadJobs();
+  } catch(e) {
+    toast('❌ Lỗi: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function bootWithMaintenanceCheck() {
+  try {
+    const response = await fetch('/api/public/maintenance', { cache: 'no-store' });
+    const data = await response.json();
+    const maintenance = data?.maintenance;
+    if (maintenance?.active) {
+      openModal('maintenanceModal');
+      let remaining = Math.max(0, Math.ceil(Number(maintenance.retry_after_seconds || 0)));
+      const countdown = document.getElementById('maintenanceCountdown');
+      const renderCountdown = () => {
+        const hours = Math.floor(remaining / 3600);
+        const minutes = Math.floor((remaining % 3600) / 60);
+        const seconds = remaining % 60;
+        if (countdown) {
+          countdown.textContent = [hours, minutes, seconds]
+            .map(value => String(value).padStart(2, '0')).join(':');
+        }
+      };
+      renderCountdown();
+      const countdownTimer = setInterval(() => {
+        remaining = Math.max(0, remaining - 1);
+        renderCountdown();
+        if (remaining <= 0) {
+          clearInterval(countdownTimer);
+          window.location.reload();
+        }
+      }, 1000);
+      return;
+    }
+  } catch (_) {
+    // Nếu endpoint trạng thái tạm lỗi, luồng đăng nhập hiện tại vẫn xử lý lỗi mạng.
+  }
+  loadSession();
+}
+
+bootWithMaintenanceCheck();
+setInterval(() => {
+  if (document.getElementById('maintenanceModal')?.classList.contains('open')) return;
+  if (currentSession || TOKEN) {
+    loadJobs();
+    loadSession(false);
+  }
+}, 15000);
+setInterval(updateJobDurations, 1000);
+</script>
+</body>
+</html>

@@ -4554,6 +4554,21 @@ class MasterHandler(BaseHTTPRequestHandler):
         if not allowed:
             self._json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "không có quyền export job này"})
             return
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        category_filter = str(query.get("category", ["all"])[0] or "all").upper()
+        VALID_CATEGORIES = {"ALL", "OK", "NOT_MET", "CTNV", "GRANT_ERROR", "LOCKED", "FAIL", "PENDING"}
+        if category_filter not in VALID_CATEGORIES:
+            category_filter = "ALL"
+        try:
+            min_level = max(1, min(1000, int(query.get("min_level", ["12"])[0])))
+        except (TypeError, ValueError):
+            min_level = 12
+        # Map category filter to internal group names
+        CATEGORY_TO_GROUP = {
+            "OK": "Đạt", "NOT_MET": "Không đạt", "CTNV": "CTNV",
+            "GRANT_ERROR": "Lỗi CTNV", "LOCKED": "Bị khóa",
+            "FAIL": "Không thể log", "PENDING": "Chưa thể check",
+        }
         store = self.server.store
         rows_raw = store.fetch(
             "SELECT chunk_id, row_json FROM results WHERE job_id=? ORDER BY id", (job_id,)
@@ -4594,12 +4609,17 @@ class MasterHandler(BaseHTTPRequestHandler):
                 grouped_rows["Lỗi CTNV"].append(row)
             elif is_ctnv:
                 grouped_rows["CTNV"].append(row)
-            elif level.isdigit() and int(level) >= 12:
+            elif level.isdigit() and int(level) >= min_level:
                 grouped_rows["Đạt"].append(row)
             else:
                 grouped_rows["Không đạt"].append(row)
+        all_categories = ("Đạt", "Không đạt", "CTNV", "Lỗi CTNV", "Chưa thể check", "Bị khóa", "Không thể log")
+        if category_filter != "ALL":
+            export_categories = (CATEGORY_TO_GROUP[category_filter],)
+        else:
+            export_categories = all_categories
         lines: list[str] = []
-        for category in ("Đạt", "Không đạt", "CTNV", "Lỗi CTNV", "Chưa thể check", "Bị khóa", "Không thể log"):
+        for category in export_categories:
             for row in grouped_rows[category]:
                 level = str(row.get("level") or "").strip()
                 player_status = str(row.get("player_status") or "").strip()
@@ -4621,9 +4641,10 @@ class MasterHandler(BaseHTTPRequestHandler):
                 lines.append(" || ".join(values))
         body = "\n".join(lines) + ("\n" if lines else "")
         data = body.encode("utf-8-sig")
+        category_suffix = "" if category_filter == "ALL" else f"_{category_filter.lower()}"
         self.send_response(HTTPStatus.OK)
         self._security_headers("text/plain; charset=utf-8")
-        self.send_header("Content-Disposition", f'attachment; filename="job_{job_id}.txt"')
+        self.send_header("Content-Disposition", f'attachment; filename="job_{job_id}{category_suffix}.txt"')
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         try:
