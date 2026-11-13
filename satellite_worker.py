@@ -69,8 +69,8 @@ WORKERS = 15
 START_GAP = 0.0
 TIMEOUT = float(_env("TIMEOUT", "20.0") or "20.0")
 LEASE_MINUTES = float(_env("LEASE_MINUTES", "5") or "5")
-CONCURRENT_CHUNKS = 2
-BATCH_COOLDOWN_SECONDS = 5.0
+CONCURRENT_CHUNKS = 1
+BATCH_COOLDOWN_SECONDS = 2.0
 POLL_INTERVAL = float(_env("POLL_INTERVAL", "15") or "15")
 # Render Web Service truyền PORT; fallback HEALTH_PORT cho local
 HEALTH_PORT = int(_env("PORT", "") or _env("HEALTH_PORT", "8765") or "8765")
