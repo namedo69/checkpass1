@@ -561,9 +561,9 @@ _LOGIN_SEMAPHORE = threading.Semaphore(16)
 
 _gateway_lock = threading.Lock()
 _gateway_next: dict[str, float] = {}
-_GATEWAY_GAP_NO_PROXY = 0.380  # 380ms không proxy
-_GATEWAY_GAP_WITH_PROXY = 0.025  # 25ms có proxy
-_GLOBAL_FLOOR_NO_PROXY = 0.110  # 110ms global floor
+_GATEWAY_GAP_NO_PROXY = 0.0    # tắt pacing — probe 40w/gap0 không rate limit
+_GATEWAY_GAP_WITH_PROXY = 0.0  # tắt pacing
+_GLOBAL_FLOOR_NO_PROXY = 0.0   # tắt pacing
 
 # OAuth cooldown
 _oauth_cooldown_until = 0.0
