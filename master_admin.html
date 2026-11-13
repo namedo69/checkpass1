@@ -25,8 +25,7 @@
   <p style="margin-bottom:16px"><a class="btn btn-blue" href="/admin/uplv" id="uplvLink">🛰 Quản lý vệ tinh UpLv</a></p>
   <section id="authPanel" class="auth hidden">
     <h2><i class="fa-solid fa-shield-halved" style="color:var(--orange)"></i> Xác thực Admin</h2>
-    <p>Trang này chỉ chấp nhận Master Token, không chấp nhận license key thông thường.</p>
-    <input id="tokenInput" class="input" type="password" placeholder="Nhập MASTER_TOKEN" onkeydown="if(event.key==='Enter')login()">
+    <p>Chỉ tài khoản admin SP1S mới được quản trị Checkpass.</p>
     <div class="actions"><button class="btn btn-primary" onclick="login()"><i class="fa-solid fa-right-to-bracket"></i> Đăng nhập</button><button class="btn btn-light" onclick="location.href='/'">Quay lại</button></div>
   </section>
 
@@ -141,7 +140,7 @@
 </div>
 <div class="toast" id="toast"></div>
 <script>
-let TOKEN=localStorage.getItem('licenseKey')||localStorage.getItem('masterToken')||'';
+localStorage.removeItem('masterToken');localStorage.removeItem('licenseKey');
 let scanBusy=false,autoTimer=null,healthData=[],healthFilter='all';
 let uplvHealthData=[],uplvPingBusy=false,uplvPingTimer=null;
 async function loadUplvTargets(){const d=await request('/api/admin/uplv');$('uplvTargets').value=d.targets||'';}
@@ -157,12 +156,12 @@ async function deactivateUplvCheckpass(){if(!confirm('Tắt chế độ CheckPas
 const $=id=>document.getElementById(id);
 function esc(value){return String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
 function toast(message){const box=$('toast');box.textContent=message;box.style.display='block';clearTimeout(box._timer);box._timer=setTimeout(()=>box.style.display='none',3200);}
-function headers(){return {'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'};}
+function headers(){return {'Content-Type':'application/json'};}
 async function request(path,options={}){const response=await fetch(path,{...options,headers:{...headers(),...(options.headers||{})}});const text=await response.text();let data;try{data=text?JSON.parse(text):{};}catch(_){data={ok:false,error:'Phản hồi không phải JSON'};}if(!response.ok||data.ok===false)throw new Error(data.error||('HTTP '+response.status));return data;}
-async function verify(){if(!TOKEN)return false;try{const data=await request('/api/verify');return data.is_admin===true;}catch(_){return false;}}
-async function login(){TOKEN=$('tokenInput').value.trim();if(!TOKEN){toast('Vui lòng nhập Master Token');return;}if(!await verify()){toast('Master Token không hợp lệ');return;}localStorage.setItem('masterToken',TOKEN);localStorage.setItem('licenseKey',TOKEN);showAdmin();}
+async function verify(){try{return (await request('/api/session')).is_admin===true;}catch(_){return false;}}
+function login(){location.href='/auth/login';}
 async function showAdmin(){$('authPanel').classList.add('hidden');$('adminPanel').classList.remove('hidden');try{await loadSettings();await loadUplvTargets();loadUplvCheckpassMode();pingUplvTargets();scanHealth();configureAutoScan();}catch(error){toast(error.message);}}
-async function boot(){if(await verify())showAdmin();else{$('tokenInput').value=TOKEN;$('authPanel').classList.remove('hidden');}}
+async function boot(){if(await verify())showAdmin();else $('authPanel').classList.remove('hidden');}
 async function loadSettings(){const data=await request('/api/admin/settings');$('noticeEnabled').checked=data.notice.enabled!==false;$('noticeHtml').value=data.notice.html||'';$('noticeCss').value=data.notice.css||'';const mn=data.modal_notice||data.notice?.modal_notice||{};$('modalNoticeEnabled').checked=Boolean(mn.enabled);$('modalNoticeTitle').value=mn.title||'';$('modalNoticeHtml').value=mn.html||'';updateModalBadge();$('satelliteTargets').value=data.satellite_targets||'';$('vvipSatelliteTargets').value=data.vvip_satellite_targets||'';$('maxRunningJobs').value=Number(data.max_running_jobs)||10;$('minAccountsPerJob').value=Number(data.min_accounts_per_job)||1;$('maxAccountsPerJob').value=Number(data.max_accounts_per_job)||1000;$('maxVvipRunningJobs').value=Number(data.max_vvip_running_jobs)||10;$('minVvipAccountsPerJob').value=Number(data.min_vvip_accounts_per_job)||1;$('maxVvipAccountsPerJob').value=Number(data.max_vvip_accounts_per_job)||1000;$('jobLimitStatus').textContent='Đang chạy '+Number(data.running_jobs||0)+'/'+Number(data.max_running_jobs||10)+' · còn '+Number(data.available_job_slots||0)+' chỗ';$('vvipJobLimitStatus').textContent='Đang chạy '+Number(data.vvip_running_jobs||0)+'/'+Number(data.max_vvip_running_jobs||10)+' · còn '+Number(data.vvip_available_job_slots||0)+' chỗ';}
 function updateModalBadge(){const enabled=$('modalNoticeEnabled').checked;const badge=$('modalNoticeBadge');if(badge){badge.className='status '+(enabled?'online':'offline');badge.style.background=enabled?'#fee2e2':'';badge.style.color=enabled?'#b91c1c':'';badge.innerHTML=enabled?'<span class="dot" style="background:#dc2626"></span>ĐANG KHÓA WEB':'<span class="dot"></span>Đang tắt';}}
 async function saveModalNotice(){const button=$('saveModalNoticeBtn');button.disabled=true;try{await request('/api/admin/settings',{method:'POST',body:JSON.stringify({modal_notice:{enabled:$('modalNoticeEnabled').checked,title:$('modalNoticeTitle').value.trim(),html:$('modalNoticeHtml').value.trim()}})});updateModalBadge();toast('Đã lưu thông báo Modal');}catch(error){toast(error.message);}finally{button.disabled=false;}}

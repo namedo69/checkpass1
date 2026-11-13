@@ -121,10 +121,10 @@ tbody tr:hover{background:#f8fafc}
     <!-- CỘT TRÁI: CẤU HÌNH & TẠO JOB -->
     <div class="stack">
       <div class="card">
-        <div class="card-head"><div><div class="card-title"><i class="fa-solid fa-key" style="color:var(--orange)"></i> Xác Thực Master</div><div class="card-sub">Dùng MASTER_TOKEN để điều khiển cụm.</div></div></div>
+        <div class="card-head"><div><div class="card-title">Tài khoản SP1S</div><div class="card-sub">Quản trị bằng phiên admin SP1S.</div></div></div>
         <div class="card-body">
-          <div class="field"><label for="tokenInput">Master Token</label><input id="tokenInput" class="input" type="password" placeholder="Nhập MASTER_TOKEN" onkeydown="if(event.key==='Enter')saveToken()"></div>
-          <button class="btn btn-primary" style="width:100%" onclick="saveToken()"><i class="fa-solid fa-plug"></i> Kết Nối Master</button>
+          <p id="adminSessionStatus">Chỉ tài khoản admin SP1S được quản trị.</p>
+          <a class="btn btn-primary" href="/auth/login">Đăng nhập SP1S</a>
         </div>
       </div>
 
@@ -258,7 +258,8 @@ tbody tr:hover{background:#f8fafc}
 <div class="toast" id="toast"></div>
 
 <script>
-let TOKEN=localStorage.getItem('masterToken')||localStorage.getItem('licenseKey')||'';
+localStorage.removeItem('masterToken');localStorage.removeItem('licenseKey');
+let adminAuthenticated=false;
 let selectedJob='',selectedSatellite='',accountPage=1,accountBusy=false,accountGen=0,accountTimer=null,accountsCache=[],jobsCache=[];
 let pollTimer=null,logAutoTimer=null,isBusy=false;
 const $=id=>document.getElementById(id);
@@ -301,7 +302,7 @@ function esc(val){
 async function api(path,body=null){
   const res=await fetch(path,{
     method:body?'POST':'GET',
-    headers:{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},
+    headers:{'Content-Type':'application/json'},
     ...(body?{body:JSON.stringify(body)}:{})
   });
   const data=await res.json();
@@ -309,13 +310,8 @@ async function api(path,body=null){
   return data;
 }
 
-function saveToken(){
-  TOKEN=$('tokenInput').value.trim();
-  if(!TOKEN){toast('Vui lòng nhập Master Token');return;}
-  localStorage.setItem('masterToken',TOKEN);
-  localStorage.setItem('licenseKey',TOKEN);
-  toast('Đã lưu token. Đang tải dữ liệu...');
-  refresh();
+async function bootAdmin(){
+  try{const s=await api('/api/session');if(s.is_admin!==true)throw new Error('Cần tài khoản admin SP1S');adminAuthenticated=true;refresh();pollTimer=setInterval(()=>{if(!document.hidden)refresh();},5000);}catch(e){$('adminSessionStatus').textContent=e.message;}
 }
 
 async function savePoolLimit(){
@@ -651,7 +647,7 @@ function toggleLogAuto(){
 let modalFocus={};
 function openModal(id){modalFocus[id]=document.activeElement;$(id).classList.add('open');document.body.style.overflow='hidden';const first=$(id).querySelector('button,input,select');if(first)first.focus();if(id==='workersModal')loadWorkers();}
 let workersLoading=false;
-async function loadWorkers(){if(workersLoading||!TOKEN)return;workersLoading=true;try{const d=await api('/api/admin/uplv/workers');renderSatellites(d.satellites);}catch(e){$('satellitesRows').innerHTML='<tr><td colspan="4" style="color:var(--red)">'+esc(e.message)+'</td></tr>';}finally{workersLoading=false;}}
+async function loadWorkers(){if(workersLoading||!adminAuthenticated)return;workersLoading=true;try{const d=await api('/api/admin/uplv/workers');renderSatellites(d.satellites);}catch(e){$('satellitesRows').innerHTML='<tr><td colspan="4" style="color:var(--red)">'+esc(e.message)+'</td></tr>';}finally{workersLoading=false;}}
 function closeModal(id){
   $(id).classList.remove('open');document.body.style.overflow=document.querySelector('.modal-backdrop.open')?'hidden':'';
   if(modalFocus[id]?.isConnected)modalFocus[id].focus();
@@ -659,7 +655,7 @@ function closeModal(id){
 }
 
 async function refresh(){
-  if(!TOKEN||isBusy)return;
+  if(!adminAuthenticated||isBusy)return;
   isBusy=true;
   try{
     const d=await api('/api/admin/uplv');
@@ -690,8 +686,7 @@ async function refresh(){
   }finally{isBusy=false;}
 }
 
-$('tokenInput').value=TOKEN;
-if(TOKEN){refresh();pollTimer=setInterval(()=>{if(!document.hidden)refresh();},5000);}
+bootAdmin();
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){if($('logModal').classList.contains('open'))closeModal('logModal');else if($('accountModal').classList.contains('open'))closeModal('accountModal');else if($('workersModal').classList.contains('open'))closeModal('workersModal');else closeModal('accountModalList');}});
 </script>
 </body>

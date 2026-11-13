@@ -2297,9 +2297,12 @@ class MasterHandler(BaseHTTPRequestHandler):
         """Trả về thông tin xác thực: {authorized, is_admin, is_satellite, owner_hash, owner_preview, token}"""
         token = self._extract_token()
         master_token = self.server.master_token or ""
-        # MASTER_TOKEN remains reserved for administration/satellites.
+        session_auth = self._session_auth() if _aovshop_configured() else None
+        if session_auth:
+            return session_auth
+        # Shared fleet credentials never authenticate web users or admins.
         if master_token and token and secrets.compare_digest(token.strip(), master_token.strip()):
-            return {"authorized": True, "is_admin": True, "is_satellite": True, "owner_hash": "", "owner_preview": "admin", "token": token}
+            return {"authorized": False, "is_admin": False, "is_satellite": True, "owner_hash": "", "owner_preview": "", "token": ""}
 
         # Production user authentication is the SP1S SSO session only. License
         # keys are deliberately not accepted once this integration is enabled.
@@ -2320,7 +2323,7 @@ class MasterHandler(BaseHTTPRequestHandler):
         if not master_token and not license_url:
             # Dev mode: chấp nhận mọi token, nếu không có token thì owner rỗng (legacy)
             if not token:
-                return {"authorized": True, "is_admin": True, "is_satellite": True, "owner_hash": "", "owner_preview": "", "token": ""}
+                return {"authorized": False, "is_admin": False, "is_satellite": False, "owner_hash": "", "owner_preview": "", "token": ""}
             # Nếu có token, coi như owner riêng
             return {"authorized": True, "is_admin": False, "is_satellite": False, "owner_hash": _hash_key(token), "owner_preview": _preview_key(token), "token": token}
         # Nếu token không khớp MASTER_TOKEN, thử verify như license key
@@ -2350,11 +2353,6 @@ class MasterHandler(BaseHTTPRequestHandler):
             if _aovshop_configured():
                 self._json(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "Vui lòng đăng nhập bằng tài khoản SP1S", "login_url": "/auth/login"})
                 return None
-            # Nếu không có token mà server đang mở (không master_token, không license) thì cho qua
-            master_token = self.server.master_token or ""
-            license_url = os.environ.get("LICENSE_SERVER_URL", "").strip() or LICENSE_SERVER_URL
-            if not master_token and not license_url:
-                return {"authorized": True, "is_admin": True, "owner_hash": "", "owner_preview": ""}
             # Legacy local-development error message.
             license_info = info.get("license_info", {})
             error_detail = license_info.get("error", "") if isinstance(license_info, dict) else ""
@@ -2390,9 +2388,8 @@ class MasterHandler(BaseHTTPRequestHandler):
             if _aovshop_requested() or _aovshop_configured():
                 self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"ok": False, "error": "MASTER_TOKEN chưa được cấu hình"})
                 return None
-            # Không đặt MASTER_TOKEN → cho phép mọi vệ tinh (tương thích cũ, tránh chặn)
-            queue_type = expected_queue or "normal"
-            return {"authorized": True, "is_admin": True, "is_satellite": True, "queue_type": queue_type, "owner_hash": "", "owner_preview": queue_type, "token": ""}
+            self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"ok": False, "error": "MASTER_TOKEN chưa được cấu hình"})
+            return None
         token = self._extract_token()
         if not token:
             self._json(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "thiếu token vệ tinh trong header Authorization"})
@@ -2400,17 +2397,16 @@ class MasterHandler(BaseHTTPRequestHandler):
         token_clean = token.strip()
         if token_clean and secrets.compare_digest(token_clean, master_token):
             queue_type = expected_queue or "normal"
-            return {"authorized": True, "is_admin": True, "is_satellite": True, "queue_type": queue_type, "owner_hash": "", "owner_preview": queue_type, "token": token}
+            return {"authorized": True, "is_admin": False, "is_satellite": True, "queue_type": queue_type, "owner_hash": "", "owner_preview": queue_type, "token": token}
         print(f"[master] satellite auth FAIL: expected={expected_queue or 'any'} token_len={len(token_clean)}", flush=True)
         self._json(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "MASTER_TOKEN vệ tinh không hợp lệ"})
         return None
 
     def _require_admin(self) -> dict[str, Any] | None:
-        """Chỉ chấp nhận MASTER_TOKEN thật cho các chức năng quản trị."""
-        master_token = (self.server.master_token or "").strip()
-        auth = self._get_auth_info()
-        if not master_token or not auth.get("is_admin"):
-            self._json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "chỉ MASTER_TOKEN mới được truy cập trang quản trị"})
+        """Administration requires an authenticated SP1S admin session."""
+        auth = self._session_auth() if _aovshop_configured() else None
+        if not auth or not auth.get("is_admin"):
+            self._json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "Chỉ tài khoản admin SP1S mới được quản trị Checkpass", "login_url": "/auth/login"})
             return None
         return auth
 
@@ -2581,8 +2577,8 @@ class MasterHandler(BaseHTTPRequestHandler):
                         "ok": True,
                         "authenticated": True,
                         "user": {"id": auth.get("user_id", 0), "name": auth.get("name", "Admin"), "email": auth.get("email", "")},
-                        "is_admin": True,
-                        "role": "admin",
+                        "is_admin": bool(auth.get("is_admin")),
+                        "role": "admin" if auth.get("is_admin") else "user",
                         "min_accounts_per_job": _min_accounts_per_job(self.server.store),
                         "max_accounts_per_job": None,
                         "min_vvip_accounts_per_job": _min_vvip_accounts_per_job(self.server.store),
@@ -2627,16 +2623,16 @@ class MasterHandler(BaseHTTPRequestHandler):
                 mt = self.server.master_token or ""
                 is_master = bool(mt and tok and secrets.compare_digest(tok.strip(), mt.strip()))
                 if is_master:
-                    self._json(HTTPStatus.OK, {
+                    self._json(HTTPStatus.FORBIDDEN, {
                         "ok": True,
-                        "valid": True,
-                        "history_access": True,
-                        "can_create_job": True,
-                        "is_admin": True,
+                        "valid": False,
+                        "history_access": False,
+                        "can_create_job": False,
+                        "is_admin": False,
                         "preview": _preview_key(tok),
                         "max_accounts_per_job": _max_accounts_per_job(self.server.store),
                         "max_vvip_accounts_per_job": _max_vvip_accounts_per_job(self.server.store),
-                        "info": {"mode": "master_token"},
+                        "info": {"mode": "satellite_token"},
                     })
                     return
                 ok, info = _verify_license_key(tok)
@@ -2668,7 +2664,7 @@ class MasterHandler(BaseHTTPRequestHandler):
                 self._handle_admin_settings_get()
                 return
             if path == "/api/admin/prune_before_today":
-                self._handle_prune_before_today()
+                self._json(HTTPStatus.METHOD_NOT_ALLOWED, {"ok": False, "error": "Dùng POST để dọn dữ liệu"})
                 return
             if path == "/api/deposit/config":
                 auth = self._require_user()
@@ -2748,6 +2744,13 @@ class MasterHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         try:
+            if self._extract_session() and self._clean_path() != "/api/verify":
+                origin = self.headers.get("Origin", "")
+                expected = urllib.parse.urlsplit(self._public_base_url())
+                supplied = urllib.parse.urlsplit(origin)
+                if (origin and (supplied.scheme, supplied.netloc) != (expected.scheme, expected.netloc)) or self.headers.get_content_type() != "application/json":
+                    self._json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "Yêu cầu cùng nguồn và Content-Type application/json là bắt buộc"})
+                    return
             if self._clean_path().startswith('/api/user/uplv/'):
                 auth = self._session_auth()
                 if not auth:
@@ -2773,6 +2776,9 @@ class MasterHandler(BaseHTTPRequestHandler):
                 return
             # Dùng _clean_path để hỗ trợ cả /api/jobs?foo=bar
             path = self._clean_path()
+            if path == "/api/admin/prune_before_today":
+                self._handle_prune_before_today()
+                return
             if path.startswith('/api/uplv/') or path.startswith('/api/admin/uplv/'):
                 admin = path.startswith('/api/admin/')
                 auth = self._require_admin() if admin else self._require_satellite('uplv')
@@ -2943,14 +2949,14 @@ class MasterHandler(BaseHTTPRequestHandler):
                 mt = self.server.master_token or ""
                 is_master = bool(mt and tok and secrets.compare_digest(tok.strip(), mt.strip()))
                 if is_master:
-                    self._json(HTTPStatus.OK, {
+                    self._json(HTTPStatus.FORBIDDEN, {
                         "ok": True,
-                        "valid": True,
-                        "is_admin": True,
+                        "valid": False,
+                        "is_admin": False,
                         "preview": _preview_key(tok),
                         "max_accounts_per_job": _max_accounts_per_job(self.server.store),
                         "max_vvip_accounts_per_job": _max_vvip_accounts_per_job(self.server.store),
-                        "info": {"mode": "master_token"},
+                        "info": {"mode": "satellite_token"},
                     })
                     return
                 ok, info = _verify_license_key(tok)
@@ -3358,11 +3364,8 @@ class MasterHandler(BaseHTTPRequestHandler):
         })
 
     def _handle_clear_all_data(self) -> None:
-        """Xóa toàn bộ dữ liệu điều phối; chỉ MASTER_TOKEN mới được phép gọi."""
-        master_token = self.server.master_token or ""
-        auth = self._get_auth_info()
-        if not master_token or not auth.get("is_admin"):
-            self._json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "chỉ MASTER_TOKEN mới được xóa toàn bộ dữ liệu"})
+        """Delete coordinator data only for an SP1S administrator."""
+        if self._require_admin() is None:
             return
 
         store = self.server.store
@@ -3406,10 +3409,7 @@ class MasterHandler(BaseHTTPRequestHandler):
 
     def _handle_prune_before_today(self) -> None:
         """Queue bounded cleanup and return immediately instead of blocking the DB."""
-        master_token = self.server.master_token or ""
-        auth = self._get_auth_info()
-        if not master_token or not auth.get("is_admin"):
-            self._json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "chỉ MASTER_TOKEN mới được phép dọn dữ liệu cũ"})
+        if self._require_admin() is None:
             return
 
         tz_info = _master_tzinfo()

@@ -2158,7 +2158,7 @@ const keyFromUrl = initialParams.get('key');
 const loginError = initialParams.get('login_error');
 // Normal users authenticate with the HttpOnly SP1S session cookie. A token in
 // the URL is retained only for the separate master-admin workflow.
-let TOKEN = keyFromUrl || '';
+const TOKEN = '';
 let currentSession = null;
 let quoteTimer = null;
 if (keyFromUrl || loginError || initialParams.get('login')) {
