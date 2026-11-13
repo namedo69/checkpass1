@@ -1609,7 +1609,12 @@ def batch_login_rejected_permanently(result: Any) -> bool:
 
     if not isinstance(result, dict):
         return False
-    return bool((result.get("tcp") or {}).get("credential_rejected"))
+    # Generic TCP refusals cannot prove invalid credentials, even if repeated.
+    tcp = result.get("tcp") or {}
+    return bool(tcp.get("credential_rejected") and not tcp.get("ok")
+                and tcp.get("rejection_command") == 0x101
+                and tcp.get("rejection_result") == 3
+                and not batch_rate_limit_suspected(result))
 
 
 def batch_rate_limit_suspected(result: Any) -> bool:
@@ -1758,6 +1763,9 @@ def batch_check_one(
             )
         except Exception as exc:
             attempt_error = (str(exc).strip() or type(exc).__name__)[:220]
+            login_rejection_signature = None
+            login_rejection_confirmations = 0
+            row["login_rejection_confirmations"] = "0"
         else:
             result = current_result
             attempt_error = ""
