@@ -2474,6 +2474,10 @@ class MasterHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         try:
+            if self._clean_path() == '/admin/satellite-logs.js':
+                from satellite_log_view import serve_script
+                serve_script(self)
+                return
             path = self._clean_path()
             if path == '/uplv':
                 if self._session_auth() is None:
@@ -2751,6 +2755,10 @@ class MasterHandler(BaseHTTPRequestHandler):
                 if (origin and (supplied.scheme, supplied.netloc) != (expected.scheme, expected.netloc)) or self.headers.get_content_type() != "application/json":
                     self._json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "Yêu cầu cùng nguồn và Content-Type application/json là bắt buộc"})
                     return
+            if self._clean_path() == '/api/admin/satellites/logs':
+                from satellite_log_view import master_logs
+                master_logs(self)
+                return
             if self._clean_path().startswith('/api/user/uplv/'):
                 auth = self._session_auth()
                 if not auth:

@@ -28,6 +28,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 import garena_api_test_chrome1 as api_test
+from satellite_log_view import diagnostic_print as print, worker_logs
 import garena_tcp_login_chrome as tcp_ui
 
 
@@ -234,6 +235,9 @@ class _Health(BaseHTTPRequestHandler):
             pass
 
     def do_GET(self) -> None:
+        if urllib.parse.urlsplit(self.path).path == '/api/logs':
+            worker_logs(self, SATELLITE_CONTROL_TOKEN)
+            return
         self._send_json(HTTPStatus.OK, {
             "ok": True,
             "role": "satellite",
