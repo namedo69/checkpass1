@@ -182,9 +182,12 @@ def resilient_tcp_client_type(tcp_module: Any) -> type:
                         or attempt + 1 >= THROTTLE_MAX_ATTEMPTS
                     ):
                         raise
+                    trace_event('retry', stage='SSO_KEY_GET', attempt=attempt + 1,
+                                retry_seconds=THROTTLE_RETRY_DELAY, command='0x1BA', code=3)
                     time.sleep(THROTTLE_RETRY_DELAY)
 
         def _request(self, command: int, payload: bytes, key: bytes | None = None) -> bytes:
+            request_started = time.monotonic()
             trace_event('tcp_send', command=f'0x{command:X}',
                         host=self.socket.getpeername()[0] if self.socket is not None else '')
             if self.socket is None:
@@ -213,8 +216,9 @@ def resilient_tcp_client_type(tcp_module: Any) -> type:
                     if reply_command != command:
                         self.ignored_server_commands.append(reply_command)
                         continue
+                    trace_event('tcp_response', command=f'0x{command:X}', code=result,
+                                elapsed_ms=round((time.monotonic()-request_started)*1000))
                     if result != 0:
-                        trace_event('tcp_response', command=f'0x{command:X}', code=result)
                         command_name = {
                             0x100: "LOGIN_PREPARE",
                             0x101: "LOGIN",
@@ -228,7 +232,6 @@ def resilient_tcp_client_type(tcp_module: Any) -> type:
                         rejection.garena_command = command
                         rejection.garena_result = result
                         raise rejection
-                    trace_event('tcp_response', command=f'0x{command:X}', code=0)
                     return reply
             finally:
                 self.socket.settimeout(previous_timeout)
@@ -502,14 +505,18 @@ class WebSession:
         headers: dict[str, str] | None = None,
     ) -> tuple[int, str, str, Any]:
         for attempt in range(THROTTLE_MAX_ATTEMPTS):
+            request_started = time.monotonic()
+            trace_event('http_send', host=urllib.parse.urlsplit(url).hostname, attempt=attempt + 1)
             response = self._request_once(
                 url, method=method, json_body=json_body, form_body=form_body, headers=headers
             )
             body = response[3]
-            trace_event('http_response', host=urllib.parse.urlsplit(url).hostname, http_status=response[0], attempt=attempt+1)
+            trace_event('http_response', host=urllib.parse.urlsplit(url).hostname,
+                        http_status=response[0], elapsed_ms=round((time.monotonic()-request_started)*1000))
             throttled = isinstance(body, dict) and body.get("error") == "error_too_many_requests"
             if not throttled or attempt + 1 >= THROTTLE_MAX_ATTEMPTS:
                 return response
+            trace_event('retry', stage='HTTP_THROTTLE', retry_seconds=THROTTLE_RETRY_DELAY)
             time.sleep(THROTTLE_RETRY_DELAY)
         raise RuntimeError("Invalid throttle retry configuration")
 
@@ -1157,7 +1164,8 @@ def legacy_account_sso_probe(sso_key: str, sso_expiry: int, timeout: float) -> d
             "tcp_session_key_sent": False,
             "elapsed_ms": round((time.monotonic() - started) * 1000),
         }
-def run_api_tests(tcp_module: Any, account: str, password: str, timeout: float) -> dict[str, Any]:
+def run_api_tests(tcp_module: Any, account: str, password: str, timeout: float,
+                  *, stop_event: threading.Event | None = None) -> dict[str, Any]:
     started = time.monotonic()
     results: dict[str, Any] = {
         "tcp": {"ok": False, "account": account},
@@ -1166,30 +1174,27 @@ def run_api_tests(tcp_module: Any, account: str, password: str, timeout: float) 
     }
 
     sso: Any = None
-    try:
-        client_type = resilient_tcp_client_type(tcp_module)
-        with client_type(timeout=timeout) as client:
-            uid = int(client.login(account, password))
-            # UID is the authoritative credential result.  Do not lose it merely
-            # because the optional SSO_KEY_GET command fails afterwards.
+
+    # --- Engine-style login: semaphore + pacing + retry + cache ---
+    # Sử dụng garena_authenticate() nếu tcp_module có hỗ trợ (mô phỏng Go engine)
+    use_engine = hasattr(tcp_module, 'garena_authenticate')
+
+    if use_engine:
+        try:
+            uid, engine_sso = tcp_module.garena_authenticate(
+                account, password, timeout=timeout, stop_event=stop_event,
+            )
             results["tcp"] = {
                 "ok": True,
                 "credential_rejected": False,
                 "account": account,
                 "uid": uid,
-                "session_key_bytes": len(client.session_key or b""),
+                "session_key_bytes": 0,
                 "ignored_server_commands": [],
+                "login_mode": "engine",
             }
-            try:
-                sso = client.get_sso_key()
-            except Exception as exc:
-                results["tcp"]["sso_error"] = (
-                    str(exc).strip() or type(exc).__name__
-                )[:500]
-                results["tcp"]["rate_limit_suspected"] = tcp_rate_limit_suspected(exc)
-                results["tcp"]["sso_rejection_command"] = getattr(exc, "garena_command", 0)
-                results["tcp"]["sso_rejection_result"] = getattr(exc, "garena_result", 0)
-            else:
+            if engine_sso is not None:
+                sso = engine_sso
                 results["tcp"].update(
                     {
                         "sso_key": f"<redacted sha256:{fingerprint(str(sso.sso_key))}>",
@@ -1197,30 +1202,99 @@ def run_api_tests(tcp_module: Any, account: str, password: str, timeout: float) 
                         "web_sso_key": str(sso.sso_key),
                     }
                 )
-            results["tcp"]["ignored_server_commands"] = [
-                f"0x{item:X}" for item in client.ignored_server_commands
-            ]
-    except Exception as exc:
-        message = (str(exc).strip() or type(exc).__name__)[:500]
-        tcp_elapsed_ms = round((time.monotonic() - started) * 1000)
-        rate_limit_suspected = tcp_rate_limit_suspected(exc, tcp_elapsed_ms)
-        retryable_fast_rejection = bool(
-            not rate_limit_suspected
-            and tcp_fast_login_rejection_should_retry(exc, tcp_elapsed_ms)
-        )
-        results["tcp"].update(
-            {
-                "error": message,
-                "credential_rejected": bool(
-                    tcp_login_was_rejected(exc)
-                    and not rate_limit_suspected
-                ),
-                "rate_limit_suspected": rate_limit_suspected,
-                "retryable_fast_rejection": retryable_fast_rejection,
-                "rejection_command": getattr(exc, "garena_command", 0),
-                "rejection_result": getattr(exc, "garena_result", 0),
-            }
-        )
+        except Exception as exc:
+            # Phân loại lỗi engine-style
+            message = (str(exc).strip() or type(exc).__name__)[:500]
+            tcp_elapsed_ms = round((time.monotonic() - started) * 1000)
+
+            is_auth_error = hasattr(exc, 'is_banned') or hasattr(exc, 'is_invalid_creds')
+            credential_rejected = bool(
+                getattr(exc, 'is_invalid_creds', False)
+                or getattr(exc, 'is_banned', False)
+                or (tcp_login_was_rejected(exc) and not tcp_rate_limit_suspected(exc, tcp_elapsed_ms))
+            )
+            rate_limited = bool(
+                getattr(exc, 'is_captcha', False)
+                or tcp_rate_limit_suspected(exc, tcp_elapsed_ms)
+            )
+            retryable_fast = bool(
+                not rate_limited
+                and not credential_rejected
+                and tcp_fast_login_rejection_should_retry(exc, tcp_elapsed_ms)
+            )
+
+            results["tcp"].update(
+                {
+                    "error": message,
+                    "credential_rejected": credential_rejected,
+                    "rate_limit_suspected": rate_limited,
+                    "retryable_fast_rejection": retryable_fast,
+                    "rejection_command": getattr(exc, "garena_command", getattr(exc, "code", 0)),
+                    "rejection_result": getattr(exc, "garena_result", getattr(exc, "code", 0)),
+                    "login_mode": "engine",
+                    "auth_error_stage": getattr(exc, "stage", ""),
+                    "auth_error_is_captcha": getattr(exc, "is_captcha", False),
+                    "auth_error_is_banned": getattr(exc, "is_banned", False),
+                    "auth_error_is_invalid_creds": getattr(exc, "is_invalid_creds", False),
+                }
+            )
+    else:
+        # --- Fallback: flow cũ (original) ---
+        try:
+            client_type = resilient_tcp_client_type(tcp_module)
+            with client_type(timeout=timeout) as client:
+                uid = int(client.login(account, password))
+                results["tcp"] = {
+                    "ok": True,
+                    "credential_rejected": False,
+                    "account": account,
+                    "uid": uid,
+                    "session_key_bytes": len(client.session_key or b""),
+                    "ignored_server_commands": [],
+                    "login_mode": "legacy",
+                }
+                try:
+                    sso = client.get_sso_key()
+                except Exception as exc:
+                    results["tcp"]["sso_error"] = (
+                        str(exc).strip() or type(exc).__name__
+                    )[:500]
+                    results["tcp"]["rate_limit_suspected"] = tcp_rate_limit_suspected(exc)
+                    results["tcp"]["sso_rejection_command"] = getattr(exc, "garena_command", 0)
+                    results["tcp"]["sso_rejection_result"] = getattr(exc, "garena_result", 0)
+                else:
+                    results["tcp"].update(
+                        {
+                            "sso_key": f"<redacted sha256:{fingerprint(str(sso.sso_key))}>",
+                            "sso_expiry_time": int(sso.expiry_time),
+                            "web_sso_key": str(sso.sso_key),
+                        }
+                    )
+                results["tcp"]["ignored_server_commands"] = [
+                    f"0x{item:X}" for item in client.ignored_server_commands
+                ]
+        except Exception as exc:
+            message = (str(exc).strip() or type(exc).__name__)[:500]
+            tcp_elapsed_ms = round((time.monotonic() - started) * 1000)
+            rate_limit_suspected = tcp_rate_limit_suspected(exc, tcp_elapsed_ms)
+            retryable_fast_rejection = bool(
+                not rate_limit_suspected
+                and tcp_fast_login_rejection_should_retry(exc, tcp_elapsed_ms)
+            )
+            results["tcp"].update(
+                {
+                    "error": message,
+                    "credential_rejected": bool(
+                        tcp_login_was_rejected(exc)
+                        and not rate_limit_suspected
+                    ),
+                    "rate_limit_suspected": rate_limit_suspected,
+                    "retryable_fast_rejection": retryable_fast_rejection,
+                    "rejection_command": getattr(exc, "garena_command", 0),
+                    "rejection_result": getattr(exc, "garena_result", 0),
+                    "login_mode": "legacy",
+                }
+            )
 
     tcp_ok = bool(results["tcp"].get("ok"))
     results["credential_valid"] = True if tcp_ok else (
@@ -1615,16 +1689,18 @@ BATCH_MAX_REQUEST_TIMEOUT = 8.0
 
 
 def batch_login_rejected_permanently(result: Any) -> bool:
-    """Return whether this attempt contains an explicit TCP LOGIN rejection."""
+    """LOGIN/code 3 is the observed invalid-login signal; PREPARE is not."""
 
     if not isinstance(result, dict):
         return False
-    # Generic TCP refusals cannot prove invalid credentials, even if repeated.
     tcp = result.get("tcp") or {}
-    return bool(tcp.get("credential_rejected") and not tcp.get("ok")
-                and tcp.get("rejection_command") == 0x101
-                and tcp.get("rejection_result") == 3
-                and not batch_rate_limit_suspected(result))
+    return bool(
+        tcp.get("credential_rejected")
+        and not tcp.get("ok")
+        and tcp.get("rejection_command") == 0x101
+        and tcp.get("rejection_result") == 3
+        and not batch_rate_limit_suspected(result)
+    )
 
 
 def batch_rate_limit_suspected(result: Any) -> bool:
@@ -1716,8 +1792,8 @@ def batch_check_one(
     stop_event: threading.Event,
 ) -> dict[str, str]:
     started = time.monotonic()
-    input_account = str(getattr(credential, "account", ""))
     trace_context(stt=credential.index, chunk_id=str(getattr(credential, 'chunk_id', '')))
+    input_account = str(getattr(credential, "account", ""))
     account_info_found = False
     kientuong_info_found = False
     row = {
@@ -1771,10 +1847,12 @@ def batch_check_one(
         print(f"  [{credential.index}] #{credential.account[:20]} attempt {attempt_count}", flush=True)
         try:
             current_result = run_api_tests(
-                tcp_module, credential.account, credential.password, effective_timeout
+                tcp_module, credential.account, credential.password, effective_timeout,
+                stop_event=stop_event,
             )
         except Exception as exc:
             attempt_error = (str(exc).strip() or type(exc).__name__)[:220]
+            trace_event('attempt_error', error_class=type(exc).__name__, attempt=attempt_count)
             login_rejection_signature = None
             login_rejection_confirmations = 0
             row["login_rejection_confirmations"] = "0"
@@ -1983,9 +2061,9 @@ def batch_check_one(
             errors.append(attempt_error)
         if retry_stopped:
             errors.append("đã dừng trước lần kiểm tra lại")
-        # FAIL is reserved exclusively for a confirmed TCP rejection at
-        # LOGIN_PREPARE or LOGIN. Network failures, timeouts and incomplete API
-        # data remain retryable.
+        # Generic TCP refusals (including LOGIN_PREPARE) cannot prove invalid
+        # credentials. Only independently verified credential-invalid evidence
+        # may become FAIL; all other uncertain failures remain retryable.
         tcp_ok = bool(tcp_info.get("ok"))
         row["status"] = "OK" if tcp_ok else "CHƯA THỂ CHECK"
         if rate_limit_suspected:
@@ -2049,6 +2127,8 @@ def batch_check_one(
     # Free-form error text may contain server details; only safe numeric/stage
     # diagnostics from BATCH_FIELDNAMES are exposed and persisted.
     row.pop("error", None)
+    trace_event('account_finished', status=row['status'], elapsed_ms=row['elapsed_ms'])
+    trace_context()
     return row
 
 
@@ -2239,7 +2319,7 @@ tr.ok .badge{background:#1a7f37;color:#fff}tr.fail .badge{background:#da3633;col
 <div id="batchTiming" class="fileinfo">Thời gian: chưa bắt đầu.</div>
 <div class="wrap"><table><thead><tr><th>STT</th><th>Tài khoản</th><th>Trạng thái</th><th>UID Garena</th><th>Tên Kiện Tướng</th><th>Cấp</th><th>Ngày tạo</th><th>Trạng thái Kiện Tướng</th><th>ms</th></tr></thead>
 <tbody id="batchBody"></tbody></table></div>
-<small>Kết quả hiển thị trực tiếp khi từng tài khoản xong. LOGIN_PREPARE <code>0x100</code> chưa kiểm tra mật khẩu, nhưng nếu Garena từ chối cùng bước và cùng mã qua hai lần thì tài khoản vẫn được kết luận <code>FAIL / Không thể log</code>; quy tắc xác nhận tương tự áp dụng cho LOGIN <code>0x101</code>. HTTP 429, rate limit/throttling, timeout, lỗi mạng/OAuth hoặc thiếu dữ liệu sẽ được retry tối đa 3 lần sau lần check đầu; nếu vẫn chưa rõ sau 4 lượt thì ghi <code>CHƯA THỂ CHECK</code>. XLSX có sáu tab, gồm <code>Không thể log</code> và <code>Chưa thể check</code>; cột Tài khoản trong mỗi tab có dạng <code>user|pass</code>. Bấm "Dừng" để kết thúc sớm.</small>
+<small>Kết quả hiển thị trực tiếp khi từng tài khoản xong. Từ chối TCP ở LOGIN_PREPARE <code>0x100</code> hoặc LOGIN <code>0x101</code>, kể cả lặp cùng mã, chưa đủ chứng minh sai thông tin đăng nhập. HTTP 429, rate limit/throttling, timeout, lỗi mạng/OAuth hoặc thiếu dữ liệu được retry tối đa 3 lần sau lần check đầu; nếu vẫn chưa rõ sau 4 lượt thì ghi <code>CHƯA THỂ CHECK</code>, không tự chuyển thành Không thể log. XLSX có tab riêng cho từng loại kết quả. Bấm "Dừng" để kết thúc sớm.</small>
 
 <div id="splitSection" style="display:none;margin-top:18px">
 <h2 id="splitTitle" style="color:#58a6ff;margin:0 0 10px;font-size:16px"></h2>
