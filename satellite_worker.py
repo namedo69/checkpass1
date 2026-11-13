@@ -331,7 +331,7 @@ def _process_chunk(client: _Client, tcp_module: Any, claim: dict, stop_event: th
         parts = re.split(r"[|:]", raw_str)
         account = parts[0].strip() if parts else ""
         password = parts[1].strip() if len(parts) >= 2 else ""
-        credentials.append(api_test.BatchAccount(index, account, password))
+        credentials.append(api_test.BatchAccount(index, account, password, chunk_id=str(chunk_id)))
 
     try:
         buffer = []

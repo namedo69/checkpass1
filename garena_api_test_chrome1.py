@@ -30,6 +30,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 import garena_tcp_login_chrome as tcp_ui
 import db
+from satellite_log_view import trace_context, trace_event
 
 
 MAX_BODY = 8 * 1024
@@ -184,6 +185,7 @@ def resilient_tcp_client_type(tcp_module: Any) -> type:
                     time.sleep(THROTTLE_RETRY_DELAY)
 
         def _request(self, command: int, payload: bytes, key: bytes | None = None) -> bytes:
+            trace_event('tcp_send', command=f'0x{command:X}')
             if self.socket is None:
                 raise tcp_module.GarenaError("Kết nối Garena chưa được mở")
 
@@ -211,6 +213,7 @@ def resilient_tcp_client_type(tcp_module: Any) -> type:
                         self.ignored_server_commands.append(reply_command)
                         continue
                     if result != 0:
+                        trace_event('tcp_response', command=f'0x{command:X}', code=result)
                         command_name = {
                             0x100: "LOGIN_PREPARE",
                             0x101: "LOGIN",
@@ -224,6 +227,7 @@ def resilient_tcp_client_type(tcp_module: Any) -> type:
                         rejection.garena_command = command
                         rejection.garena_result = result
                         raise rejection
+                    trace_event('tcp_response', command=f'0x{command:X}', code=0)
                     return reply
             finally:
                 self.socket.settimeout(previous_timeout)
@@ -501,6 +505,7 @@ class WebSession:
                 url, method=method, json_body=json_body, form_body=form_body, headers=headers
             )
             body = response[3]
+            trace_event('http_response', host=urllib.parse.urlsplit(url).hostname, http_status=response[0], attempt=attempt+1)
             throttled = isinstance(body, dict) and body.get("error") == "error_too_many_requests"
             if not throttled or attempt + 1 >= THROTTLE_MAX_ATTEMPTS:
                 return response
@@ -1551,6 +1556,7 @@ class BatchAccount:
     index: int
     account: str
     password: str
+    chunk_id: str = ''
 
 
 def batch_yes_no(value: Any) -> str:
@@ -1710,6 +1716,7 @@ def batch_check_one(
 ) -> dict[str, str]:
     started = time.monotonic()
     input_account = str(getattr(credential, "account", ""))
+    trace_context(stt=credential.index, chunk_id=str(getattr(credential, 'chunk_id', '')))
     account_info_found = False
     kientuong_info_found = False
     row = {
@@ -1759,6 +1766,7 @@ def batch_check_one(
     effective_timeout = min(float(timeout), BATCH_MAX_REQUEST_TIMEOUT)
     while True:
         attempt_count += 1
+        trace_event('account_attempt', attempt=attempt_count)
         print(f"  [{credential.index}] #{credential.account[:20]} attempt {attempt_count}", flush=True)
         try:
             current_result = run_api_tests(
@@ -1830,6 +1838,7 @@ def batch_check_one(
         elapsed_so_far = time.monotonic() - started
         if elapsed_so_far < 0.5 * attempt_count:
             backoff = max(backoff, 3.0)
+        trace_event('retry', stage='ACCOUNT_CHECK', attempt=attempt_count, retry_seconds=backoff)
         if stop_event.wait(backoff) or not gate.wait(stop_event):
             retry_stopped = True
             break

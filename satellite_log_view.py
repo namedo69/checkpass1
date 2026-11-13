@@ -9,6 +9,11 @@ import time
 _logs = deque(maxlen=500)
 _lock = threading.Lock()
 _sequence = 0
+_context = threading.local()
+def trace_context(**values):
+    _context.values = values
+def trace_event(event, **values):
+    diagnostic_print('[satellite-diag] '+json.dumps({**getattr(_context,'values',{}),'event':event,**values}),flush=True)
 _fields = frozenset(('event','timestamp','satellite','commit','workers','max_chunks','cooldown_seconds','chunks_active','chunks_claimed','chunks_completed','chunks_failed','accounts_claimed','accounts_completed','chunk_id','stt','status','elapsed_ms','check_attempts','tcp_login_ok','sso_ok','last_tcp_rejection_stage','last_tcp_rejection_result','sso_rejection_command','sso_rejection_result','stopped','chunks','seconds'))
 
 def diagnostic_print(*args, **kwargs):
@@ -17,6 +22,7 @@ def diagnostic_print(*args, **kwargs):
         try:
             value = json.loads(args[0].split(' ', 1)[1])
             entry = {k: v[:200] if isinstance(v,str) else v for k,v in value.items() if k in _fields and isinstance(v,(str,int,float,bool,type(None)))}
+            entry.update({k:v for k,v in value.items() if k in ('attempt','command','code','stage','http_status','error_class','retry_seconds','host') and isinstance(v,(str,int,float,bool,type(None)))})
             with _lock:
                 _sequence += 1
                 _logs.append({'id':_sequence,'received_at':time.time(),'data':entry})
