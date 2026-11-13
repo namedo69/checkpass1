@@ -1240,9 +1240,10 @@ def run_api_tests(tcp_module: Any, account: str, password: str, timeout: float,
             )
     else:
         # --- Fallback: flow cũ (original) ---
+        tcp_proxy = os.environ.get("GARENA_TCP_PROXY", "").strip() or None
         try:
             client_type = resilient_tcp_client_type(tcp_module)
-            with client_type(timeout=timeout) as client:
+            with client_type(timeout=timeout, proxy=tcp_proxy) as client:
                 uid = int(client.login(account, password))
                 results["tcp"] = {
                     "ok": True,

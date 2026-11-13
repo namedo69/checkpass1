@@ -253,8 +253,9 @@ class SsoSession:
 
 
 class GarenaTcpClient:
-    def __init__(self, timeout: float = 15.0):
+    def __init__(self, timeout: float = 15.0, proxy: str | None = None):
         self.timeout = timeout
+        self.proxy = proxy  # "http://user:pass@host:port" hoặc "host:port:user:pass"
         self.socket: socket.socket | None = None
         self.session_key: bytes | None = None
         self.uid = 0
@@ -268,8 +269,64 @@ class GarenaTcpClient:
     def __exit__(self, *_args) -> None:
         self.close()
 
+    @staticmethod
+    def _parse_proxy(proxy: str) -> tuple[str, int, str, str]:
+        """Parse proxy string. Hỗ trợ:
+        - host:port:user:pass
+        - http://user:pass@host:port
+        """
+        import base64 as _b64
+        proxy = proxy.strip()
+        if proxy.startswith("http://") or proxy.startswith("https://"):
+            from urllib.parse import urlparse
+            p = urlparse(proxy)
+            return (p.hostname or "", p.port or 0, p.username or "", p.password or "")
+        parts = proxy.split(":")
+        if len(parts) == 4:
+            return (parts[0], int(parts[1]), parts[2], parts[3])
+        if len(parts) == 2:
+            return (parts[0], int(parts[1]), "", "")
+        raise GarenaError(f"Proxy không hợp lệ: {proxy}")
+
+    def _connect_via_proxy(self, target_host: str, target_port: int) -> socket.socket:
+        """Kết nối qua HTTP CONNECT proxy."""
+        import base64 as _b64
+        proxy_host, proxy_port, proxy_user, proxy_pass = self._parse_proxy(self.proxy or "")
+        sock = socket.create_connection((proxy_host, proxy_port), min(self.timeout, 5.0))
+        sock.settimeout(self.timeout)
+        # HTTP CONNECT
+        connect_line = f"CONNECT {target_host}:{target_port} HTTP/1.1\r\nHost: {target_host}:{target_port}\r\n"
+        if proxy_user:
+            auth = _b64.b64encode(f"{proxy_user}:{proxy_pass}".encode()).decode()
+            connect_line += f"Proxy-Authorization: Basic {auth}\r\n"
+        connect_line += "\r\n"
+        sock.sendall(connect_line.encode())
+        resp = b""
+        while b"\r\n\r\n" not in resp and len(resp) < 4096:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            resp += chunk
+        status_line = resp.split(b"\r\n")[0].decode("ascii", "replace")
+        if "200" not in status_line:
+            sock.close()
+            raise GarenaError(f"Proxy từ chối kết nối: {status_line}")
+        return sock
+
     def connect(self) -> None:
         self.close()
+
+        # Nếu có proxy, kết nối qua proxy trực tiếp (không dùng fallback IP)
+        if self.proxy:
+            try:
+                self.socket = self._connect_via_proxy(GARENA_HOST, GARENA_PORT)
+                self.socket.settimeout(self.timeout)
+                return
+            except GarenaError:
+                raise
+            except OSError as exc:
+                raise GarenaError("Không kết nối được máy chủ Garena qua proxy") from exc
+
         candidates: list[str] = []
         try:
             candidates.extend(
