@@ -283,18 +283,13 @@ class GarenaTcpClient:
         candidates.extend(GARENA_IPV4_FALLBACKS)
         last_error: OSError | None = None
         for host in dict.fromkeys(candidates):
-            # Bỏ qua server bị blacklist (giống markDiamondServerFailed)
-            if not is_server_available(host):
-                continue
             try:
                 self.socket = socket.create_connection(
-                    (host, GARENA_PORT), min(self.timeout, 3.5)
+                    (host, GARENA_PORT), min(self.timeout, 3.0)
                 )
                 self.socket.settimeout(self.timeout)
                 return
             except OSError as exc:
-                # Đánh dấu server lỗi kết nối — blacklist 45s
-                mark_server_failed(host, _FAIL_CONNECT_SECONDS)
                 last_error = exc
         raise GarenaError("Không kết nối được máy chủ đăng nhập Garena") from last_error
 
