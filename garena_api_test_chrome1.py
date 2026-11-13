@@ -1181,6 +1181,8 @@ def run_api_tests(tcp_module: Any, account: str, password: str, timeout: float) 
                     str(exc).strip() or type(exc).__name__
                 )[:500]
                 results["tcp"]["rate_limit_suspected"] = tcp_rate_limit_suspected(exc)
+                results["tcp"]["sso_rejection_command"] = getattr(exc, "garena_command", 0)
+                results["tcp"]["sso_rejection_result"] = getattr(exc, "garena_result", 0)
             else:
                 results["tcp"].update(
                     {
@@ -1573,6 +1575,7 @@ BATCH_FIELDNAMES = [
     "name", "level", "registerDate", "player_status", "result_type", "elapsed_ms",
     "last_tcp_rejection_stage", "last_tcp_rejection_result",
     "login_rejection_confirmations",
+    "check_attempts", "tcp_login_ok", "sso_ok", "sso_rejection_command", "sso_rejection_result",
 ]
 BATCH_BAN_FIELDNAMES = ["banTime", "unbanTime"]
 
@@ -2025,6 +2028,11 @@ def batch_check_one(
             dict.fromkeys(e for e in errors if e and e != "None")
         )[:300]
     row["elapsed_ms"] = str(round((time.monotonic() - started) * 1000))
+    diagnostic_tcp = (result or {}).get("tcp") or {}
+    row.update(check_attempts=str(attempt_count), tcp_login_ok="1" if diagnostic_tcp.get("ok") else "0",
+               sso_ok="1" if diagnostic_tcp.get("web_sso_key") else "0",
+               sso_rejection_command=str(diagnostic_tcp.get("sso_rejection_command") or ""),
+               sso_rejection_result=str(diagnostic_tcp.get("sso_rejection_result") or ""))
     if attempt_count and not kientuong_info_found:
         row["_special"] = "1"
     credential.password = ""

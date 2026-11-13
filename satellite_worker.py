@@ -311,6 +311,14 @@ def _process_chunk(client: _Client, tcp_module: Any, claim: dict, stop_event: th
     """Xử lý 1 chunk trong thread riêng."""
     chunk_id = int(claim["chunk_id"])
     accounts = list(claim.get("accounts") or [])
+    chunk_started = time.monotonic()
+    def log_result(row):
+        fields = ('stt', 'status', 'elapsed_ms', 'check_attempts', 'tcp_login_ok', 'sso_ok',
+                  'last_tcp_rejection_stage', 'last_tcp_rejection_result',
+                  'sso_rejection_command', 'sso_rejection_result')
+        print('[satellite-diag] ' + json.dumps({'event': 'account_result', 'satellite': SATELLITE_ID,
+              'commit': GIT_COMMIT, 'chunk_id': chunk_id,
+              **{key: row.get(key, '') for key in fields}}, ensure_ascii=True), flush=True)
     print(f"[satellite] {SATELLITE_ID}: chunk {chunk_id} ({len(accounts)} acc)", flush=True)
 
     credentials = []
@@ -331,6 +339,7 @@ def _process_chunk(client: _Client, tcp_module: Any, claim: dict, stop_event: th
             if stop_event.is_set():
                 return
             pub = api_test.public_batch_row(row)
+            log_result(pub)
             RUNTIME_STATUS.account_done()
             flush = None
             with buffer_lock:
@@ -395,6 +404,9 @@ def _process_chunk(client: _Client, tcp_module: Any, claim: dict, stop_event: th
         except Exception as release_exc:
             print(f"[satellite] release chunk {chunk_id} that bai: {release_exc}", flush=True)
     finally:
+        print('[satellite-diag] ' + json.dumps({'event': 'chunk_finished', 'chunk_id': chunk_id,
+              'elapsed_ms': round((time.monotonic()-chunk_started)*1000),
+              'stopped': stop_event.is_set()}, ensure_ascii=True), flush=True)
         for credential in credentials:
             credential.password = ""
         credentials.clear()
@@ -434,6 +446,17 @@ def screening_task_id(check, row):
     return check['accounts'][index]['task_id'] if 0 <= index < len(check['accounts']) else None
 
 
+def _status_log_loop(stop_event):
+    while not stop_event.wait(5.0):
+        snapshot = RUNTIME_STATUS.snapshot()
+        fields = ('chunks_active', 'chunks_claimed', 'chunks_completed', 'chunks_failed',
+                  'accounts_claimed', 'accounts_completed')
+        print('[satellite-diag] ' + json.dumps({'event': 'status', 'timestamp': time.time(),
+              'satellite': SATELLITE_ID, 'commit': GIT_COMMIT, 'workers': WORKERS,
+              'max_chunks': CONCURRENT_CHUNKS, 'cooldown_seconds': BATCH_COOLDOWN_SECONDS,
+              **{key: snapshot[key] for key in fields}}, ensure_ascii=True), flush=True)
+
+
 def _worker_loop() -> None:
     tcp_module = tcp_ui.load_verified_tcp_module()
     client = _Client(MASTER_URL, MASTER_TOKEN)
@@ -441,7 +464,7 @@ def _worker_loop() -> None:
         f"[satellite] {SATELLITE_ID} khởi động: master={MASTER_URL} "
         f"service_type={SERVICE_TYPE} "
         f"workers={WORKERS} concurrent_chunks={CONCURRENT_CHUNKS} "
-        f"gap={START_GAP:g}s timeout={TIMEOUT:g}s",
+        f"gap={START_GAP:g}s timeout={TIMEOUT:g}s cooldown={BATCH_COOLDOWN_SECONDS:g}s commit={GIT_COMMIT}",
         flush=True,
     )
 
@@ -465,6 +488,8 @@ def _worker_loop() -> None:
         name="lease-heartbeat",
     )
     heartbeat_thread.start()
+    threading.Thread(target=_status_log_loop, args=(threading.Event(),), daemon=True,
+                     name='status-log').start()
 
     def screen_uplv(check):
         """Use the CheckPass checker and its capacity, never UpLv rooms."""
@@ -523,6 +548,7 @@ def _worker_loop() -> None:
             try:
                 if len(batch) >= CONCURRENT_CHUNKS:
                     wait(batch)
+                    print('[satellite-diag] ' + json.dumps({'event': 'cooldown', 'chunks': len(batch), 'seconds': BATCH_COOLDOWN_SECONDS}), flush=True)
                     time.sleep(BATCH_COOLDOWN_SECONDS)
                     batch.clear()
                 # Chờ nếu đủ chunk đang chạy
