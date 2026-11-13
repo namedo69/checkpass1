@@ -1240,7 +1240,17 @@ def run_api_tests(tcp_module: Any, account: str, password: str, timeout: float,
             )
     else:
         # --- Fallback: flow cũ (original) ---
-        tcp_proxy = os.environ.get("GARENA_TCP_PROXY", "").strip() or None
+        # Proxy: ưu tiên GARENA_TCP_PROXY_LIST (list từ master, chọn random),
+        # fallback GARENA_TCP_PROXY (single proxy)
+        tcp_proxy = None
+        proxy_list_raw = os.environ.get("GARENA_TCP_PROXY_LIST", "").strip()
+        if proxy_list_raw:
+            proxies = [line.strip() for line in proxy_list_raw.splitlines() if line.strip()]
+            if proxies:
+                import random as _rnd
+                tcp_proxy = _rnd.choice(proxies)
+        if not tcp_proxy:
+            tcp_proxy = os.environ.get("GARENA_TCP_PROXY", "").strip() or None
         try:
             client_type = resilient_tcp_client_type(tcp_module)
             with client_type(timeout=timeout, proxy=tcp_proxy) as client:

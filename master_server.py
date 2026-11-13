@@ -55,7 +55,7 @@ DEFAULT_MAX_VVIP_ACCOUNTS_PER_JOB = 999_999_999_999
 DEFAULT_DB_PATH = Path(__file__).resolve().with_name("master.db")
 DEFAULT_LEASE_MINUTES = 3
 MAX_SATELLITE_LEASE_MINUTES = 3
-MAX_ACCOUNT_RETRY_ROUNDS = 6
+MAX_ACCOUNT_RETRY_ROUNDS = 10
 QUANTITY_FAIL_PRICE_TENTHS = 1
 TIME_BLOCK_PRICE_TENTHS = 50_000
 VVIP_BLOCK_PRICE_TENTHS = 100_000
@@ -1315,6 +1315,7 @@ class PostgreSQLStore:
             raise RuntimeError("thiếu psycopg; chạy pip install -r requirements_master.txt") from exc
         self._lock = threading.RLock()
         self._write_lock = threading.RLock()
+        self._uplv_write_lock = threading.RLock()
         self._pool = None
         self._conn = None
         pool_size = max(1, int(os.environ.get("MASTER_PG_POOL_SIZE", "12") or 12))
@@ -1355,13 +1356,19 @@ class PostgreSQLStore:
         return _postgres_sql(sql)
 
     @contextlib.contextmanager
-    def _write_connection(self):
+    def _write_connection(self, uplv_only=False):
         # Result/chunk triggers update shared aggregate rows in different orders.
         # Serialize writes BEFORE borrowing a pooled connection: queued reports
         # must not exhaust the pool needed by sessions and dashboard reads.
-        with self._write_lock:
+        # UpLv tables do not fire Checkpass aggregate triggers. Their writes
+        # must not queue behind a burst of Checkpass result reports.
+        with self._uplv_write_lock if uplv_only else self._write_lock:
             with self._connection() as conn:
                 yield conn
+
+    @staticmethod
+    def _uplv_only_write(sql):
+        return bool(re.match(r'\s*(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+uplv_\w+\b', sql, re.I))
 
     def close(self) -> None:
         if self._pool is not None:
@@ -1395,7 +1402,7 @@ class PostgreSQLStore:
         is_insert = prepared.lstrip().upper().startswith("INSERT")
         if is_insert and " RETURNING " not in prepared.upper():
             prepared += " RETURNING id"
-        with self._write_connection() as conn:
+        with self._write_connection(self._uplv_only_write(sql)) as conn:
             with conn.transaction():
                 with conn.cursor() as cur:
                     cur.execute(prepared, args)
@@ -1405,7 +1412,7 @@ class PostgreSQLStore:
                     return cur.rowcount
 
     def exec_with_changes(self, sql: str, args: tuple = ()) -> int:
-        with self._write_connection() as conn:
+        with self._write_connection(self._uplv_only_write(sql)) as conn:
             with conn.transaction():
                 with conn.cursor() as cur:
                     cur.execute(self._sql(sql), args)
@@ -1424,7 +1431,10 @@ class PostgreSQLStore:
                 return cur.fetchone()
 
     def batch(self, statements: list) -> None:
-        with self._write_connection() as conn:
+        uplv_only = bool(statements) and all(
+            self._uplv_only_write(s['sql'] if isinstance(s, dict) else str(s)) for s in statements
+        )
+        with self._write_connection(uplv_only) as conn:
             with conn.transaction():
                 with conn.cursor() as cur:
                     for statement in statements:
@@ -2300,7 +2310,7 @@ class MasterHandler(BaseHTTPRequestHandler):
         session_auth = self._session_auth() if _aovshop_configured() else None
         if session_auth:
             return session_auth
-        # Shared fleet credentials never authenticate web users or admins.
+        # The shared fleet credential never authenticates a web user or admin.
         if master_token and token and secrets.compare_digest(token.strip(), master_token.strip()):
             return {"authorized": False, "is_admin": False, "is_satellite": True, "owner_hash": "", "owner_preview": "", "token": ""}
 
@@ -2318,10 +2328,10 @@ class MasterHandler(BaseHTTPRequestHandler):
                 "config_error": "Thiếu AOVSHOP_API_URL hoặc CHECKPASS_SERVICE_TOKEN",
             }
 
-        # Local tests/development retain the old open behavior when SP1S is not configured.
+        # Legacy development keys have a separate owner and never grant admin.
         license_url = os.environ.get("LICENSE_SERVER_URL", "").strip() or LICENSE_SERVER_URL
         if not master_token and not license_url:
-            # Dev mode: chấp nhận mọi token, nếu không có token thì owner rỗng (legacy)
+            # Anonymous requests remain unauthorized even without configuration.
             if not token:
                 return {"authorized": False, "is_admin": False, "is_satellite": False, "owner_hash": "", "owner_preview": "", "token": ""}
             # Nếu có token, coi như owner riêng
@@ -2627,17 +2637,7 @@ class MasterHandler(BaseHTTPRequestHandler):
                 mt = self.server.master_token or ""
                 is_master = bool(mt and tok and secrets.compare_digest(tok.strip(), mt.strip()))
                 if is_master:
-                    self._json(HTTPStatus.FORBIDDEN, {
-                        "ok": True,
-                        "valid": False,
-                        "history_access": False,
-                        "can_create_job": False,
-                        "is_admin": False,
-                        "preview": _preview_key(tok),
-                        "max_accounts_per_job": _max_accounts_per_job(self.server.store),
-                        "max_vvip_accounts_per_job": _max_vvip_accounts_per_job(self.server.store),
-                        "info": {"mode": "satellite_token"},
-                    })
+                    self._json(HTTPStatus.FORBIDDEN, {"ok": False, "valid": False, "is_admin": False, "error": "Token vệ tinh không được dùng để đăng nhập web"})
                     return
                 ok, info = _verify_license_key(tok)
                 if ok:
@@ -2748,6 +2748,7 @@ class MasterHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         try:
+            # Cookie-authenticated mutations require a same-origin JSON request.
             if self._extract_session() and self._clean_path() != "/api/verify":
                 origin = self.headers.get("Origin", "")
                 expected = urllib.parse.urlsplit(self._public_base_url())
@@ -2957,15 +2958,7 @@ class MasterHandler(BaseHTTPRequestHandler):
                 mt = self.server.master_token or ""
                 is_master = bool(mt and tok and secrets.compare_digest(tok.strip(), mt.strip()))
                 if is_master:
-                    self._json(HTTPStatus.FORBIDDEN, {
-                        "ok": True,
-                        "valid": False,
-                        "is_admin": False,
-                        "preview": _preview_key(tok),
-                        "max_accounts_per_job": _max_accounts_per_job(self.server.store),
-                        "max_vvip_accounts_per_job": _max_vvip_accounts_per_job(self.server.store),
-                        "info": {"mode": "satellite_token"},
-                    })
+                    self._json(HTTPStatus.FORBIDDEN, {"ok": False, "valid": False, "is_admin": False, "error": "Token vệ tinh không được dùng để đăng nhập web"})
                     return
                 ok, info = _verify_license_key(tok)
                 if ok:
@@ -3013,6 +3006,7 @@ class MasterHandler(BaseHTTPRequestHandler):
             "satellite_count": len(parse_satellite_targets(targets_text)),
             "vvip_satellite_targets": vvip_targets_text,
             "vvip_satellite_count": len(parse_satellite_targets(vvip_targets_text)),
+            "tcp_proxy_list": _setting(store, "tcp_proxy_list", ""),
             "max_running_jobs": max_running_jobs,
             "min_accounts_per_job": min_accounts_per_job,
             "max_accounts_per_job": max_accounts_per_job,
@@ -3100,6 +3094,13 @@ class MasterHandler(BaseHTTPRequestHandler):
                     "notice_title": title,
                     "notice_body": content,
                 })
+        proxy_list_value = body.get("tcp_proxy_list")
+        if proxy_list_value is not None:
+            proxy_text = str(proxy_list_value).strip()
+            if len(proxy_text) > 10000:
+                self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "danh sách proxy tối đa 10.000 ký tự"})
+                return
+            values["tcp_proxy_list"] = proxy_text
         if targets_value is not None:
             targets_text = str(targets_value).strip()
             targets = parse_satellite_targets(targets_text)
@@ -3976,6 +3977,9 @@ class MasterHandler(BaseHTTPRequestHandler):
         # UPDATE remains as protection when multiple master processes share a DB.
         with self.server.claim_lock:
             for _ in range(3):
+                # A busy claim queue may wait before acquiring this lock. Start
+                # the lease from allocation time, not HTTP request arrival.
+                now = _now()
                 row = select_fair_claim_candidate(store, now, satellite_id, queue_type)
                 if row is None:
                     row = select_fair_claim_candidate(
@@ -4008,6 +4012,7 @@ class MasterHandler(BaseHTTPRequestHandler):
                     "queue_type": queue_type,
                     "lease_until": now + lease_minutes * 60,
                     "accounts": accounts,
+                    "tcp_proxy_list": _setting(store, "tcp_proxy_list", ""),
                 }
                 break
 
@@ -4124,7 +4129,7 @@ class MasterHandler(BaseHTTPRequestHandler):
             })
         if stmts:
             store.batch(stmts)
-        # A timeout/network failure is not a final result until three different
+        # A timeout/network failure is not final until all configured
         # allocation rounds have had a chance to check it.  On rounds 1 and 2
         # take only those accounts back out of this chunk's interim results and
         # create a fresh pending chunk.  `avoid_satellite_id` makes the worker
@@ -4573,60 +4578,57 @@ class MasterHandler(BaseHTTPRequestHandler):
             min_level = 12
 
         store = self.server.store
-
-        # Build SQL category expression (same as _handle_job_rows)
-        status_sql = "COALESCE(json_extract(row_json,'$.status'),'')"
-        result_type_sql = "LOWER(COALESCE(json_extract(row_json,'$.result_type'),''))"
-        player_status_sql = "LOWER(COALESCE(json_extract(row_json,'$.player_status'),''))"
-        level_text_sql = "COALESCE(json_extract(row_json,'$.level'),'')"
-        if isinstance(store, PostgreSQLStore):
-            like_any = "%%"
-            numeric_level_sql = (
-                f"CASE WHEN {level_text_sql} ~ '^[0-9]+$' "
-                f"THEN CAST({level_text_sql} AS INTEGER) ELSE 0 END"
-            )
-        else:
-            like_any = "%"
-            numeric_level_sql = f"CAST({level_text_sql} AS INTEGER)"
-        category_sql = (
-            "CASE "
-            f"WHEN {status_sql}='CHƯA THỂ CHECK' OR {result_type_sql}='chưa thể check' THEN 'PENDING' "
-            f"WHEN UPPER({status_sql})!='OK' OR {result_type_sql} IN ('sai pass','không thể log') THEN 'FAIL' "
-            f"WHEN {result_type_sql}='lỗi ctnv' THEN 'GRANT_ERROR' "
-            f"WHEN {player_status_sql} LIKE '{like_any}khóa{like_any}' "
-            f"OR {player_status_sql} LIKE '{like_any}ban{like_any}' "
-            f"OR {player_status_sql} LIKE '{like_any}cấm{like_any}' THEN 'LOCKED' "
-            f"WHEN LOWER({level_text_sql})='ctnv' "
-            f"OR {player_status_sql} LIKE '{like_any}chưa tạo nhân vật{like_any}' THEN 'CTNV' "
-            f"WHEN {numeric_level_sql}>=? THEN 'OK' "
-            "ELSE 'NOT_MET' END"
-        )
-
-        # Build WHERE filter
-        filter_sql = ""
-        filter_args: tuple[Any, ...] = (min_level,)
-        if category_filter != "ALL":
-            filter_sql = f" AND ({category_sql})=?"
-            filter_args = (min_level, category_filter)
-
         rows_raw = store.fetch(
-            "SELECT r.chunk_id, r.row_json, c.account FROM results r "
-            "JOIN chunks c ON c.id=r.chunk_id "
-            f"WHERE r.job_id=?{filter_sql} ORDER BY r.id",
-            (job_id, *filter_args),
+            "SELECT chunk_id, row_json FROM results WHERE job_id=? ORDER BY id", (job_id,)
         )
+        # Build credentials lookup lazily — only if we actually need it
+        _credentials_cache: dict[int, list[str]] | None = None
+        def _get_credentials() -> dict[int, list[str]]:
+            nonlocal _credentials_cache
+            if _credentials_cache is None:
+                _credentials_cache = {}
+                for cid, cjson in store.fetch(
+                    "SELECT id, account FROM chunks WHERE job_id=?", (job_id,)
+                ):
+                    try:
+                        creds = json.loads(cjson)
+                    except (TypeError, json.JSONDecodeError):
+                        creds = []
+                    _credentials_cache[int(cid)] = creds if isinstance(creds, list) else []
+            return _credentials_cache
+
+        def classify(row: dict) -> str:
+            level = str(row.get("level") or "").strip()
+            player_status = str(row.get("player_status") or "").strip()
+            result_type = str(row.get("result_type") or "").strip().casefold()
+            status_val = str(row.get("status") or "").strip().upper()
+            if status_val == "CHƯA THỂ CHECK" or result_type == "chưa thể check":
+                return "PENDING"
+            if status_val != "OK" or result_type in {"sai pass", "không thể log"}:
+                return "FAIL"
+            if result_type == "lỗi ctnv":
+                return "GRANT_ERROR"
+            ps_lower = player_status.casefold()
+            if "khóa" in ps_lower or "ban" in ps_lower or "cấm" in ps_lower:
+                return "LOCKED"
+            if level.casefold() == "ctnv" or "chưa tạo nhân vật" in ps_lower:
+                return "CTNV"
+            if level.isdigit() and int(level) >= min_level:
+                return "OK"
+            return "NOT_MET"
 
         lines: list[str] = []
-        for _chunk_id, row_json, credentials_json in rows_raw:
+        for chunk_id, row_json in rows_raw:
             row = json.loads(row_json)
-            try:
-                credentials = json.loads(credentials_json)
-            except (TypeError, json.JSONDecodeError):
-                credentials = []
+            cat = classify(row)
+            if category_filter != "ALL" and cat != category_filter:
+                continue
+            # Resolve original credential from chunk
             try:
                 row_index = int(str(row.get("stt") or "0")) - 1
             except (TypeError, ValueError):
                 row_index = -1
+            credentials = _get_credentials().get(int(chunk_id), [])
             if 0 <= row_index < len(credentials):
                 row["_export_credential"] = str(credentials[row_index])
             level = str(row.get("level") or "").strip()
@@ -4680,146 +4682,41 @@ class MasterHandler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "min_level phải là số nguyên từ 1 đến 1000"})
             return
 
-        rows_raw = self.server.store.fetch(
-            "SELECT chunk_id, row_json FROM results WHERE job_id=? ORDER BY id", (job_id,)
-        )
-        chunks_raw = self.server.store.fetch(
-            "SELECT id, account FROM chunks WHERE job_id=?", (job_id,)
-        )
-        credentials_by_chunk: dict[int, list[str]] = {}
-        for chunk_id, credentials_json in chunks_raw:
-            try:
-                credentials = json.loads(credentials_json)
-            except (TypeError, json.JSONDecodeError):
-                credentials = []
-            credentials_by_chunk[int(chunk_id)] = credentials if isinstance(credentials, list) else []
-        rows = []
-        for chunk_id, row_json in rows_raw:
-            row = json.loads(row_json)
-            try:
-                row_index = int(str(row.get("stt") or "0")) - 1
-            except (TypeError, ValueError):
-                row_index = -1
-            credentials = credentials_by_chunk.get(int(chunk_id), [])
-            if 0 <= row_index < len(credentials):
-                # Chỉ dùng credential gốc cho file tải xuống; không trả qua API/UI.
-                row["_export_credential"] = str(credentials[row_index])
-            rows.append(row)
-        invalid_export_rows = []
-        for line_number, username, raw_line, reason in self.server.store.fetch(
-            "SELECT line_number,username,raw_line,reason FROM invalid_usernames "
-            "WHERE job_id=? ORDER BY id",
-            (job_id,),
-        ):
-            invalid_export_rows.append({
-                "stt": line_number,
-                "account": username,
-                "_export_credential": raw_line,
-                "status": "USER không hợp lệ",
-                "player_status": reason,
-            })
-        junk_export_rows = []
-        for line_number, username, raw_line, reason in self.server.store.fetch(
-            "SELECT line_number,username,raw_line,reason FROM junk_accounts "
-            "WHERE job_id=? ORDER BY id",
-            (job_id,),
-        ):
-            junk_export_rows.append({
-                "stt": line_number,
-                "account": username,
-                "_export_credential": raw_line,
-                "status": "DATA rác",
-                "player_status": reason,
-            })
-        sheets: dict[str, list[dict[str, Any]]] = {
-            "Đạt": [], "Không đạt": [], "CTNV": [], "Lỗi CTNV": [], "Bị khóa": [], "Không thể log": [],
-            "Chưa thể check": [], "USER không hợp lệ": invalid_export_rows,
-            "DATA rác": junk_export_rows,
-        }
-        for row in rows:
-            player_status = str(row.get("player_status") or "").strip()
-            level = str(row.get("level") or "").strip()
-            result_type = str(row.get("result_type") or "").strip().casefold()
-            if result_type in {"sai pass", "không thể log"} or str(row.get("status") or "").strip().upper() == "FAIL":
-                sheets["Không thể log"].append(row)
-            elif result_type == "chưa thể check" or str(row.get("status") or "").upper() == "CHƯA THỂ CHECK":
-                sheets["Chưa thể check"].append(row)
-            elif player_status == "Bị khóa":
-                sheets["Bị khóa"].append(row)
-            elif result_type == "lỗi ctnv":
-                sheets["Lỗi CTNV"].append(row)
-            elif level.casefold() == "ctnv" or player_status == "Chưa tạo nhân vật":
-                sheets["CTNV"].append(row)
-            elif level.isdigit() and int(level) >= min_level:
-                sheets["Đạt"].append(row)
-            else:
-                sheets["Không đạt"].append(row)
-
+        from job_excel_export import CATEGORIES, build_excel, export_task
+        selected = str(query.get('category', ['ALL'])[0]).upper()
+        if selected != 'ALL' and selected not in CATEGORIES:
+            self._json(HTTPStatus.BAD_REQUEST, {'ok': False, 'error': 'Loại xuất không hợp lệ'})
+            return
         try:
-            import re
-            import openpyxl
-            from openpyxl.styles import Alignment, Font, PatternFill
-
-            workbook = openpyxl.Workbook()
-            headers = ["STT", "Tài khoản", "Kết quả check", "UID", "Tên", "Cấp", "Ngày tạo", "Trạng thái tài khoản"]
-            fields = ["stt", "account", "status", "uid", "name", "level", "registerDate", "player_status"]
-            widths = [8, 28, 16, 16, 28, 10, 16, 24]
-            fills = {
-                "Đạt": "238636", "Không đạt": "9E6A03", "CTNV": "8250DF",
-                "Lỗi CTNV": "D97706",
-                "Bị khóa": "C2410C", "Không thể log": "DA3633", "Chưa thể check": "D29922",
-                "USER không hợp lệ": "B91C1C", "DATA rác": "7F1D1D",
-            }
-            for index, (sheet_name, sheet_rows) in enumerate(sheets.items()):
-                worksheet = workbook.active if index == 0 else workbook.create_sheet()
-                worksheet.title = f"Đạt từ LV {min_level}" if sheet_name == "Đạt" else sheet_name
-                fill = PatternFill(start_color=fills[sheet_name], end_color=fills[sheet_name], fill_type="solid")
-                sheet_headers = list(headers)
-                sheet_fields = list(fields)
-                sheet_widths = list(widths)
-                if sheet_name == "Bị khóa":
-                    sheet_headers.extend(("Thời gian ban", "Thời gian mở ban"))
-                    sheet_fields.extend(("banTime", "unbanTime"))
-                    sheet_widths.extend((28, 28))
-                for column, label in enumerate(sheet_headers, 1):
-                    cell = worksheet.cell(row=1, column=column, value=label)
-                    cell.font = Font(bold=True, color="FFFFFF")
-                    cell.fill = fill
-                    cell.alignment = Alignment(horizontal="center")
-                for row_index, row in enumerate(sheet_rows, 2):
-                    for column, field in enumerate(sheet_fields, 1):
-                        value = str(
-                            row.get("_export_credential") or row.get(field, "") or ""
-                        ) if field == "account" else str(row.get(field, "") or "")
-                        if field == "registerDate":
-                            cell = worksheet.cell(row=row_index, column=column, value=registration_date(value))
-                            cell.number_format = "dd/mm/yyyy"
-                            continue
-                        # Excel rejects ASCII control characters in cell values.
-                        value = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F]", "", value)
-                        worksheet.cell(row=row_index, column=column, value=value)
-                worksheet.freeze_panes = "A2"
-                last_column = openpyxl.utils.get_column_letter(len(sheet_headers))
-                worksheet.auto_filter.ref = f"A1:{last_column}{max(1, len(sheet_rows) + 1)}"
-                for column, width in enumerate(sheet_widths, 1):
-                    worksheet.column_dimensions[openpyxl.utils.get_column_letter(column)].width = width
-
-            output = io.BytesIO()
-            workbook.save(output)
-            data = output.getvalue()
+            if query.get('async', [''])[0] == '1':
+                result = export_task(self.server.store, job_id, min_level, selected,
+                                     query.get('ticket', [None])[0],
+                                     query.get('download', [''])[0] == '1')
+                if isinstance(result, dict):
+                    self._json(HTTPStatus.OK, result)
+                    return
+                output = result
+            else:
+                output = build_excel(self.server.store, job_id, min_level, selected)
         except Exception as exc:
             self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": f"Không tạo được file XLSX: {exc}"[:500]})
             return
 
-        self.send_response(HTTPStatus.OK)
-        self._security_headers("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        self.send_header("Content-Disposition", f'attachment; filename="job_{job_id}_tu_lv_{min_level}.xlsx"')
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        try:
-            self.wfile.write(data)
-        except (BrokenPipeError, ConnectionResetError, OSError):
-            pass
+        with output:
+            output.seek(0, 2)
+            size = output.tell()
+            output.seek(0)
+            self.send_response(HTTPStatus.OK)
+            self._security_headers("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            suffix = '' if selected == 'ALL' else '_' + selected.lower()
+            self.send_header("Content-Disposition", f'attachment; filename="job_{job_id}_tu_lv_{min_level}{suffix}.xlsx"')
+            self.send_header("Content-Length", str(size))
+            self.end_headers()
+            try:
+                while block := output.read(65536):
+                    self.wfile.write(block)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
 
 
 class CoordinatorServer(ThreadingHTTPServer):
@@ -5253,6 +5150,12 @@ def configure_console_encoding() -> None:
 
 
 def main() -> int:
+    # A busy fleet can exceed Linux's default 1024 sockets/files. Stay within
+    # the service's existing hard limit; no privileged system changes needed.
+    if os.name == 'posix':
+        import resource
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        resource.setrlimit(resource.RLIMIT_NOFILE, (min(max(soft, 65536), hard), hard))
     configure_console_encoding()
     args = parse_args()
     host = (args.host or os.environ.get("HOST", "") or "0.0.0.0").strip() or "0.0.0.0"

@@ -315,6 +315,12 @@ def _process_chunk(client: _Client, tcp_module: Any, claim: dict, stop_event: th
     """Xử lý 1 chunk trong thread riêng."""
     chunk_id = int(claim["chunk_id"])
     accounts = list(claim.get("accounts") or [])
+    # Proxy list từ master admin — vệ tinh chọn ngẫu nhiên mỗi lần login
+    tcp_proxy_list = str(claim.get("tcp_proxy_list") or "").strip()
+    if tcp_proxy_list:
+        os.environ["GARENA_TCP_PROXY_LIST"] = tcp_proxy_list
+    elif "GARENA_TCP_PROXY_LIST" in os.environ:
+        del os.environ["GARENA_TCP_PROXY_LIST"]
     chunk_started = time.monotonic()
     def log_result(row):
         fields = ('stt', 'status', 'elapsed_ms', 'check_attempts', 'tcp_login_ok', 'sso_ok',
@@ -498,6 +504,8 @@ def _worker_loop() -> None:
     def screen_uplv(check):
         """Use the CheckPass checker and its capacity, never UpLv rooms."""
         credentials = [api_test.BatchAccount(i, *item['account']) for i, item in enumerate(check['accounts'], 1)]
+        for credential in credentials:
+            credential.chunk_id = str(check.get('chunk_id', 'screening'))
         rows = []
         def result(row):
             if check.get('chunk_id'):
@@ -550,6 +558,8 @@ def _worker_loop() -> None:
         batch = []
         while True:
             try:
+                # Never refill a completed slot inside a wave. All wave chunks
+                # (including screening) finish before the configured cooldown.
                 if len(batch) >= CONCURRENT_CHUNKS:
                     wait(batch)
                     print('[satellite-diag] ' + json.dumps({'event': 'cooldown', 'chunks': len(batch), 'seconds': BATCH_COOLDOWN_SECONDS}), flush=True)
