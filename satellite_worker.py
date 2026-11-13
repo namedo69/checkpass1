@@ -22,7 +22,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -65,11 +65,12 @@ GIT_BRANCH = _env("RENDER_GIT_BRANCH", "local")
 GIT_REPO = _env("RENDER_GIT_REPO_SLUG", "local")
 GIT_COMMIT_MESSAGE = _current_commit_message()
 SERVER_STARTED_AT_UTC = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-WORKERS = int(_env("WORKERS", "8") or "8")
-START_GAP = 0.5
+WORKERS = 15
+START_GAP = 0.0
 TIMEOUT = float(_env("TIMEOUT", "20.0") or "20.0")
 LEASE_MINUTES = float(_env("LEASE_MINUTES", "5") or "5")
 CONCURRENT_CHUNKS = 3
+BATCH_COOLDOWN_SECONDS = 5.0
 POLL_INTERVAL = float(_env("POLL_INTERVAL", "15") or "15")
 # Render Web Service truyền PORT; fallback HEALTH_PORT cho local
 HEALTH_PORT = int(_env("PORT", "") or _env("HEALTH_PORT", "8765") or "8765")
@@ -517,8 +518,13 @@ def _worker_loop() -> None:
             print('[satellite] UpLv screening: ' + type(exc).__name__, flush=True)
 
     with ThreadPoolExecutor(max_workers=CONCURRENT_CHUNKS, thread_name_prefix="chunk") as pool:
+        batch = []
         while True:
             try:
+                if len(batch) >= CONCURRENT_CHUNKS:
+                    wait(batch)
+                    time.sleep(BATCH_COOLDOWN_SECONDS)
+                    batch.clear()
                 # Chờ nếu đủ chunk đang chạy
                 with active_lock:
                     at_capacity = active_count >= CONCURRENT_CHUNKS
@@ -531,7 +537,12 @@ def _worker_loop() -> None:
                 claim_resp = client.claim()
                 claim = claim_resp.get("claim")
                 if not claim:
-                    time.sleep(POLL_INTERVAL)
+                    if batch:
+                        wait(batch)
+                        time.sleep(BATCH_COOLDOWN_SECONDS)
+                        batch.clear()
+                    else:
+                        time.sleep(POLL_INTERVAL)
                     continue
 
                 if claim.get('kind') == 'uplv_screening':
@@ -539,6 +550,7 @@ def _worker_loop() -> None:
                         active_count += 1
                     check = {**claim, 'accounts': [{'account': str(raw).split('|')[:2]} for raw in claim['accounts']]}
                     future = pool.submit(screen_uplv, check)
+                    batch.append(future)
                     future.add_done_callback(screening_done)
                     continue
 
@@ -551,6 +563,7 @@ def _worker_loop() -> None:
                     active_chunk_stops[chunk_id] = chunk_stop_event
 
                 future = pool.submit(_process_chunk, client, tcp_module, claim, chunk_stop_event)
+                batch.append(future)
                 future.add_done_callback(lambda done, cid=chunk_id: on_chunk_done(done, cid))
 
             except Exception as exc:
