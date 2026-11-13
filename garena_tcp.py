@@ -553,7 +553,7 @@ def is_server_available(host: str) -> bool:
 # Login semaphore — 16 concurrent slots (giống Go engine channel capacity 0x10)
 # ---------------------------------------------------------------------------
 
-_LOGIN_SEMAPHORE = threading.Semaphore(16)
+_LOGIN_SEMAPHORE = threading.Semaphore(45)
 
 # ---------------------------------------------------------------------------
 # Gateway pacing — slot-based global scheduler (giống paceGarenaGateway)
