@@ -185,7 +185,8 @@ def resilient_tcp_client_type(tcp_module: Any) -> type:
                     time.sleep(THROTTLE_RETRY_DELAY)
 
         def _request(self, command: int, payload: bytes, key: bytes | None = None) -> bytes:
-            trace_event('tcp_send', command=f'0x{command:X}')
+            trace_event('tcp_send', command=f'0x{command:X}',
+                        host=self.socket.getpeername()[0] if self.socket is not None else '')
             if self.socket is None:
                 raise tcp_module.GarenaError("Kết nối Garena chưa được mở")
 
