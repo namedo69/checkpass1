@@ -1175,9 +1175,9 @@ def run_api_tests(tcp_module: Any, account: str, password: str, timeout: float,
 
     sso: Any = None
 
-    # --- Engine-style login: semaphore + pacing + retry + cache ---
-    # Sử dụng garena_authenticate() nếu tcp_module có hỗ trợ (mô phỏng Go engine)
-    use_engine = hasattr(tcp_module, 'garena_authenticate')
+    # Engine login tắt — legacy flow đã có retry tốt trong batch_check_one.
+    # Session cache, server blacklist, semaphore vẫn hoạt động ở tầng garena_tcp.
+    use_engine = False
 
     if use_engine:
         try:
