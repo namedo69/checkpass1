@@ -1748,12 +1748,13 @@ def kientuong_requires_grant(result: Any) -> bool:
     """Recognize the OAuth response classified as CTNV by checkpass."""
     if not isinstance(result, dict):
         return False
-    if str(result.get("error") or "").strip() == "error_require_grant":
+    if any(str(result.get(key) or "").strip() == "error_require_grant"
+           for key in ("error", "grant_error")):
         return True
     return any(
         kientuong_requires_grant(result.get(key))
         for key in ("body", "kientuong", "kientuong_player", "account_to_kientuong_oauth",
-                    "web_auth", "apis", "tcp_to_web_probe")
+                    "web_auth", "apis", "tcp_to_web_probe", "player_api")
     )
 
 
@@ -1895,6 +1896,11 @@ def batch_check_one(
             result = current_result
             attempt_error = ""
             missing = batch_required_missing(current_result)
+            # A definitive OAuth grant error is final even if another API in
+            # the same attempt was throttled. Never retry or overwrite it.
+            if kientuong_requires_grant(current_result):
+                rate_limit_suspected = False
+                break
             rate_limit_suspected = batch_rate_limit_suspected(current_result)
             attempt_tcp = current_result.get("tcp") or {}
             rejection_command = int(attempt_tcp.get("rejection_command") or 0)
@@ -2101,7 +2107,10 @@ def batch_check_one(
         # may become FAIL; all other uncertain failures remain retryable.
         tcp_ok = bool(tcp_info.get("ok"))
         row["status"] = "OK" if tcp_ok else "CHƯA THỂ CHECK"
-        if rate_limit_suspected:
+        if grant_required:
+            row["status"] = "OK"
+            row["result_type"] = "Lỗi CTNV"
+        elif rate_limit_suspected:
             errors.insert(0, "nghi rate limit - chưa thể kết luận đăng nhập")
             row["status"] = "CHƯA THỂ CHECK"
             row["result_type"] = "Chưa thể check"

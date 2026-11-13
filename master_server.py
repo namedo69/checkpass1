@@ -790,6 +790,15 @@ def _backfill_job_stats_if_needed(store: Any) -> None:
     ])
 
 
+def _is_grant_error_row(row: dict[str, Any]) -> bool:
+    return (
+        str(row.get("result_type") or "").strip().casefold() == "lỗi ctnv"
+        or str(row.get("player_status") or "").strip().casefold()
+        == "lỗi ctnv (error_require_grant)"
+        or kientuong_api_test.kientuong_requires_grant(row)
+    )
+
+
 def _now() -> float:
     return time.time()
 
@@ -4108,6 +4117,11 @@ class MasterHandler(BaseHTTPRequestHandler):
         for row in rows:
             if not isinstance(row, dict):
                 continue
+            # Accept final grant-error evidence from older satellites too;
+            # their generic pending status must not hide or requeue this type.
+            if _is_grant_error_row(row):
+                row = {**row, "status": "OK", "result_type": "Lỗi CTNV",
+                       "player_status": "Lỗi CTNV (error_require_grant)"}
             account = str(row.get("account", "") or "")
             if not account:
                 skipped_empty += 1
@@ -4206,6 +4220,8 @@ class MasterHandler(BaseHTTPRequestHandler):
             try:
                 row = json.loads(row_json)
             except (TypeError, json.JSONDecodeError):
+                continue
+            if _is_grant_error_row(row):
                 continue
             if str(row.get("status") or "").strip().upper() != "CHƯA THỂ CHECK":
                 continue
