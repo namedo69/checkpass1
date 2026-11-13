@@ -3,6 +3,7 @@ import argparse
 from export_dates import registration_date
 import base64
 import csv
+from contextlib import contextmanager, ExitStack
 import functools
 import hashlib
 import json
@@ -1164,6 +1165,30 @@ def legacy_account_sso_probe(sso_key: str, sso_expiry: int, timeout: float) -> d
             "tcp_session_key_sent": False,
             "elapsed_ms": round((time.monotonic() - started) * 1000),
         }
+@contextmanager
+def login_with_proxy_fallback(client_type, account, password, timeout, proxy=None, stop_event=None):
+    """Try direct TCP login first, then at most one configured backup proxy."""
+    for route in ([None, proxy] if proxy else [None]):
+        if stop_event is not None and stop_event.is_set():
+            raise RuntimeError("Đã dừng")
+        client = client_type(timeout=timeout, **({"proxy": route} if route else {}))
+        stack = ExitStack()
+        try:
+            client = stack.enter_context(client)
+            uid = int(client.login(account, password))
+        except Exception:
+            stack.close()
+            if route is not None or not proxy:
+                raise
+            trace_event('retry', stage='TCP_PROXY_FALLBACK')
+            continue
+        break
+    try:
+        yield client, uid
+    finally:
+        stack.close()
+
+
 def run_api_tests(tcp_module: Any, account: str, password: str, timeout: float,
                   *, stop_event: threading.Event | None = None) -> dict[str, Any]:
     started = time.monotonic()
@@ -1253,8 +1278,7 @@ def run_api_tests(tcp_module: Any, account: str, password: str, timeout: float,
             tcp_proxy = os.environ.get("GARENA_TCP_PROXY", "").strip() or None
         try:
             client_type = resilient_tcp_client_type(tcp_module)
-            with client_type(timeout=timeout, proxy=tcp_proxy) as client:
-                uid = int(client.login(account, password))
+            with login_with_proxy_fallback(client_type, account, password, timeout, tcp_proxy, stop_event) as (client, uid):
                 results["tcp"] = {
                     "ok": True,
                     "credential_rejected": False,
