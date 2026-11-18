@@ -28,6 +28,7 @@ class Client:
     def post(self, action, body):
         request = urllib.request.Request(self.url + '/v1/render-workers/' + action,
             json.dumps(body).encode(), {'Content-Type': 'application/json',
+                                       'User-Agent': 'Mozilla/5.0 (compatible; AutoBuffWorker/1.0)',
                                        'Authorization': 'Bearer ' + self.token})
         # Never follow redirects carrying account-control credentials.
         class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -153,7 +154,8 @@ class Worker:
                     else:
                         self.shutdown.wait(10)
                 except Exception as exc:
-                    print(json.dumps({'event': 'control_unavailable', 'error_type': type(exc).__name__}), flush=True)
+                    print(json.dumps({'event': 'control_unavailable', 'error_type': type(exc).__name__,
+                                      'http_status': getattr(exc, 'code', None)}), flush=True)
                     self.shutdown.wait(10)
 
 
