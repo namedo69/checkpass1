@@ -554,4 +554,9 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    if os.environ.get('WORKER_MODE', 'buff-like') == 'uplv':
+        main()
+    else:
+        sys.path.insert(0, str(Path(__file__).parent / 'buff_like'))
+        from buff_worker import main as buff_main
+        buff_main()

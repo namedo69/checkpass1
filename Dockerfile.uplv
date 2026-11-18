@@ -9,5 +9,7 @@ COPY uplv_runtime/ ./uplv_runtime/
 COPY garena_api_test_chrome1.py garena_api_test_chrome.py garena_tcp_login_chrome.py garena_tcp.py ./
 COPY garena_tcp_rate_limit_probe.py export_dates.py db.py ./
 RUN python -B -c "from pathlib import Path; [compile(p.read_bytes(), str(p), 'exec') for p in Path('/app').rglob('*.py')]"
+COPY buff_like/ ./buff_like/
+ENV WORKER_MODE=buff-like
 RUN python -B uplv_satellite.py --check-runtime
 CMD ["python", "-B", "uplv_satellite.py"]
