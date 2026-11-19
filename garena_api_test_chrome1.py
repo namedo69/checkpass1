@@ -505,21 +505,28 @@ class WebSession:
         form_body: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
     ) -> tuple[int, str, str, Any]:
-        for attempt in range(THROTTLE_MAX_ATTEMPTS):
+        from garena_http_gate import host_gate
+        gate = host_gate(url)
+        with gate.admission() as admitted:
+            if not admitted:
+                trace_event('retry', stage='HTTP_HOST_COOLDOWN', host=urllib.parse.urlsplit(url).hostname)
+                return 429, url, 'application/json', {'error': 'error_too_many_requests'}
             request_started = time.monotonic()
-            trace_event('http_send', host=urllib.parse.urlsplit(url).hostname, attempt=attempt + 1)
+            trace_event('http_send', host=urllib.parse.urlsplit(url).hostname, attempt=1)
+            self._last_retry_after = None
             response = self._request_once(
                 url, method=method, json_body=json_body, form_body=form_body, headers=headers
             )
             body = response[3]
             trace_event('http_response', host=urllib.parse.urlsplit(url).hostname,
                         http_status=response[0], elapsed_ms=round((time.monotonic()-request_started)*1000))
-            throttled = isinstance(body, dict) and body.get("error") == "error_too_many_requests"
-            if not throttled or attempt + 1 >= THROTTLE_MAX_ATTEMPTS:
-                return response
-            trace_event('retry', stage='HTTP_THROTTLE', retry_seconds=THROTTLE_RETRY_DELAY)
-            time.sleep(THROTTLE_RETRY_DELAY)
-        raise RuntimeError("Invalid throttle retry configuration")
+            throttled = response[0] == 429 or (isinstance(body, dict) and body.get("error") == "error_too_many_requests")
+            if throttled:
+                delay = gate.throttle(self._last_retry_after)
+                trace_event('retry', stage='HTTP_THROTTLE', host=urllib.parse.urlsplit(url).hostname, retry_seconds=round(delay, 2))
+            elif 200 <= response[0] < 300:
+                gate.success()
+            return response
 
     def _request_once(
         self,
@@ -556,6 +563,7 @@ class WebSession:
             status = int(response.status)
             final_url = response.geturl()
             content_type = response.headers.get("Content-Type", "")
+            self._last_retry_after = response.headers.get('Retry-After')
         finally:
             response.close()
         text = raw.decode("utf-8", "replace")
