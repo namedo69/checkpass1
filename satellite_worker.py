@@ -559,7 +559,7 @@ def _worker_loop() -> None:
             print('[satellite] UpLv screening: ' + type(exc).__name__, flush=True)
 
     from satellite_account_pool import AccountPool
-    capacity = WORKERS  # Shared limit: 15 accounts total, not 15 per chunk.
+    capacity = WORKERS * CONCURRENT_CHUNKS
     # One coordinator per leased chunk, not one private account pool per chunk.
     # Bound coordinators too, so slow reports cannot grow leases indefinitely.
     with AccountPool(capacity) as accounts_pool, ThreadPoolExecutor(max_workers=capacity + CONCURRENT_CHUNKS, thread_name_prefix="chunk") as pool:
