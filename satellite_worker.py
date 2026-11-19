@@ -311,7 +311,8 @@ def _self_ping_loop() -> None:
             pass
 
 
-def _process_chunk(client: _Client, tcp_module: Any, claim: dict, stop_event: threading.Event) -> None:
+def _process_chunk(client: _Client, tcp_module: Any, claim: dict, stop_event: threading.Event,
+                   account_executor=None, on_submitted=None) -> None:
     """Xử lý 1 chunk trong thread riêng."""
     chunk_id = int(claim["chunk_id"])
     accounts = list(claim.get("accounts") or [])
@@ -374,6 +375,8 @@ def _process_chunk(client: _Client, tcp_module: Any, claim: dict, stop_event: th
             credentials, tcp_module, WORKERS, START_GAP, TIMEOUT,
             stop_event=stop_event,
             on_result=on_result,
+            account_executor=account_executor,
+            on_submitted=on_submitted,
         )
         if stop_event.is_set():
             print(f"[satellite] {SATELLITE_ID}: chunk {chunk_id} nhan lenh dung", flush=True)
@@ -501,7 +504,7 @@ def _worker_loop() -> None:
     threading.Thread(target=_status_log_loop, args=(threading.Event(),), daemon=True,
                      name='status-log').start()
 
-    def screen_uplv(check):
+    def screen_uplv(check, account_executor=None, on_submitted=None):
         """Use the CheckPass checker and its capacity, never UpLv rooms."""
         credentials = [api_test.BatchAccount(i, *item['account']) for i, item in enumerate(check['accounts'], 1)]
         for credential in credentials:
@@ -528,7 +531,8 @@ def _worker_loop() -> None:
                          'check_error': str(row.get('error', ''))[:200]})
         try:
             api_test.run_batch_core(credentials, tcp_module, WORKERS, START_GAP, TIMEOUT,
-                                    stop_event=threading.Event(), on_result=result)
+                                    stop_event=threading.Event(), on_result=result,
+                                    account_executor=account_executor, on_submitted=on_submitted)
             if check.get('chunk_id'):
                 client._request('/api/checkpass/uplv/chunk-report', {'satellite_id': SATELLITE_ID,
                     'chunk_id': check['chunk_id'], 'lease_token': check['lease_token'], 'rows': [], 'done': True})
@@ -554,43 +558,43 @@ def _worker_loop() -> None:
         except Exception as exc:
             print('[satellite] UpLv screening: ' + type(exc).__name__, flush=True)
 
-    with ThreadPoolExecutor(max_workers=CONCURRENT_CHUNKS, thread_name_prefix="chunk") as pool:
-        batch = []
+    from satellite_account_pool import AccountPool
+    capacity = WORKERS * CONCURRENT_CHUNKS
+    # One coordinator per leased chunk, not one private account pool per chunk.
+    # Bound coordinators too, so slow reports cannot grow leases indefinitely.
+    with AccountPool(capacity) as accounts_pool, ThreadPoolExecutor(max_workers=capacity + CONCURRENT_CHUNKS, thread_name_prefix="chunk") as pool:
+        def submit_chunk(function, *args):
+            submitted = threading.Event()
+            def run():
+                try:
+                    return function(*args, account_executor=accounts_pool, on_submitted=submitted.set)
+                finally:
+                    submitted.set()
+            future = pool.submit(run)
+            submitted.wait()
+            return future
+
         while True:
             try:
-                # Never refill a completed slot inside a wave. All wave chunks
-                # (including screening) finish before the configured cooldown.
-                if len(batch) >= CONCURRENT_CHUNKS:
-                    wait(batch)
-                    print('[satellite-diag] ' + json.dumps({'event': 'cooldown', 'chunks': len(batch), 'seconds': BATCH_COOLDOWN_SECONDS}), flush=True)
-                    time.sleep(BATCH_COOLDOWN_SECONDS)
-                    batch.clear()
-                # Chờ nếu đủ chunk đang chạy
+                accounts_pool.changed.clear()
                 with active_lock:
-                    at_capacity = active_count >= CONCURRENT_CHUNKS
-                # Do not sleep while holding the lock; completion callbacks need it.
-                # They decrement active_count and free the next claim slot.
+                    at_capacity = (accounts_pool.pending_accounts >= capacity
+                                   or active_count >= capacity + CONCURRENT_CHUNKS)
                 if at_capacity:
-                    time.sleep(1)
+                    accounts_pool.changed.wait(0.1)
                     continue
 
                 claim_resp = client.claim()
                 claim = claim_resp.get("claim")
                 if not claim:
-                    if batch:
-                        wait(batch)
-                        time.sleep(BATCH_COOLDOWN_SECONDS)
-                        batch.clear()
-                    else:
-                        time.sleep(POLL_INTERVAL)
+                    time.sleep(POLL_INTERVAL)
                     continue
 
                 if claim.get('kind') == 'uplv_screening':
                     with active_lock:
                         active_count += 1
                     check = {**claim, 'accounts': [{'account': str(raw).split('|')[:2]} for raw in claim['accounts']]}
-                    future = pool.submit(screen_uplv, check)
-                    batch.append(future)
+                    future = submit_chunk(screen_uplv, check)
                     future.add_done_callback(screening_done)
                     continue
 
@@ -602,8 +606,7 @@ def _worker_loop() -> None:
                 with active_chunks_lock:
                     active_chunk_stops[chunk_id] = chunk_stop_event
 
-                future = pool.submit(_process_chunk, client, tcp_module, claim, chunk_stop_event)
-                batch.append(future)
+                future = submit_chunk(_process_chunk, client, tcp_module, claim, chunk_stop_event)
                 future.add_done_callback(lambda done, cid=chunk_id: on_chunk_done(done, cid))
 
             except Exception as exc:

@@ -3,7 +3,7 @@ import argparse
 from export_dates import registration_date
 import base64
 import csv
-from contextlib import contextmanager, ExitStack
+from contextlib import contextmanager, ExitStack, nullcontext
 import functools
 import hashlib
 import json
@@ -2185,6 +2185,8 @@ def run_batch_core(
     *,
     stop_event: threading.Event | None = None,
     on_result: Any = None,
+    account_executor: Any = None,
+    on_submitted: Any = None,
 ) -> list[dict[str, str]]:
     import garena_tcp_rate_limit_probe as batch_helpers
 
@@ -2194,11 +2196,13 @@ def run_batch_core(
     rows: list[dict[str, str]] = []
     total = len(credentials)
     # Streaming: xong 1 acc la day acc tiep ngay, khong doi ca chunk
-    with ThreadPoolExecutor(max_workers=max(1, int(workers)), thread_name_prefix="sso-batch") as executor:
+    with (nullcontext(account_executor) if account_executor is not None else ThreadPoolExecutor(max_workers=max(1, int(workers)), thread_name_prefix="sso-batch")) as executor:
         futures = [
             executor.submit(batch_check_one, credential, tcp_module, timeout, gate, stop_event)
             for credential in credentials
         ]
+        if on_submitted is not None:
+            on_submitted()
         for future in as_completed(futures):
             if stop_event.is_set():
                 for f in futures:
