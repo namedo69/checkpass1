@@ -299,17 +299,12 @@ def kientuong_player_has_level(result: Any) -> bool:
     if not isinstance(player, dict) or not player:
         return False
     level = player.get("level")
-    return level is not None and str(level).strip() != ""
+    return not isinstance(level, bool) and str(level).isdigit() and 1 <= int(level) <= 30
 
 
 def kientuong_no_character_response(result: Any) -> bool:
-    """The observed no-character response is HTTP 422 with an empty JSON body."""
-
-    return bool(
-        isinstance(result, dict)
-        and result.get("status") == 422
-        and result.get("body") == {}
-    )
+    """An empty HTTP 422 alone cannot prove that the account has no role."""
+    return False
 
 
 def fingerprint(value: str) -> str:
@@ -481,6 +476,9 @@ def garena_web_password(password: str, v1: str, v2: str) -> str:
     return (encryptor.update(md5_digest) + encryptor.finalize()).hex()
 
 
+from kientuong_auth import code_grant, terminal_authorization, safe_error, OAuthRedirectGuard, valid_code_callback
+
+
 class WebSession:
     def __init__(self, timeout: float) -> None:
         self.cookies = CookieJar()
@@ -492,6 +490,7 @@ class WebSession:
         if hasattr(ssl, "VERIFY_X509_STRICT"):
             tls_context.verify_flags &= ~ssl.VERIFY_X509_STRICT
         self.opener = urllib.request.build_opener(
+            OAuthRedirectGuard(),
             urllib.request.HTTPCookieProcessor(self.cookies),
             urllib.request.HTTPSHandler(context=tls_context),
         )
@@ -642,15 +641,15 @@ class WebSession:
                 status, prelogin = 0, None
             if status == 200 and isinstance(prelogin, dict) and not prelogin.get("error"):
                 break
+            if terminal_authorization({"status": status, "body": prelogin}):
+                break
             # Retry immediately; the HTTP request timeout already bounds each attempt.
         if status != 200 or not isinstance(prelogin, dict) or prelogin.get("error"):
             return {
                 "ok": False,
                 "stage": "prelogin",
                 "status": status,
-                "error": str(prelogin.get("error", "invalid_prelogin_response"))
-                if isinstance(prelogin, dict)
-                else "invalid_prelogin_response",
+                "error": safe_error(prelogin, "invalid_prelogin_response"),
                 "elapsed_ms": round((time.monotonic() - started) * 1000),
             }
         if not isinstance(prelogin.get("v1"), str) or not isinstance(prelogin.get("v2"), str):
@@ -681,9 +680,7 @@ class WebSession:
                 "ok": False,
                 "stage": "login",
                 "status": status,
-                "error": str(login.get("error", "invalid_login_response"))
-                if isinstance(login, dict)
-                else "invalid_login_response",
+                "error": safe_error(login, "invalid_login_response"),
                 "challenge_required": bool(
                     isinstance(login, dict)
                     and any(word in str(login.get("error", "")) for word in ("captcha", "security", "otp"))
@@ -711,20 +708,21 @@ class WebSession:
         init_url = self._api_url("auth.garena.com", "/api/universal/oauth", params)
         init: Any = None
         status = 0
-        for attempt in range(3):
+        for attempt in range(1):
             try:
                 status, _, _, init = self.request(init_url)
             except Exception:
                 status, init = 0, None
-            if status == 200 and isinstance(init, dict) and not init.get("error"):
+            if status == 200 and isinstance(init, dict):
                 break
             # Retry immediately; the HTTP request timeout already bounds each attempt.
-        if status != 200 or not isinstance(init, dict) or init.get("error"):
+        if status != 200 or not isinstance(init, dict) or init.get("error") not in (None, "", "error_require_grant", "require_grant"):
             return ({
                 "ok": False,
                 "stage": "oauth_init",
+                "terminal_authorization": True,
                 "status": status,
-                "error": str(init.get("error", "invalid_oauth_init")) if isinstance(init, dict) else "invalid_oauth_init",
+                "error": safe_error(init, "invalid_oauth_init"),
             }, ensure_login)
 
         logged_in = bool((init.get("sso_session") or {}).get("login"))
@@ -743,29 +741,23 @@ class WebSession:
         elif logged_in:
             ensure_login = True
 
-        grant = {k: v for k, v in params.items() if k not in {"platform", "locale", "all_platforms", "prompt"}}
-        grant["format"] = "json"
-        grant["id"] = str(int(time.time() * 1000))
-        status, _, _, body = self.request(
-            "https://auth.garena.com/oauth/token/grant",
-            method="POST",
-            form_body=grant,
-            headers={"Referer": "https://auth.garena.com/universal/"},
-        )
+        status, _, _, body = code_grant(self, params)
         if status != 200 or not isinstance(body, dict) or body.get("error") or not body.get("redirect_uri"):
             return ({
                 "ok": False,
                 "stage": "oauth_grant",
+                "terminal_authorization": True,
                 "status": status,
-                "error": str(body.get("error", "missing_callback")) if isinstance(body, dict) else "invalid_grant_response",
+                "error": safe_error(body, "invalid_grant_response"),
                 "elapsed_ms": round((time.monotonic() - started) * 1000),
             }, ensure_login)
 
         callback_url = str(body["redirect_uri"])
-        if not callback_matches(callback_url, str(params["redirect_uri"])):
+        if not valid_code_callback(callback_url):
             return ({
                 "ok": False,
                 "stage": "callback_validation",
+                "terminal_authorization": True,
                 "status": status,
                 "error": "unexpected_callback_origin",
                 "callback_url": safe_url(callback_url),
@@ -773,7 +765,8 @@ class WebSession:
         callback_status, final_url, content_type, _ = self.request(callback_url)
         callback_values = query_values(callback_url)
         return ({
-            "ok": 200 <= callback_status < 400,
+            "ok": 200 <= callback_status < 300,
+            "terminal_authorization": not 200 <= callback_status < 300,
             "stage": "callback",
             "status": callback_status,
             "final_url": safe_url(final_url),
@@ -1054,7 +1047,7 @@ def legacy_account_sso_probe(sso_key: str, sso_expiry: int, timeout: float) -> d
             }
         logged_in = bool((body.get("sso_session") or {}).get("login"))
         redirect_uri = str(body.get("redirect_uri") or "")
-        accepted = logged_in or bool(redirect_uri)
+        accepted = status == 200 and not body.get("error") and (logged_in or bool(redirect_uri))
         result: dict[str, Any] = {
             "ok": 200 <= status < 300 and accepted,
             "accepted": accepted,
@@ -1062,7 +1055,7 @@ def legacy_account_sso_probe(sso_key: str, sso_expiry: int, timeout: float) -> d
             "content_type": content_type,
             "sso_session_login": logged_in,
             "redirect_received": bool(redirect_uri),
-            "error": str(body.get("error") or "") or None,
+            "error": safe_error(body, "sso_rejected") if body.get("error") else None,
             "credential_used": "tcp_sso_key_cookie",
             "tcp_session_key_sent": False,
             "elapsed_ms": round((time.monotonic() - started) * 1000),
@@ -1074,6 +1067,9 @@ def legacy_account_sso_probe(sso_key: str, sso_expiry: int, timeout: float) -> d
                 redirect_status, final_url, _, _ = session.request(redirect_uri)
                 result["redirect_status"] = redirect_status
                 result["final_url"] = safe_url(final_url)
+                if not 200 <= redirect_status < 300:
+                    result.update(ok=False, accepted=False, terminal_authorization=True,
+                                  error="account_callback_failed")
         if result["accepted"]:
             result["account_init"] = session.api_result(
                 "https://account.garena.com/api/account/init",
@@ -1107,34 +1103,37 @@ def legacy_account_sso_probe(sso_key: str, sso_expiry: int, timeout: float) -> d
                 oauth_result["sso_session_login"] = bool(
                     (oauth_body.get("sso_session") or {}).get("login")
                 )
-                oauth_result["error"] = str(oauth_body.get("error") or "") or None
+                oauth_result["error"] = safe_error(oauth_body, "oauth_rejected") if oauth_body.get("error") else None
                 callback_url = str(oauth_body.get("redirect_uri") or "")
 
-                if oauth_result["sso_session_login"] and not callback_url:
-                    grant = {
-                        "client_id": "100054",
-                        "response_type": "code",
-                        "redirect_uri": oauth_params["redirect_uri"],
-                        "format": "json",
-                        "id": str(int(time.time() * 1000)),
-                    }
-                    grant_status, _, _, grant_body = session.request(
-                        "https://auth.garena.com/oauth/token/grant",
-                        method="POST",
-                        form_body=grant,
-                        headers={"Referer": "https://auth.garena.com/universal/oauth"},
-                    )
+                init_allowed = (oauth_status == 200 and oauth_body.get("error") in
+                                (None, "", "error_require_grant", "require_grant"))
+                if not init_allowed:
+                    callback_url = ""
+                    oauth_result["terminal_authorization"] = True
+                if init_allowed and oauth_result["sso_session_login"] and not callback_url:
+                    oauth_result["grant_attempted"] = True
+                    grant_status, _, _, grant_body = code_grant(session, oauth_params)
                     oauth_result["grant_status"] = grant_status
                     if isinstance(grant_body, dict):
-                        oauth_result["grant_error"] = str(grant_body.get("error") or "") or None
-                        callback_url = str(grant_body.get("redirect_uri") or "")
+                        oauth_result["grant_error"] = safe_error(grant_body, "grant_rejected") if grant_body.get("error") else None
+                        if grant_status == 200 and not grant_body.get("error"):
+                            callback_url = str(grant_body.get("redirect_uri") or "")
+                    if not callback_url:
+                        oauth_result["terminal_authorization"] = True
 
                 if callback_url:
                     oauth_result["callback_received"] = True
-                    if callback_matches(callback_url, oauth_params["redirect_uri"]):
+                    if valid_code_callback(callback_url):
                         callback_status, final_url, _, _ = session.request(callback_url)
                         oauth_result["callback_status"] = callback_status
                         oauth_result["final_url"] = safe_url(final_url)
+                        if not 200 <= callback_status < 300:
+                            oauth_result["terminal_authorization"] = True
+                            oauth_result["error"] = "callback_failed"
+                            result["account_to_kientuong_oauth"] = oauth_result
+                            return result
+                        oauth_result["error"] = None
                         player_api: dict[str, Any] = {}
                         no_character_responses = 0
                         for player_attempt in range(1, KIENTUONG_MAX_ATTEMPTS + 1):
@@ -1143,7 +1142,7 @@ def legacy_account_sso_probe(sso_key: str, sso_expiry: int, timeout: float) -> d
                                 headers={"Referer": "https://kientuong.lienquan.garena.vn/"},
                             )
                             oauth_result["player_attempts"] = player_attempt
-                            if result_rate_limit_suspected(player_api):
+                            if terminal_authorization(player_api) or result_rate_limit_suspected(player_api):
                                 break
                             if kientuong_no_character_response(player_api):
                                 no_character_responses += 1
@@ -1156,7 +1155,10 @@ def legacy_account_sso_probe(sso_key: str, sso_expiry: int, timeout: float) -> d
                         oauth_result["player_api"] = player_api
                         oauth_result["no_character_responses"] = no_character_responses
                         oauth_result["ok"] = bool(oauth_result["player_api"].get("ok"))
+                        if not kientuong_player_has_level(player_api):
+                            oauth_result["terminal_authorization"] = True
                     else:
+                        oauth_result["terminal_authorization"] = True
                         oauth_result["error"] = "unexpected_callback_origin"
             else:
                 oauth_result["error"] = "invalid_oauth_response"
@@ -1168,7 +1170,8 @@ def legacy_account_sso_probe(sso_key: str, sso_expiry: int, timeout: float) -> d
             "ok": False,
             "accepted": False,
             "status": 0,
-            "error": (str(exc).strip() or type(exc).__name__)[:500],
+            "terminal_authorization": True,
+            "error": "sso_bridge_transport_failed",
             "credential_used": "tcp_sso_key_cookie",
             "tcp_session_key_sent": False,
             "elapsed_ms": round((time.monotonic() - started) * 1000),
@@ -1398,7 +1401,7 @@ def run_api_tests(tcp_module: Any, account: str, password: str, timeout: float,
             results["elapsed_ms"] = round((time.monotonic() - started) * 1000)
             return results
 
-    if kientuong_requires_grant(results):
+    if kientuong_requires_grant(results) or terminal_authorization(results):
         password = ""
         results["elapsed_ms"] = round((time.monotonic() - started) * 1000)
         return results
@@ -1464,6 +1467,8 @@ def run_api_tests(tcp_module: Any, account: str, password: str, timeout: float,
                 kientuong_auth, web_player = _do_kientuong()
                 if kientuong_requires_grant({"kientuong": kientuong_auth, "kientuong_player": web_player}):
                     break
+                if not kientuong_auth.get("ok") or terminal_authorization({"kientuong": kientuong_auth, "kientuong_player": web_player}):
+                    break
                 if result_rate_limit_suspected(
                     {"auth": kientuong_auth, "player": web_player}
                 ):
@@ -1478,9 +1483,11 @@ def run_api_tests(tcp_module: Any, account: str, password: str, timeout: float,
                 kientuong_auth = {
                     "ok": False,
                     "stage": "kientuong_oauth",
-                    "error": error,
+                    "error": "kientuong_transport_failed",
+                    "terminal_authorization": True,
                 }
-                web_player = {"ok": False, "error": error}
+                web_player = {"ok": False, "error": "kientuong_transport_failed"}
+                break
 
         kientuong_auth["attempts"] = kientuong_attempts
         kientuong_auth["max_retries"] = KIENTUONG_MAX_RETRIES
@@ -1492,6 +1499,8 @@ def run_api_tests(tcp_module: Any, account: str, password: str, timeout: float,
         kientuong_auth["no_character_confirmed"] = bool(
             no_character_responses >= 2
         )
+        if not kientuong_player_has_level(web_player):
+            kientuong_auth["terminal_authorization"] = True
         results["web_auth"]["kientuong"] = kientuong_auth
         results["apis"]["kientuong_player"] = web_player
 
@@ -1596,7 +1605,7 @@ def format_user_output(result: dict[str, Any]) -> str:
         ("Số điện thoại", user_info.get("mobile_no"), "chưa liên kết"),
         ("Xác thực 2 bước", yes_no(user_info.get("two_step_verify_enable")), "Không"),
         ("Authenticator", yes_no(user_info.get("authenticator_enable")), "Không"),
-        ("Session Key SSO", session_key_display, "không lấy được"),
+        ("Session Key SSO", "<redacted>" if session_key_display else "", "không lấy được"),
     ]
 
     if latest_game_login:
@@ -1652,7 +1661,7 @@ def format_user_output(result: dict[str, Any]) -> str:
                     "không rõ",
                 )
             )
-    elif kientuong_checked:
+    elif (web_auth.get("kientuong") or {}).get("no_character_confirmed"):
         fields.append(("Kiện Tướng", "Chưa tạo nhân vật", "Chưa tạo nhân vật"))
     else:
         kientuong_auth = web_auth.get("kientuong") or {}
@@ -1753,7 +1762,7 @@ def batch_rate_limit_suspected(result: Any) -> bool:
 
 
 def kientuong_requires_grant(result: Any) -> bool:
-    """Recognize the OAuth response classified as CTNV by checkpass."""
+    """Recognize unresolved authorization, never evidence of a missing role."""
     if not isinstance(result, dict):
         return False
     if any(str(result.get(key) or "").strip() == "error_require_grant"
@@ -1771,8 +1780,6 @@ def batch_required_missing(result: Any) -> list[str]:
 
     if not isinstance(result, dict):
         return [REQUIRED_KIENTUONG_LABEL]
-    if kientuong_requires_grant(result):
-        return []
     apis = result.get("apis") or {}
     probe = result.get("tcp_to_web_probe") or {}
     web_auth = result.get("web_auth") or {}
@@ -1788,9 +1795,7 @@ def batch_required_missing(result: Any) -> list[str]:
     # Co level => du
     if kientuong_player_has_level(kientuong_api) or kientuong_player_has_level(probe_player):
         return []
-    # Ok (du 200) => du, se xu ly Ctnv o succeeded
-    if kientuong_api.get("ok") or probe_player.get("ok"):
-        return []
+    # HTTP 200 alone is not evidence of a level or a missing character.
     # Ctnv da xac nhan => du
     k_auth = web_auth.get("kientuong") or {}
     if k_auth.get("no_character_confirmed"):
@@ -1904,10 +1909,9 @@ def batch_check_one(
             result = current_result
             attempt_error = ""
             missing = batch_required_missing(current_result)
-            # A definitive OAuth grant error is final even if another API in
-            # the same attempt was throttled. Never retry or overwrite it.
-            if kientuong_requires_grant(current_result):
-                rate_limit_suspected = False
+            # Do not rotate account sessions after authorization denial.
+            if kientuong_requires_grant(current_result) or terminal_authorization(current_result):
+                rate_limit_suspected = batch_rate_limit_suspected(current_result)
                 break
             rate_limit_suspected = batch_rate_limit_suspected(current_result)
             attempt_tcp = current_result.get("tcp") or {}
@@ -2091,7 +2095,7 @@ def batch_check_one(
         no_character_confirmed = bool(kientuong_auth.get("no_character_confirmed")) and not grant_required
         if grant_required:
             row["result_type"] = "Lỗi CTNV"
-            row["player_status"] = "Lỗi CTNV (error_require_grant)"
+            row["player_status"] = "Lỗi CTNV"
         if no_character_confirmed and not player:
             row["player_status"] = "Chưa tạo nhân vật"
         if not row["level"] and no_character_confirmed:
@@ -2115,9 +2119,11 @@ def batch_check_one(
         # may become FAIL; all other uncertain failures remain retryable.
         tcp_ok = bool(tcp_info.get("ok"))
         row["status"] = "OK" if tcp_ok else "CHƯA THỂ CHECK"
-        if grant_required:
-            row["status"] = "OK"
-            row["result_type"] = "Lỗi CTNV"
+        if grant_required or terminal_authorization(result):
+            row["status"] = "CHƯA THỂ CHECK"
+            row["result_type"] = "Chưa thể check"
+            row["player_status"] = "Chưa thể check (phiên/quyền bị từ chối)"
+            row["level"] = ""
         elif rate_limit_suspected:
             errors.insert(0, "nghi rate limit - chưa thể kết luận đăng nhập")
             row["status"] = "CHƯA THỂ CHECK"
@@ -2157,7 +2163,7 @@ def batch_check_one(
                     + ", ".join(reportable_missing)
                     + f" (sau {attempt_count} lần thử)"
                 )
-            if reportable_missing and (not tcp_info.get("ok") or retry_stopped):
+            if reportable_missing:
                 row["status"] = "CHƯA THỂ CHECK"
                 row["result_type"] = "Chưa thể check"
         elif retry_stopped and row["status"] == "OK":
@@ -2167,6 +2173,16 @@ def batch_check_one(
         row["error"] = "; ".join(
             dict.fromkeys(e for e in errors if e and e != "None")
         )[:300]
+        # Operator's export convention: an authenticated account whose new
+        # Kiện Tướng session is inconclusive remains OK / Lỗi CTNV. This is
+        # NOT evidence of a missing role; never invent a level or Ctnv value.
+        if not login_rejected and (tcp_ok or grant_required) and not (
+            kientuong_player_has_level(player_source) or no_character_confirmed
+        ):
+            row["status"] = "OK"
+            row["result_type"] = "Lỗi CTNV"
+            row["player_status"] = "Lỗi CTNV"
+            row["level"] = ""
     row["elapsed_ms"] = str(round((time.monotonic() - started) * 1000))
     diagnostic_tcp = (result or {}).get("tcp") or {}
     row.update(check_attempts=str(attempt_count), tcp_login_ok="1" if diagnostic_tcp.get("ok") else "0",
