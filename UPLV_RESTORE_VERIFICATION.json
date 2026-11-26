@@ -1,0 +1,71 @@
+{
+  "version": "uplv-satellite-0.6.4-v208-experimental",
+  "scope": "D:/checkpass1 only; local source changes",
+  "publication_status_note": "committed/pushed/deployed below describe the pre-publication verification snapshot, not current Git or deployment state",
+  "default_mode": "uplv",
+  "capacity_rooms": 5,
+  "backup": "D:\\checkpass1\\backups\\before_restore_uplv_20261126_101558\\source.zip",
+  "backup_verified_files": 94,
+  "runtime_manifest_verified_files": 90,
+  "vendor_bytecode_unchanged": 38,
+  "v208_backend_files_exact_match": 28,
+  "service_adaptations": [
+    "pve_backend/purepc/purepc_run.py"
+  ],
+  "adaptation_reason": "Read-only mode uses only validated 1003/1015 evidence; checks 1003 denial before decoding",
+  "selected_tests": {
+    "passed": 67
+  },
+  "full_discovery": {
+    "tests": 102,
+    "failures": 6,
+    "errors": 1,
+    "same_failures_reproduced_on_prechange_baseline": true,
+    "failing_names": [
+      "test_master_export_writes_real_dates",
+      "test_grant_error_is_final_without_retry",
+      "test_grant_error_is_final_without_retry",
+      "test_grant_error_is_final_without_retry",
+      "test_grant_error_is_final_without_retry",
+      "test_grant_error_is_final_without_retry",
+      "test_grant_error_is_final_without_retry"
+    ]
+  },
+  "repeat_restore_publication": {
+    "runs": 5,
+    "all_passed": true
+  },
+  "runtime_smoke": {
+    "ok": true,
+    "version": "uplv-satellite-0.6.4-v208-experimental",
+    "qt_loaded": false,
+    "metrics": {
+      "rss_mb": 42.64,
+      "cpu_percent": 68.63,
+      "threads": 1,
+      "uptime_seconds": 1,
+      "capacity": 5
+    },
+    "network_used": false,
+    "resource_candidate": "0x0300008E",
+    "server_login_verified": false
+  },
+  "live_accounts_tested": 0,
+  "server_login_verified": false,
+  "resource_candidate": "0x0300008E",
+  "candidate_mapping": "inferred, not server validated",
+  "committed": false,
+  "pushed": false,
+  "deployed": false,
+  "docker_build_tested": false,
+  "docker_cli_available": false,
+  "preexisting_changes_preserved": [
+    "buff_like/buff_worker.py",
+    "garena_api_test_chrome1.py"
+  ],
+  "limitations": [
+    "Render environment may override WORKER_MODE; change to uplv before authorized redeploy",
+    "Drain active leases before deployment",
+    "No proof of 91121 fix, live 5-room reliability, or Render relay connectivity"
+  ]
+}

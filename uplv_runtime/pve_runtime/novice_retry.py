@@ -29,6 +29,12 @@ def prepare_with_retry(execute, account, password, target, stop, progress,
         if ok and after >= target:
             return True, first_before or before, after, ''
         lower = error.lower()
+        # V2 already has an in-session limit of three sends. Do not reset it
+        # by reconnecting on server rejection or missing creation evidence.
+        if any(marker in lower for marker in ('terminal_', 'server_error_csid_', 'v2_create_',
+                'role_level_not_received_after_create', 'v2 direct-token')):
+            progress('[V2] Dừng tại lỗi server/auth hoặc chưa xác nhận role; không tự lặp lượt tạo mới')
+            break
         if any(code in lower for code in ('_code_91103', '_code_91123')):
             character_name = new_character_name()
             progress(f'[RETRY_NAME] Server từ chối tên ({error}); thử tên ngắn {character_name} sau khi đăng nhập lại')

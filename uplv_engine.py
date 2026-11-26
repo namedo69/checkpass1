@@ -1,5 +1,6 @@
 """Lazy-loaded Qt-free adapter for the production PvE runtime bundle."""
 import json
+import hashlib
 import os
 from pathlib import Path
 import sys
@@ -15,6 +16,11 @@ def load_runtime():
         raise RuntimeError('UpLv runtime requires CPython 3.14')
     if not (root / 'pve_runtime' / 'vendor' / 'manifest.json').is_file():
         raise RuntimeError('Missing UpLv runtime; run package_uplv_runtime.py first')
+    manifest = json.loads((root/'bundle_manifest.json').read_text(encoding='utf8'))
+    for name, expected in manifest.items():
+        path = (root/name).resolve()
+        if not path.is_relative_to(root) or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+            raise RuntimeError('UpLv runtime integrity mismatch: ' + name)
     sys.path.insert(0, str(root))
     sys.path.insert(0, str(root / 'pve_backend'))
     from pve_runtime.loader import load
@@ -24,6 +30,14 @@ def load_runtime():
     from aov_device_identity import get_device_for_account
     from pve_runtime.novice_retry import prepare_with_retry
     from pve_runtime.checkpoints import RewardCheckpoints
+    from purepc.login_v2 import login_body
+    import base64
+    protocol = json.loads((root/'pve_runtime/vendor/protocol_config.json').read_bytes())
+    versions = bytes.fromhex('030000870300008e')
+    if (login_body('a'*32, 'b'*32, 123)[:8] != versions
+            or base64.b64decode(protocol['login_body'])[:8] != versions
+            or base64.b64decode(protocol['reconnect_body'])[4:12] != versions):
+        raise RuntimeError('UpLv V2 resource candidate mismatch')
     # Load and hash-check all modules used by the match before claiming work.
     for name in ('lever_session', 'five_runtime'):
         load(name)
@@ -45,6 +59,8 @@ class Engine:
             return self._run_once(room, stop, progress, completed, replacement)
         published = set()
         def publish(index, row):
+            from pve_runtime.failure_policy import terminal_result
+            row = terminal_result(row)
             # Pending is progress, not a finished result. Publish only terminal
             # outcomes early; the final return carries regroup/stop outcomes.
             if row[0] or str(row[3]).startswith('terminal_'):
@@ -53,6 +69,8 @@ class Engine:
                     if completed:
                         completed(index, row)
         results = self._run_once(room, stop, progress, publish, replacement)
+        from pve_runtime.failure_policy import terminal_result
+        results = {i: terminal_result(row) for i, row in results.items()}
         attempts = {}
         recovery_started = time.monotonic()
         max_recovery_attempts = 3
@@ -79,14 +97,14 @@ class Engine:
                 if stop.wait(delay):
                     break
                 check = {'accounts': [room['accounts'][index]],
-                         'levels': [results[index][2]],
-                         'targets': [room.get('targets', [room.get('target', 12)] * len(room['accounts']))[index]],
+                          'levels': [results[index][2]],
+                          'targets': [room.get('targets', [room.get('target', 12)] * len(room['accounts']))[index]],
                          'verify_only': True}
                 recovered = self._run_once(check, stop,
                     lambda _, message, i=index: progress(i, message),
                     lambda _, row, i=index: publish(i, row))
                 if 0 in recovered:
-                    results[index] = recovered[0]
+                    results[index] = terminal_result(recovered[0])
                     publish(index, recovered[0])
             if stop.is_set():
                 break
@@ -101,6 +119,7 @@ class Engine:
                 room.setdefault('levels', [0] * len(room['accounts']))[i] = row[2]
             progress(0, '[STACK3] Đối soát xong cả đội; worker tiếp tục up trong cùng lượt phòng')
             results = self._run_once(room, stop, progress, publish, replacement)
+            results = {i: terminal_result(row) for i, row in results.items()}
         for index, row in results.items():
             publish(index, row)
         return results
@@ -115,27 +134,26 @@ class Engine:
                 cached = bundles.get(user.casefold())
             if cached is not None:
                 return cached
-            for attempt in range(3):
-                with self.login_lock:
-                    delay = max(0, self.last_login + 0.6 - time.monotonic())
-                    if stop.wait(delay):
-                        raise RuntimeError('Stopped')
-                    self.last_login = time.monotonic()
-                try:
-                    # UpLv now reads levels in-game; requesting web SSO here
-                    # adds a failure point (0x1BA) unrelated to game login.
-                    bundle = login(user, password, device(user)['device_id'], timeout=20, with_sso_key=False)
-                    break
-                except Exception as exc:
-                    # Code 3 is an unclassified request rejection, not proof
-                    # of an invalid password. Keep retries bounded and spaced.
-                    code = getattr(exc, 'code', None)
-                    transient = code == 3 or any(word in str(exc).lower() for word in
-                        ('mã 3', 'timeout', 'timed out', 'connection', '429'))
-                    if not transient or attempt == 2:
-                        raise
-                    if stop.wait(3 * (attempt + 1)):
-                        raise RuntimeError('Stopped')
+            with self.login_lock:
+                delay = max(0, self.last_login + 0.6 - time.monotonic())
+                if stop.wait(delay):
+                    raise RuntimeError('Stopped')
+                self.last_login = time.monotonic()
+            try:
+                # V2 handles conditional OAuth 141 TCP/SSO/HTTP grant on this
+                # single credential session. Never restart login on 3/429/deny.
+                bundle = login(user, password, device(user)['device_id'], timeout=20,
+                               with_sso_key=False)
+            except Exception as exc:
+                code = getattr(exc, 'code', None)
+                status = getattr(exc, 'http_status', None)
+                details = type(exc).__name__
+                if type(code) is int:
+                    details += f' code={code}'
+                if type(status) is int:
+                    details += f' HTTP={status}'
+                raise RuntimeError('terminal_login: Auth V2 thất bại; đã dừng ('
+                                   + details + ')') from None
             with bundle_lock:
                 bundles[user.casefold()] = bundle
             return bundle
@@ -144,7 +162,10 @@ class Engine:
             # Read actual CS profile; skip the optional web-profile request.
             if stop.is_set():
                 return False, 0, 0, 'Đã dừng'
-            bundle = authenticate(user, password)
+            try:
+                bundle = authenticate(user, password)
+            except Exception as exc:
+                return False, 0, 0, str(exc)
             with tempfile.TemporaryDirectory(prefix='uplv-') as temp:
                 token = Path(temp) / 'token.json'
                 token.write_text(json.dumps({'authToken': bundle.access_token, 'openId': bundle.open_id}), encoding='utf-8')
@@ -155,7 +176,7 @@ class Engine:
                         progress_cb(f'[LEVEL] Lv{level.group(1)}')
                 row = run_cs(token, user, role_cs='resolve', create=True,
                              replay_1v1='1v1_setwin_seq.json', log=log,
-                             target=target_level, max_rounds=8,
+                              target=target_level, max_rounds=8, stop_event=stop,
                              **({'character_name': character_name} if character_name else {}))
             before = row.get('level_before') or 0
             after = row.get('level_after') or before
@@ -167,7 +188,14 @@ class Engine:
                     level = room['levels'][index]
                     progress(index, f'[LEVEL] Lv{level}')
                     return True, level, level, ''
-                row = retry(execute, user, password, 5, stop, lambda message: progress(index, message))
+                # Creation has its own bounded in-session V2 state machine.
+                # Do not reset its send budget by invoking novice retries.
+                row = execute(user, password, target_level=min(room.get('target', 5), 5),
+                              progress_cb=lambda message: progress(index, message))
+                from pve_runtime.failure_policy import terminal_result
+                row = terminal_result(row)
+                if row[3].startswith('terminal_'):
+                    return row
                 if not row[0] and not stop.is_set():
                     text = row[3].lower()
                     login_failed = any(word in text for word in ('sai mật khẩu', '50004', 'bị khóa', 'banned'))
@@ -200,34 +228,15 @@ class Engine:
                 try:
                     progress(index, '[VERIFYING] Đối soát cấp/trạng thái cũ; không mở trận')
                     bundle = authenticate(*room['accounts'][index])
-                    # Initial web screening belongs to CheckPass. Recovery and
-                    # post-match verification use the authenticated game profile.
-                    verified = None
-                    if verified is not None:
-                        level = verified
-                        progress(index, f'[LEVEL] Lv{level}')
-                    if room.get('screen_only') and verified is not None and level < 5:
-                        row = (False, room['levels'][index], level, 'screen_ready')
-                    elif verified is not None and level >= target:
-                        row = (True, room['levels'][index], level, '')
-                    else:
-                        session = load('lever_session').LeverSession(stop)
-                        session.authenticate_garena_session(bundle.access_token, bundle.open_id)
-                        with session_deadline(session, 35, 'Đối soát phiên cũ'):
-                            session.connect()
-                            idle = idle_on_current_session(session, stop)
-                        # Readback on a fresh authenticated game session is also
-                        # valid level evidence; silence never means idle.
-                        actual = getattr(session, 'level', None)
-                        if type(actual) is int and 1 <= actual <= 30:
-                            level = actual
-                            progress(index, f'[LEVEL] Lv{level}')
-                            row = (level >= target, room['levels'][index], level,
-                                   '' if level >= target else 'screen_ready' if idle and room.get('screen_only') else 'pool_ready' if idle else 'pool_verifying')
+                    from uplv_profile_v2 import read_profile
+                    level, idle = read_profile(run_cs, bundle, room['accounts'][index][0], stop)
+                    progress(index, f'[LEVEL] Lv{level}')
+                    row = (level >= target, room['levels'][index], level,
+                           '' if level >= target else 'screen_ready' if idle and room.get('screen_only') else 'pool_ready' if idle else 'pool_verifying')
                     progress(index, '[POOL_READY] Đã xác nhận rảnh; chờ ghép cùng cấp' if row[3] == 'pool_ready'
                              else '[STACK4_DONE] Đã đạt mục tiêu' if row[0] else '[VERIFYING] Chưa xác nhận rảnh; retry có giới hạn')
                 except Exception as exc:
-                    from pve_runtime.failure_policy import restricted_account
+                    from pve_runtime.failure_policy import restricted_account, stop_on_denial
                     diagnostic = str(exc) or type(exc).__name__
                     for account in room['accounts']:
                         for secret in account:
@@ -236,13 +245,13 @@ class Engine:
                     create_rejected = 'tạo nhân vật bị từ chối' in str(exc).casefold()
                     if create_rejected:
                         row = (False, room['levels'][index], level, 'terminal_create_character: ' + diagnostic)
-                    elif restricted_account(exc):
+                    elif stop_on_denial(exc):
                         row = (False, room['levels'][index], level, 'terminal_restricted: ' + diagnostic)
                     elif room.get('screen_only'):
                         row = (False, room['levels'][index], level, 'screen_wait')
                     progress(index, '[ERROR] Tài khoản bị hạn chế: ' + diagnostic if restricted_account(exc)
                              else '[VERIFYING] Đối soát chưa xong: ' + type(exc).__name__ + ': ' + diagnostic)
-                    if not create_rejected and not restricted_account(exc) and not stop.is_set():
+                    if not create_rejected and not stop_on_denial(exc) and not stop.is_set():
                         try:
                             from uplv_kientuong import PlayerSession
                             progress(index, '[VERIFYING] Không đọc được game; kiểm tra cấp Kiện Tướng dự phòng')

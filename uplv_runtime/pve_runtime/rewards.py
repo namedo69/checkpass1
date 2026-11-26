@@ -51,10 +51,11 @@ def prepare(session):
         if response is None or rewards.response_result(response) != 0:
             raise RuntimeError("Server chưa xác nhận nhận quà tân thủ")
     helper.request(1108, b"\x00", 1109, timeout=5)
-    day_ids = set(helper.data["exp_day_inventory_ids"])
-    day_cards = [r for r in state.inventory.values() if r["item_id"] in day_ids and r["count"] > 0]
-    if not state.inventory_known or (not day_cards and state.exp_active() is not True):
-        raise RuntimeError("Chưa thấy thẻ EXP ngày hoặc buff tương ứng sau nhận quà")
+    if not state.inventory_known:
+        raise RuntimeError("Chưa đọc được túi đồ sau nhận quà; không mua thẻ khi chưa rõ trạng thái")
+    # Absence of a card is not a failure: prepare_exp owns the existing
+    # purchase/use policy. Previously this guard made its purchase branch
+    # unreachable for accounts whose starter reward did not contain a card.
     if type(state.ruby) is not int:
         raise RuntimeError("Chưa đọc được ruby; không mua thẻ")
     helper.prepare_exp()
@@ -63,7 +64,6 @@ def prepare(session):
     return {"ruby": state.ruby, "inventory": list(state.inventory.values()),
             "multipliers": state.multipliers, "day_active": state.exp_active(),
             "wins_active": state.win_exp_active()}
-
 
 def prepare_optional(session, notify=lambda message: None):
     """Try every EXP preparation stage independently; card failure is optional."""
@@ -75,8 +75,11 @@ def prepare_optional(session, notify=lambda message: None):
         session.check_stop()
         try:
             return action()
-        except Exception:
+        except Exception as exc:
             session.check_stop()
+            from .failure_policy import stop_on_denial
+            if stop_on_denial(exc):
+                raise
             warnings.append(label)
             notify(f'[EXP_OPTIONAL] {label} chưa thành công; tiếp tục bước kế tiếp')
 

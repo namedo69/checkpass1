@@ -1,5 +1,55 @@
 # Deploy vệ tinh UpLv lên Render — 0.5.1
 
+## Khôi phục UpLv — 26/11/2026 (0.6.4-v208-experimental)
+
+- Phạm vi lần này: **chỉ `D:\checkpass1`**. Báo cáo kiểm chứng được ghi trước
+  commit/push; trạng thái triển khai không được suy ra từ báo cáo đó. Không
+  thay `buff_like/` hoặc các chỉnh sửa checker có sẵn. Các mục bên dưới là
+  lịch sử; cấu hình thực tế hiện là **5 phòng/vệ tinh**,5 acc/phòng.
+- Docker, Blueprint `render_uplv.yaml` và entry Python mặc định `WORKER_MODE=uplv`.
+  Render dashboard nếu còn override `WORKER_MODE=buff-like` phải đổi sang `uplv`;
+  cập nhật local không thay môi trường đã deploy. Giữ nguyên master URL, ID,
+  state và token; source không chứa token, phải dùng env/secret.
+- Backend đăng nhập đồng bộ từ V2 **2.0.8-experimental**: live identities,
+  OAuth TCP100054/100055 có điều kiện; khi cả hai yêu cầu grant141 mới lấy
+  SSO và gửi HTTP token grant trên cùng phiên. Không có credential-login lần
+  hai. Nếu vẫn từ chối/429/HTTP403 hoặc lỗi server thì dừng, không đổi version,
+  token hay lặp login để vượt chặn. Tạo role tối đa3 lần gửi trong phiên theo
+  state machine V2, không reset bằng novice retry.
+- Tài nguyên điện thoại `1.64.1.14`; mã packed `0x0300008E` là ứng viên suy
+  luận giống V2, **chưa wire/server xác nhận**, chưa tuyên bố hết91121.
+- Nhánh đọc profile dùng V2 `create=False, verify_only=True`: không gọi
+  vendor connector có auto-create, không grant/chạy trận. Không đọc được cấp
+  không phải Lv0 hay không có nhân vật; không xác nhận rảnh từ im lặng.
+- Giữ lease/heartbeat, targets riêng từng acc, thay slot có generation,
+  kiểm tra UID/kết toán và chặn ghép trận cũ chưa rõ. Thêm deadline connect
+  35s, log RECOVERY/SETTLEMENT và writer kết quả riêng trong scheduler rooms.
+  Không chép đè service bằng GUI/Qt. Runtime smoke bắt buộc `qt_loaded=false`.
+- Giữ web fallback đối soát cho lỗi vận chuyển, nhưng **không fallback sau
+  server/auth từ chối**. Điều này không đảm bảo Kiện Tướng hết HTTP403.
+- Drain hết phòng và đối soát lease cũ trước redeploy; không chạy hàng loạt
+  trước một lượt kiểm chứng tài khoản được ủy quyền. Chưa thử tài khoản thật,
+  chưa nghiệm thu Render/relay hoặc độ ổn định5 phòng live.
+- Backup: `backups/before_restore_uplv_20261126_101558/source.zip`,94 file
+  đã kiểm SHA256. Kết quả offline: `UPLV_RESTORE_VERIFICATION.json`.
+- `.gitattributes` giữ nguyên byte trong `uplv_runtime/`, không chuyển đổi
+  LF/CRLF khi commit/checkout vì bundle kiểm SHA256 trước khi khởi động.
+- Kiểm chứng:67 tests chọn lọc đạt; bộ restore/writer lặp5 lượt đều đạt.
+  Full discovery102 tests còn6 failures (subtests nhãn CTNV cũ) và1 error
+  (thiếu `job_excel_export`); tái hiện đúng trên baseline trước sửa. Runtime
+  smoke không dùng mạng, không Qt;90 file bundle kiểm hash,38 vendor bytecode
+  giữ nguyên. Chưa build Docker vì máy không có Docker CLI, chưa deploy thật.
+
+Kiểm tra offline (CPython3.14):
+
+```sh
+python -B -m unittest test_uplv_restore test_uplv_oauth_v2 test_uplv_publication test_uplv_web test_uplv_health test_kientuong_grant -v
+python -B uplv_satellite.py --check-runtime
+```
+
+Lệnh thứ hai mặc định tạo thư mục state theo `UPLV_STATE_DIR`; khi test local
+hãy đặt một thư mục tạm riêng. `--check-runtime` không nhận job hay đăng nhập.
+
 ## Source 0.6.0 — 4 phòng/vệ tinh
 
 `MAX_ROOMS = 4`; master chặn tối đa 4 lease mỗi vệ tinh. Giới hạn ô phòng

@@ -79,7 +79,7 @@ class WebTests(unittest.TestCase):
                                   connect=Mock(side_effect=TimeoutError()), close=Mock())
         web = Mock()
         web.read.return_value = 12
-        with patch('pve_runtime.loader.load', return_value=SimpleNamespace(LeverSession=lambda *a:session)), \
+        with patch('uplv_profile_v2.read_profile', side_effect=TimeoutError()), \
              patch('uplv_kientuong.PlayerSession', return_value=web):
             result = engine.run({'accounts':[['u','unused']], 'levels':[8], 'targets':[12], 'verify_only':True},
                                 threading.Event(), lambda *a:None, lambda *a:None)
@@ -123,7 +123,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(len(plays), 10)
         self.assertTrue(all(row[0] and row[2] == 7 for row in rows.values()))
 
-    def test_code_three_retries_existing_lv5_login(self):
+    def test_code_three_stops_existing_lv5_login_without_reauth(self):
         from uplv_engine import Engine
         engine = Engine.__new__(Engine)
         engine.login_lock = threading.Lock()
@@ -140,8 +140,9 @@ class WebTests(unittest.TestCase):
              patch('pve_runtime.web_finish.idle_on_current_session', return_value=True):
             rows = engine.run({'accounts': [['u', 'p']], 'levels': [8], 'targets': [12], 'screen_only': True},
                               stop, lambda *a: None, lambda *a: None)
-        self.assertEqual(login.call_count, 3)
-        self.assertTrue(rows[0][0])
+        self.assertEqual(login.call_count, 1)
+        self.assertFalse(rows[0][0])
+        self.assertTrue(rows[0][3].startswith('terminal_'))
 
     def test_preflight_routes_existing_and_missing_characters_without_tutorial(self):
         from uplv_engine import Engine
@@ -158,7 +159,7 @@ class WebTests(unittest.TestCase):
                 session = SimpleNamespace(level=level, check_stop=lambda: None,
                     authenticate_garena_session=lambda *a: None, connect=lambda: None, close=Mock())
                 with patch('uplv_kientuong.PlayerSession', return_value=web), \
-                     patch('pve_runtime.loader.load', return_value=SimpleNamespace(LeverSession=lambda *a: session)), \
+                     patch('uplv_profile_v2.read_profile', return_value=(level, True)), \
                      patch('pve_runtime.web_finish.idle_on_current_session', return_value=True):
                     rows = engine.run({'accounts': [['u', 'p']], 'levels': [0], 'targets': [12],
                         'screen_only': True}, threading.Event(), lambda *a: None, lambda *a: None)

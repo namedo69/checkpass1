@@ -3,7 +3,10 @@ from __future__ import annotations
 import hashlib,json,os,random,time,uuid
 from pathlib import Path
 _BRANDS=[("POCO","Xiaomi","M2102J20SG","sky",12,31),("realme","realme","RMX3363","RMX3363",12,31),("OPPO","OPPO","CPH2371","OP535F",12,31),("motorola","motorola","moto g(60)","hanoip",12,31)]
-def _cache_dir(cache_dir=None): return Path(cache_dir or os.environ.get("AOV_DEVICE_CACHE",Path(__file__).resolve().parent/"_data"/"device_cache"))
+def _cache_dir(cache_dir=None):
+    import sys
+    root = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parents[1]
+    return Path(cache_dir or os.environ.get('AOV_DEVICE_CACHE', root/'ket_qua_uplv_v2'/'device_cache'))
 def _key(account): return hashlib.sha256(str(account).strip().casefold().encode()).hexdigest()[:24]
 def _hex(r,n): return "".join(f"{r.randrange(256):02x}" for _ in range(n))
 def random_device(seed=None):

@@ -1,0 +1,2 @@
+# The runtime manifest hashes exact bytes; disable line-ending conversion.
+uplv_runtime/** -text

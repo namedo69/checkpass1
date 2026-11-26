@@ -21,16 +21,17 @@ def run_rooms(accounts, target, rooms, concurrency, stop, prepare, authenticate,
     slots = deque(range(1, max(1, min(int(rooms), 100)) + 1))
     preparations = {}
     battles = {}
+    publications = []
 
     def publish(index, row):
-        # Invoked by battle threads as well as scheduler.
+        # Keep durable checkpoint/report callbacks off battle threads.
         with publication_lock:
             if index in terminal:
                 return
+            if completed:
+                publications.append(result_pool.submit(completed, index, row))
             terminal.add(index)
             results[index] = row
-            if completed:
-                completed(index, row)
 
     import threading
     publication_lock = threading.RLock()
@@ -52,15 +53,15 @@ def run_rooms(accounts, target, rooms, concurrency, stop, prepare, authenticate,
             return {k: (False, cached[i][1], cached[i][2], UNRESOLVED + ': ' + str(exc))
                     for k, i in enumerate(indexes)}
 
-    with ThreadPoolExecutor(max_workers=max(1, concurrency)) as prep_pool, \
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix='uplv-results') as result_pool, \
+            ThreadPoolExecutor(max_workers=max(1, concurrency)) as prep_pool, \
             ThreadPoolExecutor(max_workers=len(slots)) as battle_pool:
         while True:
             if not stop.is_set():
                 # Bound preparation ahead of available battle capacity.
                 capacity = len(slots) * 5
                 while (waiting and len(preparations) < max(1, concurrency)
-                       and sum(i not in idle_check for i in ready) + len(preparations) < capacity
-                       and (len(ready) + len(preparations) > 0 or len(waiting) >= 5)):
+                       and sum(i not in idle_check for i in ready) + len(preparations) < capacity):
                     index = waiting.popleft()
                     progress(index, '[STACK1] Chuẩn bị vào pool chung')
                     preparations[prep_pool.submit(prepare, index, *accounts[index])] = index
@@ -134,4 +135,6 @@ def run_rooms(accounts, target, rooms, concurrency, stop, prepare, authenticate,
             progress(index, '[DEFERRED] Pool còn thiếu người hoặc đã dừng; lưu Chưa xong')
         for index in checking:
             progress(index, '[DEFERRED] Phiên cũ chưa rõ; chưa đủ đội kiểm tra tiếp, lưu Chưa xong')
+    for future in publications:
+        future.result()
     return results

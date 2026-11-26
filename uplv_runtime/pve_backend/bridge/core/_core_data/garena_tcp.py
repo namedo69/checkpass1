@@ -2,16 +2,18 @@ from __future__ import annotations
 
 import hashlib
 import os
-import random
 import socket
 import struct
+import threading
 import time
 from dataclasses import dataclass, field
 
 
 GARENA_HOST = "mconnect.gxx.garenanow.com"
 GARENA_PORT = 19000
-GARENA_IPV4_FALLBACKS = tuple(f"103.247.205.{last}" for last in (14, 15, 16, 17, 18, 19, 20, 22))
+GARENA_IPV4_FALLBACKS = tuple(f"103.247.205.{last}" for last in range(14, 24))
+_REQUEST_SEQUENCE = 0
+_REQUEST_SEQUENCE_LOCK = threading.Lock()
 CLIENT_VERSION = 283
 CLIENT_PLATFORM_ANDROID = 0x11
 CLIENT_ANDROID_GOOGLE_PLAY = 0x1100
@@ -26,7 +28,33 @@ REDIRECT_URI = "gop100054://auth/"
 
 
 class GarenaError(RuntimeError):
-    pass
+    def __init__(self, message, *, code=None, stage=None, app_id=None, reason=None, http_status=None):
+        super().__init__(message)
+        self.code = code
+        self.stage = stage
+        self.app_id = app_id
+        self.reason = reason
+        self.http_status = http_status
+
+
+def _account_type(account: str) -> int:
+    # TLT garenaAccountType 0x1402be740: contains @, then ParseInt(base10,64).
+    if '@' in account:
+        return 2
+    digits = account[1:] if account[:1] in ('+', '-') else account
+    if digits and all('0' <= c <= '9' for c in digits):
+        value = int(account)
+        if -(1 << 63) <= value < (1 << 63):
+            return 3
+    return 1
+
+
+def _device_bytes(account: str) -> bytes:
+    # NewLeverSession 0x1402ce96a..0x1402ce9ee, raw slice passed to login.
+    raw = bytearray(hashlib.sha256(('vua_uplv_dev:' + account.lower()).encode('utf-8')).digest()[:16])
+    raw[6] = (raw[6] & 15) | 64
+    raw[8] = (raw[8] & 63) | 128
+    return bytes(raw)
 
 
 def _varint(value: int) -> bytes:
@@ -255,8 +283,6 @@ class GarenaTcpClient:
         self.socket: socket.socket | None = None
         self.session_key: bytes | None = None
         self.uid = 0
-        # Ứng dụng Android khởi tạo phần thấp của request-id bằng số dương 31 bit.
-        self._sequence = random.getrandbits(31)
 
     def __enter__(self) -> "GarenaTcpClient":
         self.connect()
@@ -267,17 +293,10 @@ class GarenaTcpClient:
 
     def connect(self) -> None:
         self.close()
-        candidates: list[str] = []
-        try:
-            candidates.extend(
-                address[4][0]
-                for address in socket.getaddrinfo(
-                    GARENA_HOST, GARENA_PORT, socket.AF_INET, socket.SOCK_STREAM
-                )
-            )
-        except OSError:
-            pass
-        candidates.extend(GARENA_IPV4_FALLBACKS)
+        # TLT's static Go slice at 0x1407b2a20 has these ten direct endpoints.
+        # Pool pacing/cooldown is not reconstructed here; do not retry OAuth
+        # denials by rotating gateways.
+        candidates = list(GARENA_IPV4_FALLBACKS)
         last_error: OSError | None = None
         for host in dict.fromkeys(candidates):
             try:
@@ -300,15 +319,24 @@ class GarenaTcpClient:
         self.session_key = None
 
     def _next_id(self) -> int:
-        self._sequence = (self._sequence + 1) & 0xFFFFFFFF
-        return (CLIENT_ANDROID_INTERNAL << 32) | self._sequence
+        # TLT 0x1402fc11e..0x1402fc141: process-wide atomic increment,
+        # mask to 31 bits, then OR 0x1102 (not shifted into the high word).
+        global _REQUEST_SEQUENCE
+        with _REQUEST_SEQUENCE_LOCK:
+            _REQUEST_SEQUENCE = (_REQUEST_SEQUENCE + 1) & 0xFFFFFFFFFFFFFFFF
+            return (_REQUEST_SEQUENCE & 0x7FFFFFFF) | CLIENT_ANDROID_INTERNAL
 
-    def _receive_exact(self, size: int) -> bytes:
+    def _receive_exact(self, size: int, *, deadline=None) -> bytes:
         if self.socket is None:
             raise GarenaError("Kết nối Garena chưa được mở")
         result = bytearray()
         while len(result) < size:
             try:
+                if deadline is not None:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise TimeoutError('SSO deadline')
+                    self.socket.settimeout(remaining)
                 chunk = self.socket.recv(size - len(result))
             except OSError as exc:
                 raise GarenaError("Mất kết nối với máy chủ Garena") from exc
@@ -317,27 +345,46 @@ class GarenaTcpClient:
             result.extend(chunk)
         return bytes(result)
 
-    def _request(self, command: int, payload: bytes, key: bytes | None = None) -> bytes:
+    def _request_response(self, command: int, payload: bytes, key: bytes | None = None, *, deadline=None):
+        """Preserve header status and body for the bounded OAuth policy."""
         if self.socket is None:
             raise GarenaError("Kết nối Garena chưa được mở")
         request_id = self._next_id()
+        def receive(size):
+            return (self._receive_exact(size) if deadline is None else
+                    self._receive_exact(size, deadline=deadline))
         try:
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError('SSO deadline')
+                self.socket.settimeout(remaining)
             self.socket.sendall(_encode_packet(request_id, command, payload, key))
         except OSError as exc:
             raise GarenaError("Không gửi được yêu cầu tới Garena") from exc
-        size = struct.unpack("<I", self._receive_exact(4))[0]
-        if size <= 0 or size > 4 * 1024 * 1024:
-            raise GarenaError("Kích thước phản hồi Garena không hợp lệ")
-        header, reply = _decode_packet(self._receive_exact(size), key)
+        # TLT waits for a matching command/request-id/type, up to five frames.
+        # Unrelated pushes must not drive OAuth fallback or token validation.
+        for _ in range(5):
+            size = struct.unpack("<I", receive(4))[0]
+            if size <= 0 or size > 4 * 1024 * 1024:
+                raise GarenaError("Kích thước phản hồi Garena không hợp lệ")
+            header, reply = _decode_packet(receive(size), key)
+            if (_first_int(header, 4) == command and
+                    _first_int(header, 2) == request_id and
+                    _first_int(header, 3) == 3):
+                return header, reply
+        raise GarenaError("Không nhận được phản hồi Garena khớp sau 5 gói",
+                          stage='tcp-match', reason='unmatched_response')
+
+    def _request(self, command: int, payload: bytes, key: bytes | None = None) -> bytes:
+        header, reply = self._request_response(command, payload, key)
         reply_command = _first_int(header, 4)
         result = _first_int(header, 5)
         if reply_command != command:
             raise GarenaError(f"Sai lệnh phản hồi Garena: {reply_command}")
         if result != 0:
-            error = GarenaError(f"Garena từ chối yêu cầu, mã {result} (command=0x{command:X})")
-            error.code = result
-            error.command = command
-            raise error
+            raise GarenaError(f"Garena từ chối yêu cầu, mã {result}", code=result,
+                              stage='tcp-header', reason='header_rejected')
         return reply
 
     def login(self, account: str, password: str) -> int:
@@ -351,7 +398,7 @@ class GarenaTcpClient:
         prepare_data = b"".join(
             (
                 _field_varint(1, 0),
-                _field_varint(2, 1),
+                _field_varint(2, _account_type(account)),
                 _field_string(3, account),
                 _field_varint(4, CLIENT_ANDROID_GOOGLE_PLAY),
                 _field_varint(5, CLIENT_VERSION),
@@ -368,13 +415,13 @@ class GarenaTcpClient:
         if len(reply_key) != 16 or not reply_data:
             raise GarenaError("Garena không trả về dữ liệu chuẩn bị đăng nhập")
         prepared = _parse_message(_decrypt_payload(reply_data, reply_key))
-        salt = _first_bytes(prepared, 1).decode("utf-8", "strict")
-        verify_code = _first_bytes(prepared, 2).decode("utf-8", "strict")
+        salt = _first_bytes(prepared, 1)
+        verify_code = _first_bytes(prepared, 2)
 
         password_md5 = hashlib.md5(password.encode("utf-8")).hexdigest()
-        salted_hash = hashlib.sha256((password_md5 + salt).encode("utf-8")).hexdigest()
-        login_key = hashlib.sha256((salted_hash + verify_code).encode("utf-8")).digest()[:16]
-        device_id = os.urandom(8).hex().encode("ascii")
+        salted_hash = hashlib.sha256(password_md5.encode('ascii') + salt).hexdigest()
+        login_key = hashlib.sha256(salted_hash.encode('ascii') + verify_code).digest()[:16]
+        device_id = _device_bytes(account)
         user_status = _field_varint(2, 0x1200)
         login_data = b"".join(
             (
@@ -399,6 +446,88 @@ class GarenaTcpClient:
         if not self.uid or len(self.session_key) != 16:
             raise GarenaError("Không nhận được phiên đăng nhập Garena")
         return self.uid
+
+    def oauth_token_login(self) -> OAuthResult:
+        """New TLT: bounded TCP pair, then SSO + HTTP token grant if denied."""
+        if not self.session_key or not self.uid:
+            raise GarenaError("Chưa đăng nhập Garena")
+        self.oauth_diagnostics = []
+        for attempt, app_id in enumerate((100054, 100055), 1):
+            request = b"".join((
+                _field_varint(1, app_id), _field_string(2, ""),
+                _field_varint(3, 2), _field_string(4, ""),
+                _field_varint(5, 0), _field_varint(6, 17),
+            ))
+            header, raw = self._request_response(COMMAND_APP_OAUTH_LOGIN, request, self.session_key)
+            rc = _first_int(header, 5)
+            try:
+                reply = _parse_message(raw)
+            except (GarenaError, ValueError, IndexError, struct.error):
+                raise GarenaError('OAuth body không hợp lệ', code=rc, stage='oauth-decode',
+                                  app_id=app_id, reason='malformed_body') from None
+            error = _first_bytes(reply, 5)
+            grant = error == b'error_require_grant'
+            fallback = attempt == 1 and (grant or rc == 141)
+            http_grant = attempt == 2 and (grant or rc == 141)
+            action = 'fallback' if fallback else ('sso-http-grant' if http_grant else ('reject' if error or rc or
+                      _first_int(header, 4) != COMMAND_APP_OAUTH_LOGIN else 'validate-token'))
+            event = dict(app_id=app_id, attempt=attempt, rc=rc,
+                         body_error='require_grant' if grant else ('present' if error else 'none'),
+                         action=action)
+            self.oauth_diagnostics.append(event)
+            callback = getattr(self, 'oauth_log', None)
+            if callback:
+                callback(f'[oauth-v2] app_id={app_id} attempt={attempt}/2 rc={rc} '
+                         f'body_error={event["body_error"]} action={action}')
+            if fallback:
+                continue
+            if http_grant:
+                try:
+                    sso_key = self.request_sso_key_for_grant()
+                except GarenaError:
+                    # TLT retains the original grant denial if SSO fails.
+                    if callback:
+                        callback('[sso-v2] command=442 action=reject next=stop')
+                else:
+                    if callback:
+                        callback('[sso-v2] command=442 action=success next=http-grant')
+                    try:
+                        from .garena_http_grant import grant_token
+                        token, open_id = grant_token(sso_key, opener=getattr(self, 'http_grant_opener', None))
+                    except GarenaError as exc:
+                        if callback:
+                            callback(f'[http-grant-v2] app_id=100055 http={exc.http_status} '
+                                     f'reason={exc.reason} action=reject next=stop')
+                        if exc.reason != 'require_grant':
+                            raise
+                    else:
+                        if callback:
+                            callback('[http-grant-v2] app_id=100055 action=success next=msdk-vn')
+                        return OAuthResult(self.uid, open_id, token, '', ())
+            # TLT checks body field 5 before command/status validation.
+            if error or rc == 141:
+                reason = 'require_grant' if grant or rc == 141 else 'body_error'
+                raise GarenaError('OAuth cần cấp quyền' if reason == 'require_grant' else 'OAuth body báo lỗi',
+                                  code=141 if reason == 'require_grant' else rc,
+                                  stage='oauth-body' if error else 'oauth-header', app_id=app_id, reason=reason)
+            if _first_int(header, 4) != COMMAND_APP_OAUTH_LOGIN or rc:
+                raise GarenaError('OAuth header từ chối', code=rc, stage='oauth-header',
+                                  app_id=app_id, reason='rate_limited' if rc == 3 else 'header_rejected')
+            try:
+                # Go return tracing 0x1402c7231..0x1402c738b:
+                # field1 -> first returned string (access token),
+                # field4 -> second returned string (32-byte Garena open_id).
+                token = _first_bytes(reply, 1).decode('utf-8', 'strict').strip()
+                open_id = _first_bytes(reply, 4).decode('utf-8', 'strict').strip()
+            except UnicodeError:
+                raise GarenaError('OAuth token/open ID không hợp lệ', stage='oauth-token',
+                                  app_id=app_id, reason='invalid_token_encoding') from None
+            if not open_id or not token:
+                raise GarenaError('OAuth thiếu token/open ID', stage='oauth-token',
+                                  app_id=app_id, reason='missing_token')
+            if callback:
+                callback(f'[oauth-v2] app_id={app_id} action=success next=msdk-vn')
+            return OAuthResult(self.uid, open_id, token, '', ())
 
     def oauth_login(self) -> OAuthResult:
         if not self.session_key or not self.uid:
@@ -435,6 +564,27 @@ class GarenaTcpClient:
             granted_scopes=scopes,
         )
 
+
+    def request_sso_key_for_grant(self) -> str:
+        """New TLT command442: eight-second deadline; nonempty field1 only."""
+        if self.socket is None or not self.session_key or not self.uid:
+            raise GarenaError('Chưa đăng nhập Garena', stage='tcp-sso', reason='no_session')
+        previous_timeout = self.socket.gettimeout()
+        try:
+            header, raw = self._request_response(COMMAND_SSO_KEY_GET, b'', self.session_key,
+                                                 deadline=time.monotonic() + 8.0)
+            if _first_int(header, 5):
+                raise GarenaError('Garena từ chối SSO', stage='tcp-sso', reason='sso_rejected')
+            key = _first_bytes(_parse_message(raw), 1).decode('utf-8', 'strict').strip()
+            if not key:
+                raise GarenaError('Garena trả SSO rỗng', stage='tcp-sso', reason='empty_sso')
+            return key
+        except GarenaError:
+            raise
+        except Exception:
+            raise GarenaError('Không nhận được SSO', stage='tcp-sso', reason='invalid_sso') from None
+        finally:
+            self.socket.settimeout(previous_timeout)
 
     def get_sso_key(self) -> SsoSession:
         """Return the Garena web SSO cookie used by the official grant flow."""

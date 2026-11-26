@@ -21,9 +21,10 @@ _CAP_CR_USER = 'cmq.s3790'
 _CAP_CR_GUID = '2886e41bc59624d4011344502fdf7efb'
 _SEQ_FILE = _RT_ROOT/'seq6670.json'
 
-# Successful phone .36 CSID 1002 capture, 2026-10-30 (resources 1.64.1.11).
+# Resource candidate for device-observed 1.64.1.14 (2026-11-26).
+# Packed mapping is inferred; no successful live login established yet.
 # Offsets refer to the decompressed CS packet, excluding its wire sequence.
-CURRENT_REGISTRATION_VERSIONS = bytes.fromhex('030000870300008c')
+CURRENT_REGISTRATION_VERSIONS = bytes.fromhex('030000870300008e')
 
 # Addresses found in the recovered client.  They are only a fallback when the
 # account-specific shard resolver is not configured; a resolver result always
@@ -143,7 +144,8 @@ def build_devreg_fresh(username='', guid='', qimei='', *, seq=None, live_handle=
         raise ValueError('unexpected fresh registration header')
     if plain[16:24] not in (
             bytes.fromhex('030000870300008a'),
-            bytes.fromhex('030000870300008b'), CURRENT_REGISTRATION_VERSIONS):
+            bytes.fromhex('030000870300008b'),
+            bytes.fromhex('030000870300008c'), CURRENT_REGISTRATION_VERSIONS):
         raise ValueError('unexpected fresh registration version layout')
     plain[16:24] = CURRENT_REGISTRATION_VERSIONS
     handle = int.from_bytes(plain[8:12], 'big')
@@ -366,7 +368,7 @@ def _pump_state(sock, reader, seconds, state, initial=b''):
             else:
                 state['reject'] = row.get('dec_body') or row.get('raw_body')
                 state['reject_status'] = srv_code
-        if row.get('role_profile'):
+        if row.get('role_profile') and state.get('creation_v2') is None and not state.get('read_only_v2'):
             _record_level(state, row['role_profile'].get('level'), 'role_profile', row.get('seq'))
         if row.get('csid') is None:
             continue
@@ -393,13 +395,24 @@ def _pump_state(sock, reader, seconds, state, initial=b''):
             full = bytes.fromhex(row.get('body_full') or row.get('body', ''))
             if len(full) >= 4:
                 code = int.from_bytes(full[:4], 'big', signed=True)
-                if code:
+                creation = state.get('creation_v2')
+                action = creation.reply(csid, code) if creation is not None else 'reject'
+                if creation is not None and state.get('progress_log'):
+                    state['progress_log'](f'[create-role-v2] response csid={csid} code={code} action={action} sends={creation.sent}/3')
+                if code and action == 'reject':
                     state['reject'] = f'server_error_csid_{csid}_code_{code}'
                     if state.get('progress_log'):
                         state['progress_log'](f'[server-error] csid={csid} code={code}')
         if csid == 1003:
             from .dr_role_decode import decode_login_role
             full = bytes.fromhex(row.get('body_full') or row.get('body', ''))
+            if (state.get('creation_v2') is not None or state.get('read_only_v2')) and len(full) >= 4:
+                login_code = int.from_bytes(full[:4], 'big')
+                if login_code:
+                    state['reject'] = f'server_error_csid_1003_code_{login_code}'
+                    if state.get('progress_log'):
+                        state['progress_log'](f'[create-role-v2] login response csid=1003 code={login_code} action=reject')
+                    continue
             profile = decode_login_role(full, state.get('openid'))
             if profile:
                 _record_level(state, profile['pvp_level'], 'role_login_rsp', row.get('seq'))
@@ -420,7 +433,7 @@ def _pump_state(sock, reader, seconds, state, initial=b''):
                 'csid': csid, 'seq': row.get('seq'),
                 'body_hex': row.get('body_full') or row.get('body', ''),
             })
-        if csid in (4318, 2011, 2023, 2022, 4110, 4401, 1007, 4103):
+        if state.get('creation_v2') is None and not state.get('read_only_v2') and csid in (4318, 2011, 2023, 2022, 4110, 4401, 1007, 4103):
             role_body = bytes.fromhex(row.get('body_full','')) if row.get('body_full') else body
             state['role_blob'] = (state.get('role_blob', b'') + role_body)[-1048576:]
             try:
@@ -492,10 +505,25 @@ def build_grant_request(seq, c1):
             struct.pack('>I', int(c1) & 0xffffffff) +
             struct.pack('>I', (gseq - 2) & 0xffffffff) + b'\x01')
 
+def progress_readback_action(result, minimum, target, attempts):
+    """Only an authenticated profile read can authorize replay/resumption."""
+    level = result.get('level_after') or 0
+    if (result.get('stage') != 'read-level'
+            or result.get('transport_error')
+            or result.get('reject') not in (None, '', 'target_level_not_confirmed')):
+        return 'blocked'
+    if level >= target:
+        return 'done'
+    if level < minimum or attempts >= 2:
+        return 'blocked'
+    return 'resume'
+
+
 def run(devtoken_path, username, role_cs=None, port=6630, log=print,
         create=False, pve1v1=False, replay_1v1=None, return_session=False,
         lobby_entry=False, target=5, max_rounds=8, verify_only=False, force_pve=False,
-        _game_session=None, _redirect_history=(), _prev_handle=None, character_name=None):
+        _game_session=None, _redirect_history=(), _prev_handle=None, character_name=None,
+        _progress_readbacks=0, stop_event=None):
     resolved_role_cs = role_cs
     if os.environ.get('AOV_RUNNER_OFFLINE','').lower() in ('1','true','yes'):
         return {'ok':True,'stage':'fixture','level':1,'level_before':1,
@@ -514,18 +542,27 @@ def run(devtoken_path, username, role_cs=None, port=6630, log=print,
         # Build the exact protocol payload before opening the socket.
         from aov_device_identity import get_device_for_account
         identity = get_device_for_account(username)
-        devreg, handle, source = build_device_registration(identity, username, fresh=True)
+        # 1002 is built after MSDK from live identities, never a captured account.
+        handle, source = 0, 'tlt-live-session-v2'
         # Exchange the Garena token through iTop before opening CS, matching
         # the original run order.
         try:
             from aov_itop_login import login_account_no_phone
+            if log: log('[msdk-v2] profile=tlt-vn plaintext-json game_id=1137 stage=exchange')
             game=_game_session if _game_session is not None else login_account_no_phone(username,str(token['authToken']),str(token['openId']))
         except Exception as exc:
+            if log: log('[msdk-v2] stage=exchange action=failed')
             return {'ok':False,'stage':'itop','reject':str(exc)}
         if not isinstance(game,dict) or not game.get('ok'):
             return {'ok':False,'stage':'itop','reject':(game or {}).get('error','iTop login failed')}
         openid=str(game.get('openid') or token['openId']); game_token=str(game.get('game_token') or '')
         if not game_token: return {'ok':False,'stage':'itop','reject':'iTop response has no game token'}
+        from .login_v2 import login_body, game_ack_packet
+        try:
+            msdk_uid = game.get('msdk_uid') or (game.get('raw') or {}).get('uid')
+            devreg_body = login_body(str(token['openId']), msdk_uid, int(openid), character_name)
+        except (ValueError, TypeError):
+            return {'ok':False,'stage':'game-login-v2','reject':'v2_live_login_identity_invalid'}
         if log:
             # Lengths are safe diagnostics; never print the token or openid.
             log(f'[auth] iTop session fields openid_len={len(openid)} game_token_len={len(game_token)}')
@@ -596,7 +633,12 @@ def run(devtoken_path, username, role_cs=None, port=6630, log=print,
                 f'separator=0x{login_plain[sep_off]:02x} trailer={login_plain[-1]:02x}')
         sock.sendall(build_data_frame('00082001',seq,tx.encrypt(login_plain),21)); seq+=1
         state={'progress_log':log,'openid':openid,'handle':_prev_handle,'last_c1':0,'level':None,'reject':None,'grant_status':None,'csids':set(),'role_blob':b'',
-               'frames_seen':0,'received_csids':set(),'server_closed':False}
+               'frames_seen':0,'received_csids':set(),'server_closed':False,
+               'read_only_v2': bool(verify_only and not create)}
+        if create:
+            from .registration_v2 import CreationState
+            state['creation_v2'] = CreationState()
+            if log: log('[create-role-v2] VN experimental profile; TLT bounded OAuth fallback; max 3 create sends')
         _pump_state(sock,reader,2.5,state,initial=_sh.get('tail', b''))
         if log:
             log(f'[cs] after login frames={state.get("frames_seen", 0)} '
@@ -608,27 +650,17 @@ def run(devtoken_path, username, role_cs=None, port=6630, log=print,
             enter = next(f for f in caps if f.get('csid') == 1041)
             # Match the protocol version pair in the current registration
             # capture (the older replay starts with 0x03000088).
-            from .cs import unpack_lz4_payload
-            current_versions = unpack_lz4_payload(devreg[4:])[16:24]
+            current_versions = devreg_body[:8]
             seq, _ = _send_plain_capture_frames(sock, key1, seq, [enter],
                 replace=[(bytes.fromhex('0300008703000088'), current_versions)])
             if log: log('[cs] SERVER csid=1040; sent captured lobby entry 1041')
             _pump_state(sock, reader, 6.0, state)
             if log: log(f"[cs] after lobby entry level={state.get('level')} c1={state.get('last_c1')} reject={state.get('reject')}")
-        # The original path sends the role bootstrap burst only for an
-        # existing role/replay session. Create-role starts directly with the
-        # captured registration sequence.
-        seqdata=json.loads((_RT_ROOT/'seq6670.json').read_text(encoding='utf8'))['frames']
-        hs=[f for f in seqdata if f.get('typ')=='data' and f.get('csid') in (5530,5114) and f.get('c1')==0]
+        # Live-session TLT login does not send the legacy capture handshake burst.
         burst_bytes=0
-        if not create and (not replay_1v1 or os.environ.get('AOV_SEND_HS') == '1'):
-            seq,burst_bytes=_send_capture_frames(sock,key1,seq,hs)
         _pump_state(sock,reader,2.5,state)
-        if not state.get('level_evidence'):
-            # The recovered client does not send device registration until the
-            # server has issued the 1014 handle.  Sending the captured 1002/1261
-            # frames with a missing handle makes the server abort the socket and
-            # hides the actual CS-login failure behind WSAECONNABORTED.
+        if not state.get('reject') and not state.get('level_evidence') and not (create and 1007 in state['received_csids']):
+            # Wait for the server1014 handle before live-session login1002.
             if state.get('handle') is None:
                 if log:
                     log('[cs] STOP before device/grant: server did not issue 1014 handle')
@@ -643,30 +675,13 @@ def run(devtoken_path, username, role_cs=None, port=6630, log=print,
                     'server_closed': state.get('server_closed', False),
                     'transport_error': state.get('transport_error'),
                 }
-            # Patch the captured registration sequence, handle and stoken, then
-            # send it as a raw captured frame. The server's 1014 response handle
-            # is required by the following 1261 frame.
-            if source == 'fresh-capture':
-                dv, _ = build_devreg_fresh(username, seq=seq, live_handle=state['handle'])
-            else:
-                dv=bytearray(devreg); dv[:4]=struct.pack('>I',seq)
-                dv=bytearray(bytes(dv).replace(_CAP_STOK.encode(),_fresh_stoken().encode(),1))
-                if handle and state.get('handle') is not None:
-                    dv=bytearray(bytes(dv).replace(struct.pack('>I',handle),struct.pack('>I',state['handle'])))
-            sock.sendall(enc_frame_raw(key1,seq,bytes(dv), compression=True if source == 'fresh-capture' else None)); seq+=1
-            if log: log(f'[device-reg] sent handle={state.get("handle")} bytes={len(dv)}')
-            # 1261 is a separate raw packet in the original sequence. It must be
-            # sent with sequence/handle patching only; applying live c1/c2
-            # counters here makes the endpoint abort the session.
-            try:
-                p4f=next(f for f in seqdata if f.get('csid') == 1261)
-                p4=_patch_raw_capture(p4f,seq,
-                                      handle_old=handle,
-                                      handle_new=state.get('handle'), stok=False)
-                sock.sendall(enc_frame_raw(key1,seq,p4)); seq+=1
-                if log: log(f'[device-reg] follow-up 1261 sent bytes={len(p4)}')
-            except StopIteration:
-                return {'ok':False,'stage':'device-reg','reject':'device-registration follow-up (1261) is unavailable','role_cs':role_cs}
+            # TLT1014 -> SendGameAck1002. 1261 belongs to1040 reconnect, not here.
+            dv = game_ack_packet(seq, state.get('last_c1', 0), 1002, devreg_body)
+            sock.sendall(enc_frame_raw(key1, seq, dv, compression=False)); seq += 1
+            if log:
+                log(f'[login-v2] csid=1002 source={source} compression=0 '
+                    f'garena_openid_bytes=32 msdk_uid_bytes=32 numeric_openid_bytes=8 '
+                    f'body_bytes={len(devreg_body)} followup_1261=not-sent')
             _pump_state(sock,reader,1.0 if create else 6.0,state)
             if log:
                 log(f'[cs] after device frames={state.get("frames_seen", 0)} '
@@ -674,7 +689,7 @@ def run(devtoken_path, username, role_cs=None, port=6630, log=print,
                     f'handle={state.get("handle")} c1={state.get("last_c1")} '
                     f'transport={state.get("transport_error") or "none"}')
                 for reply in state.get('identity_responses', []):
-                    log(f"[cs] SERVER csid={reply['csid']} seq={reply['seq']} body_hex={reply['body_hex']}")
+                    log(f"[cs] SERVER csid={reply['csid']} seq={reply['seq']} body_bytes={len(reply['body_hex'])//2}")
         if state.get('redirect'):
             redirect_host, redirect_port = state['redirect']
             destination = f'{redirect_host}:{redirect_port}'
@@ -693,32 +708,19 @@ def run(devtoken_path, username, role_cs=None, port=6630, log=print,
                          return_session=return_session, lobby_entry=lobby_entry,
                          target=target, max_rounds=max_rounds, verify_only=verify_only,
                          _game_session=game, _redirect_history=history, _prev_handle=state.get('handle'),
-                         character_name=character_name)
+                          character_name=character_name, stop_event=stop_event)
             result.setdefault('redirect_history', list(history))
             return result
         if state.get('reject'):
             sock.close(); return {'ok':False,'stage':'device-reg','reject':state['reject'],'device_registration_source':source,'burst_bytes':burst_bytes,'role_cs':role_cs}
         if create and not state.get('level_evidence') and not state.get('server_closed') and not state.get('transport_error'):
-            # 1002 and 1261 have already been sent. The bundled capture then
-            # contains two 5530 preamble packets followed by create CSID 1008.
-            # The previous slice ended at 1261 and never sent 1008 at all.
             try:
-                cf=json.loads((_RT_ROOT/'createseq.json').read_text(encoding='utf8')).get('frames',[])
-                follow_idx=next(i for i,f in enumerate(cf) if f.get('csid') == 1261)
-                create_idx=next(i for i,f in enumerate(cf) if f.get('csid') == 1008)
-                pre=cf[follow_idx + 1:create_idx]
-                if any(f.get('csid') != 5530 for f in pre):
-                    raise ValueError('unrecognized create-role preamble')
-                seq, _ = _send_plain_capture_frames(sock,key1,seq,pre,c1=state.get('last_c1'))
-                role_name = character_name or username
-                plain=build_create_role(cf[create_idx],seq,role_name,identity['guid'],state['last_c1'])
-                sock.sendall(enc_frame_raw(key1,seq,plain,compression=True)); seq+=1
-                if log: log(f'[create-role] sent csid=1008 name={role_name}; waiting for server role data')
-                _pump_state(sock,reader,6.0,state)
+                from .registration_v2 import create_character
+                seq = create_character(sock, key1, seq, reader, state,
+                    str(token['openId']), _pump_state, log=log,
+                    name=character_name, stop_event=stop_event)
                 if log:
-                    log(f'[create-role] received_csids={sorted(state.get("received_csids", ()))} level={state.get("level")} reject={state.get("reject")}')
-                    for reply in state.get('identity_responses', []):
-                        log(f"[create-role] SERVER csid={reply['csid']} seq={reply['seq']} body_hex={reply['body_hex']}")
+                    log(f'[create-role-v2] received_csids={sorted(state.get("received_csids", ()))} level={state.get("level")} reject={state.get("reject")}')
             except Exception as exc:
                 sock.close(); return {'ok':False,'stage':'create-role','reject':str(exc),'role_cs':role_cs}
 
@@ -738,7 +740,7 @@ def run(devtoken_path, username, role_cs=None, port=6630, log=print,
                     'frames_received': state.get('frames_seen', 0), 'role_cs': role_cs}
         if not state.get('level_evidence'):
             # Nếu chưa có level evidence nhưng CSID 1007 và 4103 đã trả về (server đã gán tên nhân vật), thử gửi grant 22352
-            if not create and not state.get('reject') and 1007 in state.get('received_csids', ()) and 4103 in state.get('received_csids', ()):
+            if not verify_only and not create and not state.get('reject') and 1007 in state.get('received_csids', ()) and 4103 in state.get('received_csids', ()):
                 if log: log('[cs] initial 1003 absent but 1007/4103 present; attempting direct grant 22352...')
                 gseq = seq
                 grant = build_grant_request(gseq, state.get('last_c1', 0))
@@ -794,6 +796,38 @@ def run(devtoken_path, username, role_cs=None, port=6630, log=print,
             sock.close()
             return _level_result(state, target, before, 'grant', role_cs)
 
+        def readback_progress(minimum, stage):
+            # An accepted command is not persisted level evidence. Close the
+            # old connection before reading a fresh 1003; never open two game
+            # sessions for the account or blindly resend the captured command.
+            try: sock.sendall(build_logout(key1, seq))
+            except OSError: pass
+            sock.close()
+            if log: log(f'[readback] {stage}: reconnect to verify saved level')
+            checked = run(devtoken_path, username, role_cs=role_cs, port=port,
+                          log=log, target=target, verify_only=True,
+                          _game_session=_game_session, character_name=character_name)
+            level = checked.get('level_after') or 0
+            action = progress_readback_action(checked, minimum, target, _progress_readbacks)
+            if action == 'done':
+                checked['level_before'] = before
+                return checked
+            if action == 'blocked':
+                checked.update(ok=False, level_before=before,
+                               reject=checked.get('reject') or (f'{stage}_saved_level_not_confirmed' if level < minimum
+                               else 'progress_readback_limit_reached'), stage=stage)
+                return checked
+            resumed = run(devtoken_path, username, role_cs=role_cs, port=port,
+                          log=log, create=False, pve1v1=pve1v1,
+                          replay_1v1=replay_1v1, target=target, max_rounds=max_rounds,
+                          _game_session=_game_session, character_name=character_name,
+                          _progress_readbacks=_progress_readbacks + 1)
+            resumed['level_before'] = before
+            return resumed
+
+        if before < 3 and (state.get('level') or 0) < 3:
+            return readback_progress(3, 'grant')
+
         if replay_1v1 and not pve1v1:
             try:
                 p=Path(replay_1v1)
@@ -833,8 +867,7 @@ def run(devtoken_path, username, role_cs=None, port=6630, log=print,
                     if log: log(f'[replay1v1] loop={loop + 1}/{loops} level={state.get("level")} reject={state.get("reject")}')
                     if state.get('reject'): break
                     if len(state.get('level_evidence', [])) == observations:
-                        state['reject'] = 'role_level_update_not_received_after_pve'
-                        break
+                        return readback_progress((state.get('level') or 0) + 1, 'pve')
                 sock.sendall(build_logout(key1,seq)); sock.close()
                 return _level_result(state, target, before, 'replay1v1', role_cs, rounds)
             except Exception as exc:

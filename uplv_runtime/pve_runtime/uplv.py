@@ -1,5 +1,6 @@
 """Five-account PvE orchestration with server profile readback."""
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 
 from .loader import load
 from .modes import configure_match
@@ -89,7 +90,9 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
             session.strict_ai_map = 20011
             session.strict_ai_five = True
             session.request_outcome_mode = mode if mode in ("victory", "defeat") else "off"
-            session.connect()
+            with session_deadline(session, 35, 'Mở phiên 5v5 / đọc profile',
+                                  lambda msg: progress(index, msg)):
+                session.connect()
             if checkpoint_store is not None:
                 # Attach after initial auth/login so only reward decisions
                 # are restored, not an old login identity/device binding.
@@ -127,11 +130,16 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
                 try:
                     with session_deadline(session, 85, 'Thử thẻ EXP', lambda msg: progress(index, msg)):
                         prepare_optional(session, lambda msg: progress(index, msg))
-                except Exception:
+                except Exception as exc:
                     session.check_stop()
+                    from .failure_policy import stop_on_denial
+                    if stop_on_denial(exc):
+                        raise
                     progress(index, '[EXP_OPTIONAL] Bước thẻ EXP chưa hoàn tất; mở lại phiên và tiếp tục')
                 uid = session.character_uid
-                session.connect()
+                with session_deadline(session, 35, 'Đọc profile sau buff',
+                                      lambda msg: progress(index, msg)):
+                    session.connect()
                 wait_lobby_or_rescue(session, lambda msg: progress(index,msg), 'STACK2')
                 if session.character_uid != uid:
                     raise RuntimeError("UID thay đổi khi kiểm tra buff")
@@ -149,8 +157,8 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
             session.close()
             results[index] = (False, before, after, str(exc))
             progress(index, f"[ERROR] Chuẩn bị thất bại: {exc}")
-            from .failure_policy import restricted_account
-            if restricted_account(exc):
+            from .failure_policy import stop_on_denial
+            if stop_on_denial(exc):
                 results[index] = (False, before, max(after, getattr(session, 'level', 0) or 0),
                                   'terminal_restricted: ' + str(exc))
                 if completed:
@@ -252,11 +260,17 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
                         if completed:
                             completed(index, results[index])
                         return False
+                    match_started = time.monotonic()
                     try:
                         with session_deadline(session, 720, '5v5 / kết toán',
                                               lambda msg: progress(index, msg)):
                             match.play(session)
-                    except Exception:
+                    except Exception as exc:
+                        from .failure_policy import stop_on_denial
+                        if stop_on_denial(exc):
+                            raise
+                        progress(index, f'[RECOVERY] Sau {time.monotonic()-match_started:.1f}s: '
+                                       f'{type(exc).__name__}; chỉ kiểm tra trận cũ')
                         recovered = recover_battle(
                             session, dict(uid=uid, level=previous[0], exp=previous[1]),
                             lambda msg: progress(index, msg), team=match)
@@ -266,6 +280,8 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
                     settlement = session.last_settlement
                     if (settlement is None or settlement.map_id != 20011) and not recovered_reward:
                         raise RuntimeError("Chưa nhận kết toán 5v5 từ server")
+                    progress(index, f'[SETTLEMENT] Đã có kết toán hoặc profile tăng từ recovery '
+                                   f'sau {time.monotonic()-match_started:.1f}s; tiếp tục xác minh profile')
                     # A settlement alone is not proof the profile was saved.
                     progress(index, '[STACK4] Đăng nhập lại / đối chiếu cấp (tối đa 35s)')
                     with session_deadline(session, 35, 'Xác minh profile sau trận',
@@ -299,6 +315,10 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
                     if not results[index][0]:
                         results[index] = (False, initial[index], results[index][2],
                                           'pool_verifying' if web_verify is not None or targets else str(exc))
+                        from .failure_policy import stop_on_denial
+                        if stop_on_denial(exc):
+                            results[index] = (False, initial[index], results[index][2],
+                                              'terminal_restricted: ' + str(exc))
                         if completed and not allow_regroup:
                             completed(index, results[index])
                     return False
@@ -317,6 +337,8 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
                         results[i] = (False, initial[i], results[i][2], '')
             if round_errors:
                 for i in pending:
+                    if results[i][3].startswith('terminal_'):
+                        continue
                     if allow_regroup and not stop.is_set() and not results[i][0]:
                         try:
                             progress(i, '[REGROUP_CHECK] Đội cũ gián đoạn; kiểm tra riêng UID/cấp/trận')

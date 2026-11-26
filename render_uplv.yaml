@@ -7,6 +7,8 @@ services:
     dockerContext: .
     healthCheckPath: /healthz
     envVars:
+      - key: WORKER_MODE
+        value: uplv
       - key: MASTER_TOKEN
         sync: false
       - key: UPLV_STATE_DIR

@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 import uplv_config as config
 from uplv_logs import RoomLogs
 
-VERSION = 'uplv-satellite-0.6.3'
+VERSION = 'uplv-satellite-0.6.4-v208-experimental'
 
 
 class RevokedLease(RuntimeError):
@@ -522,7 +522,8 @@ def main():
         return
     if args.check_runtime:
         print(json.dumps({'ok': True, 'version': VERSION, 'qt_loaded': any(n.startswith('PySide') for n in sys.modules),
-                          'metrics': metrics.snapshot(), 'network_used': False}))
+                          'metrics': metrics.snapshot(), 'network_used': False,
+                          'resource_candidate': '0x0300008E', 'server_login_verified': False}))
         return
     token = os.environ.get('MASTER_TOKEN', '')
     if not token:
@@ -554,7 +555,7 @@ def main():
 
 
 if __name__ == '__main__':
-    if os.environ.get('WORKER_MODE', 'buff-like') == 'uplv':
+    if os.environ.get('WORKER_MODE', 'uplv') == 'uplv':
         main()
     else:
         sys.path.insert(0, str(Path(__file__).parent / 'buff_like'))

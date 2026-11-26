@@ -50,10 +50,6 @@ class GarenaConnectClient:
   import time as _t
   form={'client_id':'100054','response_type':'code','redirect_uri':'gop100054://auth/','create_grant':'true','login_scenario':'normal','format':'json','id':str(int(_t.time()*1000))}
   resp=self._post_form('/oauth/token/grant',form,cookie=f'sso_key={sso_key}')
-  if resp.get('error'):
-   error=str(resp['error'])
-   message=('Garena yêu cầu cấp quyền ứng dụng Liên Quân (error_require_grant)' if error=='error_require_grant' else 'Garena Connect grant rejected: '+error)
-   raise SsoLoginError(message,stage='grant')
   return resp.get('code')
  def exchange_token(self,code,device_id):
   secret=self.client_secret or '027709b12673a3e18de16bf9b85723a2d55e9bffd3364aea67f176e533f69515'
@@ -92,7 +88,7 @@ class _Context:
     def __exit__(self,*args):
         if hasattr(self.obj,'close'): self.obj.close()
 
-def login_and_exchange(account,password,device_id,tcp_source_path=None,login_api_pyc_path=None,connect_base='https://100054.connect.garena.com',timeout=20,tcp_client_factory=None,opener=None,with_sso_key=True):
+def login_and_exchange(account,password,device_id,tcp_source_path=None,login_api_pyc_path=None,connect_base='https://100054.connect.garena.com',timeout=20,tcp_client_factory=None,opener=None,with_sso_key=True,progress=None):
     if not account or not password: raise SsoLoginError('Garena account and password are required',stage='tcp')
     if tcp_client_factory is None:
         try:
@@ -104,27 +100,44 @@ def login_and_exchange(account,password,device_id,tcp_source_path=None,login_api
     client_obj = tcp_client_factory(timeout=timeout)
     with client_obj if hasattr(client_obj,'__enter__') else _Context(client_obj) as c:
         c.login(account, password)
-        sso_key = ''
-        code = ''
+        # New TLT same-session TCP pair + conditional SSO/HTTP token grant.
+        c.oauth_log = progress
+        if opener is not None:
+            c.http_grant_opener = opener
         try:
-            # Ưu tiên lấy grant code trực tiếp qua TCP (lệnh 0x1B7 / CMD 439) -> Bỏ qua hoàn toàn HTTP 429 trên grant
-            oauth_res = c.oauth_login()
-            code = oauth_res.response_data
-        except Exception:
-            pass
-
-        if with_sso_key or not code or len(code) != 64:
-            sso = c.get_sso_key() if hasattr(c,'get_sso_key') else None
-            sso_key = (sso.sso_key if hasattr(sso,'sso_key') else str(sso or '')).strip()
-            if with_sso_key and not sso_key:
-                raise SsoLoginError('Garena returned an empty SSO key',stage='tcp')
-
-    connect_client = GarenaConnectClient(connect_base=connect_base,timeout=timeout,opener=opener)
-    connect_client._current_sso_key = sso_key
-
-    if not code:
-        if not sso_key: raise SsoLoginError('Garena không trả về SSO key hoặc OAuth code',stage='tcp')
-        code = connect_client.grant_code(sso_key)
-        if not code: raise SsoLoginError('Garena Connect returned no authorization code',stage='grant')
-
-    return connect_client.exchange_token(code,device_id)
+            direct = c.oauth_token_login()
+        except Exception as exc:
+            # Do not include a raw server body/token in diagnostics.
+            code = getattr(exc, 'code', None)
+            code = code if type(code) is int else None
+            app_id = getattr(exc, 'app_id', None)
+            reason = getattr(exc, 'reason', None)
+            message = 'V2 direct-token Garena thất bại'
+            if code == 141 or reason == 'require_grant':
+                code = 141
+                message += ': cần cấp quyền Liên Quân lần đầu (141)'
+            elif reason in ('missing_token', 'invalid_token_encoding'):
+                message += ': thiếu hoặc sai định dạng token/open ID (không phải lỗi grant 141)'
+            elif reason == 'malformed_body':
+                message += ': OAuth body không hợp lệ'
+            elif reason == 'body_error':
+                message += f': OAuth body báo lỗi (rc={code})'
+            elif reason == 'rate_limited':
+                message += f': OAuth/grant bị giới hạn tần suất (mã {code}); dừng, không tự thử lại'
+            elif getattr(exc, 'stage', None) == 'http-grant':
+                message += ': HTTP token grant thất bại'
+                status = getattr(exc, 'http_status', None)
+                if type(status) is int:
+                    message += f' (HTTP {status})'
+            elif code is not None:
+                message += f' (mã {code})'
+            else:
+                message += f' ({type(exc).__name__})'
+            if type(app_id) is int:
+                message += f' [app_id={app_id}]'
+            raise SsoLoginError(message, code=code, stage='tcp-token-v2',
+                                http_status=getattr(exc, 'http_status', None)) from None
+        if not direct.open_id or not direct.response_data:
+            raise SsoLoginError('V2 direct-token thiếu token/open ID', stage='tcp-token-v2')
+        return TokenBundle(c.uid, direct.response_data, '', direct.open_id,
+                           device_id, 0, 0, sso_key='')
