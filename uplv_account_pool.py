@@ -317,7 +317,7 @@ class AccountPool:
                     'attempts': attempts or 0, 'next_retry_at': next_at or 0})
             return {'ok': True, 'accounts': accounts, 'total': total, 'page': page, 'page_size': size}
 
-    def save_task_details(self, room, progress, results=None):
+    def save_task_details(self, room, progress, results=None, defer=False):
         changes = []
         previous = dict(self.store.fetch('SELECT d.task_id,d.detail_json FROM uplv_task_details d JOIN uplv_tasks t ON t.id=d.task_id WHERE t.room_id=? AND t.slot>=0', (room,)))
         for task, _, credentials, _, _, slot, _ in self.room_tasks(room):
@@ -337,8 +337,9 @@ class AccountPool:
             if old and json.loads(old) == data:
                 continue
             changes.append({'sql': 'INSERT INTO uplv_task_details VALUES (?,?,?) ON CONFLICT(task_id) DO UPDATE SET updated_at=excluded.updated_at,detail_json=excluded.detail_json', 'args': [task, time.time(), json.dumps(data)]})
-        if changes:
+        if changes and not defer:
             self.store.batch(changes)
+        return changes
 
     def room_tasks(self, room):
         return self.store.fetch('SELECT id,job_id,account_json,target,level,slot,status FROM uplv_tasks WHERE room_id=? AND slot>=0 ORDER BY slot', (room,))

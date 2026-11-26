@@ -194,7 +194,7 @@ class UpLvCoordinator(AccountPool):
             raise ValueError('satellite_id không hợp lệ')
         return value
 
-    def touch(self, body):
+    def touch(self, body, changes=None):
         satellite = self.satellite_id(body)
         # Store resource telemetry only, never arbitrary credentials/logs.
         metrics = {}
@@ -204,16 +204,25 @@ class UpLvCoordinator(AccountPool):
                 metrics[key] = value
         # Store.exec on PostgreSQL auto-returns an integer id; these IDs are
         # text, so use the portable batch interface for the upsert.
-        self.store.batch([{'sql':
+        statements = [{'sql':
             'INSERT INTO uplv_satellites (id,last_seen,metrics_json) VALUES (?,?,?) '
             'ON CONFLICT(id) DO UPDATE SET last_seen=excluded.last_seen,metrics_json=excluded.metrics_json',
-            'args': [satellite, time.time(), json.dumps(metrics)]}])
+            'args': [satellite, time.time(), json.dumps(metrics)]}]
+        if changes is None:
+            self.store.batch(statements)
+        else:
+            changes.extend(statements)
         return satellite
 
     def presence(self, body):
-        with self.lock:
+        self.satellite_id(body)
+        if not self.lock.acquire(False):
+            return {'ok': True, 'busy': True}
+        try:
             self.touch(body)
             return {'ok': True}
+        finally:
+            self.lock.release()
 
     def expire(self, throttled=False):
         now = time.monotonic()
@@ -244,6 +253,17 @@ class UpLvCoordinator(AccountPool):
             self.store.batch(changes)
 
     def claim(self, body):
+        # Admission must never queue ahead of lease renewals/final reports.
+        # No work/request ID is consumed when this fast path returns busy.
+        self.satellite_id(body)
+        if not self.lock.acquire(False):
+            return {'ok': True, 'room': None, 'reason': 'coordinator_busy'}
+        try:
+            return self._claim_locked(body)
+        finally:
+            self.lock.release()
+
+    def _claim_locked(self, body):
         with self.lock:
             if self.clear_state['running']:
                 return {'ok': True, 'room': None, 'reason': 'clearing_data'}
@@ -436,7 +456,6 @@ class UpLvCoordinator(AccountPool):
         with self.lock:
             row = self.owned(body)
             self.check_versions(body)
-            self.touch(body)
             if row[2] not in ('running', 'interrupted'):
                 return {'ok': True, 'stop': True, 'lease_until': 0}
             # Progress is bounded, structured data; no password/error text.
@@ -452,9 +471,13 @@ class UpLvCoordinator(AccountPool):
             results = json.loads(row[5])
             results.update(self.clean_rows(body.get('results', {})))
             until = time.time() + self.LEASE_SECONDS
-            self.store.exec("UPDATE uplv_rooms SET status='running',lease_until=?,progress_json=?,results_json=? WHERE id=?",
-                            (until, json.dumps(progress), json.dumps(results), body['room_id']))
-            self.save_task_details(body['room_id'], progress, results)
+            # One durable commit per renewal, not 2-3 fsyncs while holding the
+            # fleet-wide lock. Ownership/generation checks remain serialized.
+            changes = [{'sql': "UPDATE uplv_rooms SET status='running',lease_until=?,progress_json=?,results_json=? WHERE id=?",
+                        'args': [until, json.dumps(progress), json.dumps(results), body['room_id']]}]
+            self.touch(body, changes=changes)
+            changes.extend(self.save_task_details(body['room_id'], progress, results, defer=True))
+            self.store.batch(changes)
             return {'ok': True, 'stop': bool(row[3]), 'lease_until': until}
 
     def report(self, body):

@@ -118,6 +118,40 @@ class TurnoverTests(unittest.TestCase):
 class ScreeningAdmissionTests(unittest.TestCase):
     setUp = handoff.ScreeningHandoffTests.setUp
 
+    def test_room_admission_returns_busy_without_queuing_or_consuming_work(self):
+        held, release = threading.Event(), threading.Event()
+        def hold():
+            with self.pool.lock:
+                held.set()
+                release.wait(4)
+        thread = threading.Thread(target=hold)
+        thread.start()
+        self.assertTrue(held.wait(2))
+        try:
+            start = time.monotonic()
+            self.assertEqual(self.pool.claim({'satellite_id': 'test'})['reason'], 'coordinator_busy')
+            self.assertTrue(self.pool.presence({'satellite_id': 'test'})['busy'])
+            self.assertLess(time.monotonic()-start, .5)
+            self.assertEqual(self.store.fetchone('SELECT COUNT(*) FROM uplv_claim_requests')[0], 0)
+        finally:
+            release.set()
+            thread.join(3)
+
+    def test_heartbeat_one_atomic_batch_and_stale_generation_no_write(self):
+        self.store.exec("UPDATE uplv_tasks SET status='waiting'")
+        room = self.pool.claim({'satellite_id': 'test', 'capacity': 1,
+                               'verify_protocol': 1, 'screen_protocol': 1})['room']
+        body = dict(satellite_id='test', room_id=room['id'], lease_token=room['lease_token'],
+                    versions=[0]*5, progress={'0': {'stage': 'VERIFYING', 'level': 3}})
+        with patch.object(self.store, 'batch', wraps=self.store.batch) as batch:
+            with patch.object(self.store, 'exec', wraps=self.store.exec) as execute:
+                self.assertGreater(self.pool.heartbeat(body)['lease_until'], time.time())
+                self.assertEqual(batch.call_count, 1)
+                self.assertEqual(execute.call_count, 0)
+                with self.assertRaises(ValueError):
+                    self.pool.heartbeat(dict(body, versions=[1]*5))
+                self.assertEqual(batch.call_count, 1)
+
     def test_screening_skips_busy_coordinator(self):
         held, release = threading.Event(), threading.Event()
         def hold():
