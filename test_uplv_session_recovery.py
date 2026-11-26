@@ -48,6 +48,36 @@ class RecoveryTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'UID'):
                 recover_battle(session, dict(uid=999, level=5, exp=0))
 
+    def test_stop_during_release_wait_never_connects(self):
+        session = self.session()
+        session.stop = SimpleNamespace(wait=Mock(return_value=True))
+        result = recover_battle(session, dict(uid=123, level=10, exp=808))
+        session.stop.wait.assert_called_once_with(30)
+        session.connect.assert_not_called()
+        self.assertFalse(result['reward_confirmed'])
+
+    def test_transport_failure_does_not_spin_even_with_legacy_attempts_argument(self):
+        session = self.session()
+        session.stop = SimpleNamespace(wait=Mock(return_value=False))
+        session.connect.side_effect = TimeoutError('fixture transport')
+        with patch('pve_runtime.reconnect.session_deadline', side_effect=lambda *a: nullcontext()):
+            result = recover_battle(session, dict(uid=123, level=10, exp=808), attempts=3)
+        session.connect.assert_called_once()
+        session.stop.wait.assert_called_once_with(30)
+        self.assertEqual(len(result['attempts']), 1)
+        self.assertFalse(result['reward_confirmed'])
+
+    def test_unknown_state_cannot_start_relay_or_confirm_reward(self):
+        session = self.session()
+        session.receive_game.side_effect = TimeoutError('no state')
+        vendor = SimpleNamespace(wait_lobby=Mock(), RelayBattle=Mock())
+        with patch('pve_runtime.reconnect.load', return_value=vendor), \
+             patch('pve_runtime.reconnect.session_deadline', side_effect=lambda *a: nullcontext()):
+            result = recover_battle(session, dict(uid=123, level=10, exp=808))
+        vendor.RelayBattle.assert_not_called()
+        self.assertFalse(result['reward_confirmed'])
+        session.connect.assert_called_once()
+
     def test_readback_signal_reads_reward_once_without_recovering_again(self):
         class ProfileReadbackRequired(ConnectionError):
             pass
@@ -84,7 +114,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(state.reply(1190, 91123), 'reject')
         self.assertFalse(state.pending)
 
-    def test_verification_reuses_auth_only_inside_owned_operation(self):
+    def test_inconclusive_verification_does_not_reopen_game_or_auth(self):
         from uplv_engine import Engine
         engine = Engine.__new__(Engine)
         engine.login_lock = threading.Lock()
@@ -97,7 +127,8 @@ class RecoveryTests(unittest.TestCase):
         room = dict(accounts=[['synthetic', 'unused']], levels=[10], targets=[12], verify_only=True)
         with patch('uplv_profile_v2.read_profile', side_effect=[(10, False), (12, True)]):
             rows = engine.run(room, stop, Mock(), Mock())
-        self.assertTrue(rows[0][0])
+        self.assertFalse(rows[0][0])
+        self.assertEqual(rows[0][3], 'pool_verifying')
         login.assert_called_once()
         self.assertNotIn('_auth_context', room)
 
@@ -142,6 +173,64 @@ class QuarantineTests(unittest.TestCase):
         self.assertEqual(self.store.fetch('SELECT DISTINCT status FROM uplv_tasks'), [('stopped',)])
         for raw, in self.store.fetch('SELECT detail_json FROM uplv_task_details'):
             self.assertIn('91117', json.loads(raw)['detail'])
+        self.assertIsNone(self.pool.pool_form_room())
+
+    def assign(self):
+        self.store.exec("UPDATE uplv_tasks SET status='waiting'")
+        return self.pool.claim(dict(satellite_id='offline', capacity=1, pool_protocol=1,
+                                    verify_protocol=1, screen_protocol=1))['room']
+
+    def pending_report(self, room):
+        self.pool.report(dict(satellite_id='offline', room_id=room['id'], lease_token=room['lease_token'],
+            versions=[0]*5, results={str(i): dict(status='pending', level_after=10) for i in range(5)}))
+
+    def test_inconclusive_battle_persists_cooldown_from_completion(self):
+        room = self.assign()
+        start = time.time()
+        self.pending_report(room)
+        self.assertEqual(self.store.fetch('SELECT DISTINCT status FROM uplv_tasks'), [('verifying',)])
+        for count, due in self.store.fetch('SELECT attempts,next_at FROM uplv_verify_attempts'):
+            self.assertEqual(count, 0)
+            self.assertGreaterEqual(due, start+60)
+        self.assertIsNone(self.pool.pool_verification_room())
+
+    def test_third_inconclusive_inspection_pauses_without_new_battle(self):
+        room = self.assign()
+        for task, in self.store.fetch('SELECT id FROM uplv_tasks'):
+            self.store.exec('INSERT INTO uplv_verify_attempts VALUES (?,?,?)', (task,3,0))
+        self.pending_report(room)
+        self.assertEqual(self.store.fetch('SELECT DISTINCT status FROM uplv_tasks'), [('stopped',)])
+        self.assertIsNone(self.pool.pool_form_room())
+        for raw, in self.store.fetch('SELECT detail_json FROM uplv_task_details'):
+            self.assertEqual(json.loads(raw)['stage'], 'PAUSED_VERIFY_LIMIT')
+
+    def test_unresolved_inspection_uses_backoff_not_immediate_reclaim(self):
+        room = self.assign()
+        for task, in self.store.fetch('SELECT id FROM uplv_tasks'):
+            self.store.exec('INSERT INTO uplv_verify_attempts VALUES (?,?,?)', (task,1,0))
+        start = time.time()
+        self.pending_report(room)
+        for count, due in self.store.fetch('SELECT attempts,next_at FROM uplv_verify_attempts'):
+            self.assertEqual(count, 1)
+            self.assertGreaterEqual(due, start+120)
+        self.assertIsNone(self.pool.pool_verification_room())
+
+    def test_verified_idle_account_still_enters_ready_and_clears_budget(self):
+        room = self.assign()
+        for task, in self.store.fetch('SELECT id FROM uplv_tasks'):
+            self.store.exec('INSERT INTO uplv_verify_attempts VALUES (?,?,?)', (task,2,0))
+        self.pool.report(dict(satellite_id='offline', room_id=room['id'], lease_token=room['lease_token'],
+            versions=[0]*5, results={str(i): dict(status='pending', level_after=10,
+                                                verified=True, idle=True) for i in range(5)}))
+        self.assertEqual(self.store.fetch('SELECT DISTINCT status FROM uplv_tasks'), [('ready',)])
+        self.assertEqual(self.store.fetchone('SELECT count(*) FROM uplv_verify_attempts')[0], 0)
+
+    def test_existing_stopped_and_failed_accounts_are_not_inspection_candidates(self):
+        self.store.exec("UPDATE uplv_tasks SET status='stopped'")
+        self.assertIsNone(self.pool.pool_verification_room())
+        self.assertIsNone(self.pool.pool_form_room())
+        self.store.exec("UPDATE uplv_tasks SET status='failed'")
+        self.assertIsNone(self.pool.pool_verification_room())
         self.assertIsNone(self.pool.pool_form_room())
 
 

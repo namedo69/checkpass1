@@ -80,55 +80,12 @@ class Engine:
         results = self._run_once(room, stop, progress, publish, replacement)
         from pve_runtime.failure_policy import terminal_result
         results = {i: terminal_result(row) for i, row in results.items()}
-        attempts = {}
-        recovery_started = time.monotonic()
-        max_recovery_attempts = 3
-        recovery_budget = 180
-        while not stop.is_set():
-            unresolved = [i for i, row in results.items()
-                          if not row[0] and not str(row[3]).startswith('terminal_')
-                           and row[3] not in ('pool_ready', 'screen_ready')]
-            if unresolved and (
-                time.monotonic() - recovery_started >= recovery_budget
-                or all(attempts.get(i, 0) >= max_recovery_attempts for i in unresolved)
-            ):
-                for index in unresolved:
-                    progress(index, '[VERIFYING] Hết lượt kiểm tra tại worker; trả về hàng kiểm tra và giải phóng phòng')
-                break
-            for index in unresolved:
-                if stop.is_set():
-                    break
-                if attempts.get(index, 0) >= max_recovery_attempts or time.monotonic() - recovery_started >= recovery_budget:
-                    continue
-                attempts[index] = attempts.get(index, 0) + 1
-                delay = min(30, 2 ** min(attempts[index], 5))
-                progress(index, f'[VERIFYING] Worker tự đối soát lượt {attempts[index]}; thử lại sau {delay}s, giữ quyền xử lý')
-                if stop.wait(delay):
-                    break
-                check = {'accounts': [room['accounts'][index]],
-                          'levels': [results[index][2]],
-                          'targets': [room.get('targets', [room.get('target', 12)] * len(room['accounts']))[index]],
-                          'verify_only': True, '_auth_context': room.get('_auth_context')}
-                recovered = self._run_once(check, stop,
-                    lambda _, message, i=index: progress(i, message),
-                    lambda _, row, i=index: publish(i, row))
-                if 0 in recovered:
-                    results[index] = terminal_result(recovered[0])
-                    publish(index, recovered[0])
-            if stop.is_set():
-                break
-            if any(not row[0] and not str(row[3]).startswith('terminal_')
-                   and row[3] not in ('pool_ready', 'screen_ready') for row in results.values()):
-                continue
-            # A recovery-only lease returns confirmed state to the scheduler.
-            # A full battle team can continue without a new master allocation.
-            if room.get('verify_only') or len(results) != 5 or any(row[0] or str(row[3]).startswith('terminal_') for row in results.values()):
-                break
-            for i, row in results.items():
-                room.setdefault('levels', [0] * len(room['accounts']))[i] = row[2]
-            progress(0, '[STACK3] Đối soát xong cả đội; worker tiếp tục up trong cùng lượt phòng')
-            results = self._run_once(room, stop, progress, publish, replacement)
-            results = {i: terminal_result(row) for i, row in results.items()}
+        # Never layer fresh game logins over an inconclusive match/readback.
+        # The master persists a quiet interval and a bounded inspection budget.
+        # Ready accounts can only be regrouped by the existing verified+idle gate.
+        for index, row in results.items():
+            if not row[0] and not str(row[3]).startswith('terminal_') and row[3] not in ('pool_ready', 'screen_ready'):
+                progress(index, '[DEFERRED] Chưa rõ kết quả; nhả phòng, chờ lịch đối soát tại master; không mở lại phiên ngay')
         for index, row in results.items():
             publish(index, row)
         return results

@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 import uplv_config as config
 from uplv_logs import RoomLogs
 
-VERSION = 'uplv-satellite-0.6.6-session-recovery'
+VERSION = 'uplv-satellite-0.6.7-deferred-verification'
 
 
 class RevokedLease(RuntimeError):
@@ -176,6 +176,10 @@ class Satellite:
                         for secret in account:
                             if secret:
                                 safe = safe.replace(secret, '[REDACTED]')
+                    # Preserve the triggering match diagnostic before replacing
+                    # it with a scheduling/deferral notice.
+                    if '[DEFERRED]' in message and row.get('detail'):
+                        row.setdefault('root_cause', row['detail'])
                     row['detail'] = safe[:400]
                     print(f'room={room["id"]} slot={index} {safe[:400]}', flush=True)
 

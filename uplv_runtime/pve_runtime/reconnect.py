@@ -6,9 +6,12 @@ from .deadlines import session_deadline
 from .failure_policy import stop_on_denial
 
 
-def recover_battle(session, before, notify=lambda message: None, team=None, attempts=3):
+def recover_battle(session, before, notify=lambda message: None, team=None, attempts=1):
     uid = before["uid"]
     evidence = {"attempts": [], "reward_confirmed": False}
+    # One recovery pass per owned battle; subsequent inspection is scheduled
+    # durably by master, not a reconnect loop on this worker.
+    attempts = 1
     for attempt in range(1, attempts + 1):
         session.check_stop()
         row = {"attempt": attempt}
@@ -16,6 +19,10 @@ def recover_battle(session, before, notify=lambda message: None, team=None, atte
         try:
             notify(f"Reconnect trận cũ {attempt}/{attempts}")
             session.close()
+            notify('[RECONNECT] Chờ 30s nhả phiên trước khi đọc lại trận cũ')
+            if session.stop.wait(30):
+                break
+            session.check_stop()
             with session_deadline(session, 35, 'Reconnect / đọc profile', notify):
                 session.connect()
             if session.character_uid != uid:
@@ -62,6 +69,10 @@ def recover_battle(session, before, notify=lambda message: None, team=None, atte
                 notify("Server đã về sảnh; profile mới chưa tăng EXP, giữ đối soát, không đăng nhập dồn")
                 break
             session.close()
+            notify('[RECONNECT] Chờ 30s trước khi đọc profile phần thưởng')
+            if session.stop.wait(30):
+                break
+            session.check_stop()
             with session_deadline(session, 35, 'Đọc lại phần thưởng', notify):
                 session.connect()
             if session.character_uid != uid:
@@ -78,8 +89,6 @@ def recover_battle(session, before, notify=lambda message: None, team=None, atte
                 raise
             row["error"] = str(exc) or type(exc).__name__
             notify(f"Reconnect chưa hoàn tất: {row['error']}")
-        if attempt < attempts and session.stop.wait(2):
-            break
     evidence["status"] = "reward_not_confirmed"
     notify(f"[ERROR] Kết thúc reconnect sau {len(evidence['attempts'])}/{attempts} lượt: "
            f"Lv{session.level}, EXP {session.experience}; chưa xác nhận thưởng trận cũ")

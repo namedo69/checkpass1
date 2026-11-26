@@ -558,7 +558,7 @@ class AccountPool:
     def pool_verification_room(self):
         # Verification-only leases may contain fewer than five accounts. They
         # never start a match; at most three retries with backoff per task.
-        selected = self.store.fetch("SELECT t.id,t.job_id,t.account_json FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id LEFT JOIN uplv_verify_attempts v ON v.task_id=t.id WHERE t.status='verifying' AND j.status='open' AND COALESCE(v.next_at,0)<=? ORDER BY COALESCE(v.attempts,0),t.created_at LIMIT 5", (time.time(),))
+        selected = self.store.fetch("SELECT t.id,t.job_id,t.account_json FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id LEFT JOIN uplv_verify_attempts v ON v.task_id=t.id WHERE t.status='verifying' AND j.status='open' AND COALESCE(v.attempts,0)<3 AND COALESCE(v.next_at,0)<=? ORDER BY COALESCE(v.attempts,0),t.created_at LIMIT 5", (time.time(),))
         if not selected:
             return None
         return self.inspection_assignment(selected)
@@ -604,6 +604,22 @@ class AccountPool:
             # operator decision is required; old failed tasks are never reopened.
             if not success and result.get('failure_kind') in ('session_conflict', 'rate_limit', 'server_error'):
                 state = 'stopped'
+            if state == 'verifying':
+                attempt = self.store.fetchone('SELECT attempts FROM uplv_verify_attempts WHERE task_id=?', (task,))
+                count = attempt[0] if attempt else 0
+                if count >= 3:
+                    state = 'stopped'
+                    # Keep the last diagnostic; record why automatic inspection
+                    # ended separately, never invent a ban or successful reward.
+                    saved = self.store.fetchone('SELECT detail_json FROM uplv_task_details WHERE task_id=?', (task,))
+                    detail = json.loads(saved[0]) if saved else {}
+                    detail.update(stage='PAUSED_VERIFY_LIMIT', pause_reason='Đã hết 3 lượt đối soát; cần kiểm tra thủ công, không tự mở trận')
+                    statements.append({'sql': 'INSERT INTO uplv_task_details VALUES (?,?,?) ON CONFLICT(task_id) DO UPDATE SET updated_at=excluded.updated_at,detail_json=excluded.detail_json', 'args': [task, time.time(), json.dumps(detail)]})
+                else:
+                    # Starts at completion, not assignment: slow reads must not
+                    # consume their own cooldown. Initial battle deferral=60s.
+                    delay = min(300, 60 * 2 ** count)
+                    statements.append({'sql': 'INSERT INTO uplv_verify_attempts VALUES (?,?,?) ON CONFLICT(task_id) DO UPDATE SET next_at=excluded.next_at', 'args': [task, count, time.time() + delay]})
             statements.append({'sql': 'UPDATE uplv_tasks SET status=?,level=?,room_id=?,slot=? WHERE id=?',
                 'args': [state, after, '' if state in ('ready', 'verifying', 'screening', 'waiting') else body['room_id'], -1 if state in ('ready', 'verifying', 'screening', 'waiting') else slot, task]})
             if state in ('ready', 'waiting', 'success'):
