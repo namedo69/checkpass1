@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 import uplv_config as config
 from uplv_logs import RoomLogs
 
-VERSION = 'uplv-satellite-0.6.4-v208-experimental'
+VERSION = 'uplv-satellite-0.6.5-turnover'
 
 
 class RevokedLease(RuntimeError):
@@ -113,6 +113,9 @@ class Satellite:
         self.logging_active = set()
         self.room_logs_lock = threading.Lock()
         self.report_lock = threading.Lock()
+        self.report_wake = threading.Event()
+        self.report_retry = {}
+        self.last_report_error = ''
         self.loop_seen = time.monotonic()
         self.master_seen = 0
         self.last_control_error = ''
@@ -122,7 +125,8 @@ class Satellite:
         return {'id': self.id, 'commit': os.environ.get('RENDER_GIT_COMMIT', 'local'),
                 'worker_loop_ok': age < 180, 'loop_age_seconds': round(age),
                 'master_age_seconds': round(time.monotonic() - self.master_seen) if self.master_seen else None,
-                'last_control_error': self.last_control_error}
+                'last_control_error': self.last_control_error,
+                'last_report_error': self.last_report_error}
 
     def view_logs(self):
         with self.room_logs_lock:
@@ -148,7 +152,9 @@ class Satellite:
         logs.protect(room['accounts'])
         logs.add(-1, '[ROOM_START] Nhận phòng')
         versions = list(room.get('versions', [0] * 5))
-        checkpoint = self.state_dir / ('pending_report_' + room['id'] + '.json')
+        # Pool room IDs are reused. Give every lease its own checkpoint so an
+        # old delivery acknowledgement cannot unlink the next lease's report.
+        checkpoint = self.state_dir / ('pending_report_' + room['id'] + '_' + uuid.uuid4().hex + '.json')
         base = {'satellite_id': self.id, 'room_id': room['id'], 'lease_token': room['lease_token']}
 
         def status(index, message):
@@ -285,33 +291,72 @@ class Satellite:
                 if key not in results:
                     level = progress.get(key, {}).get('level', 0)
                     results[key] = {'status': 'pending', 'level_before': level, 'level_after': level}
-        logs.add(-1, '[ROOM_END] Kết thúc xử lý phòng')
-        with self.room_logs_lock:
-            self.logging_active.discard(room['id'])
         report = {**snapshot(), 'stopped': stop.is_set() or self.shutdown.is_set()}
         temporary = checkpoint.with_suffix('.tmp')
         temporary.write_text(json.dumps(report), encoding='utf-8')
         temporary.replace(checkpoint)
-        return self.flush_report()
+        logs.add(-1, '[ROOM_END] Đã lưu báo cáo; chờ master xác nhận trả lease')
+        with self.room_logs_lock:
+            self.logging_active.discard(room['id'])
+        self.report_wake.set()
+        # Delivery belongs to the spool thread, not a room/executor slot.
+        # The master still counts this lease until report/expiry is processed.
+        return True
 
-    def flush_report(self):
-        with self.report_lock:
-            paths = list(self.state_dir.glob('pending_report_*.json'))
+    def flush_report(self, max_reports=5):
+        if not self.report_lock.acquire(False):
+            return False
+        try:
+            paths = sorted(self.state_dir.glob('pending_report_*.json'))
             legacy = self.state_dir / 'pending_report.json'
             if legacy.exists():
                 paths.append(legacy)
             ok = True
+            attempted = 0
             for checkpoint in paths:
+                retry_at, failures = self.report_retry.get(checkpoint.name, (0, 0))
+                if time.monotonic() < retry_at:
+                    ok = False
+                    continue
+                if attempted >= max_reports:
+                    return False
+                attempted += 1
                 try:
                     report = json.loads(checkpoint.read_text(encoding='utf-8'))
                     self.client.post('report', report)
                     checkpoint.unlink()
+                    self.report_retry.pop(checkpoint.name, None)
                 except RevokedLease:
                     # Retired ownership must never block every future claim.
                     checkpoint.unlink()
-                except (OSError, ValueError, RuntimeError):
+                    self.report_retry.pop(checkpoint.name, None)
+                except (OSError, ValueError, RuntimeError) as exc:
                     ok = False
+                    failures += 1
+                    self.report_retry[checkpoint.name] = (time.monotonic() + min(30, 2 ** min(failures, 5)), failures)
+                    self.last_report_error = type(exc).__name__
+            if ok:
+                self.last_report_error = ''
             return ok
+        finally:
+            self.report_lock.release()
+
+    def report_loop(self, stop, wake):
+        while not stop.is_set():
+            self.report_wake.clear()
+            self.flush_report()
+            # Acknowledged reports may have freed capacity on the master.
+            wake.set()
+            self.report_wake.wait(1)
+
+    def claim_checkpass_chunk(self):
+        # Slow auxiliary claims never occupy the UpLv scheduling thread.
+        try:
+            reply = self.client.checkpass_claim({'satellite_id': self.id, 'lease_minutes': 5})
+            if reply.get('claim'):
+                self.run_checkpass_chunk(reply['claim'])
+        except (OSError, ValueError, RuntimeError):
+            pass
 
     def _load_checkpass_engine(self):
         """Lazy-load the checkpass engine modules; returns (api_test, tcp_module) or None."""
@@ -426,11 +471,24 @@ class Satellite:
         capacity = max(1, min(5, int(config.MAX_ROOMS)))
         request_id = uuid.uuid4().hex
         wake = threading.Event()
-        last_presence = 0
-        last_checkpass_poll = 0
-        CHECKPASS_POLL_INTERVAL = 5  # seconds between checkpass claim attempts when idle
         def pause(seconds):
             wake.wait(seconds)
+        report_stop = threading.Event()
+        reporter = threading.Thread(target=self.report_loop, args=(report_stop, wake),
+                                    name='uplv-reports', daemon=True)
+        reporter.start()
+        try:
+            self._run_scheduler(capacity, request_id, wake, pause)
+        finally:
+            # Scheduler waits for running rooms before stopping delivery. Any
+            # unacknowledged checkpoint remains durable across worker restart.
+            report_stop.set()
+            self.report_wake.set()
+            reporter.join(timeout=12)
+
+    def _run_scheduler(self, capacity, request_id, wake, pause):
+        last_presence = 0
+        last_checkpass_poll = 0
         with ThreadPoolExecutor(max_workers=capacity + 2, thread_name_prefix='uplv-room') as pool:
             active = set()
             checkpass_active = set()
@@ -456,49 +514,37 @@ class Satellite:
                             except Exception as exc:
                                 print(f'CheckPass task failed: {type(exc).__name__}; continuing', flush=True)
 
-                    # Try checkpass claim (throttled)
-                    now_mono = time.monotonic()
-                    if len(checkpass_active) < 2 and now_mono - last_checkpass_poll >= CHECKPASS_POLL_INTERVAL:
-                        last_checkpass_poll = now_mono
-                        try:
-                            cp_reply = self.client.checkpass_claim({
-                                'satellite_id': self.id,
-                                'lease_minutes': 5,
-                            })
-                            cp_claim = cp_reply.get('claim')
-                            if cp_claim:
-                                future = pool.submit(self.run_checkpass_chunk, cp_claim)
-                                checkpass_active.add(future)
-                                future.add_done_callback(lambda _: wake.set())
-                                last_checkpass_poll = 0  # Reset to claim again immediately
-                                continue
-                        except Exception:
-                            pass
-
-                    # Presence is independent of report spool/game threads.
-                    # A failed pending report must remain visible to master.
+                    # UpLv first. Pending reports do not veto unrelated free
+                    # slots; authoritative live-lease capacity stays on master.
+                    claimed = False
+                    if len(active) < capacity:
+                        reply = self.client.post('claim', {'satellite_id': self.id, 'capacity': capacity,
+                                                          'request_id': request_id,
+                                                          'pool_protocol': 1,
+                                                          'verify_protocol': 1,
+                                                          'screen_protocol': 1,
+                                                          'metrics': self.metrics.snapshot()})
+                        request_id = uuid.uuid4().hex
+                        self.master_seen = time.monotonic()
+                        self.last_control_error = ''
+                        if reply.get('room'):
+                            future = pool.submit(self.run_room, reply['room'])
+                            active.add(future)
+                            future.add_done_callback(lambda _: wake.set())
+                            claimed = True
                     if time.monotonic() - last_presence >= 15:
                         self.client.post('presence', {'satellite_id': self.id, 'metrics': self.metrics.snapshot(),
                                                       'worker_url': os.environ.get('RENDER_EXTERNAL_URL', '')})
                         self.master_seen = time.monotonic()
                         last_presence = self.master_seen
                         self.last_control_error = ''
-                    if not self.flush_report() or len(active) >= capacity:
-                        pause(1)
-                        continue
-                    # Normal UPLV room claim
-                    reply = self.client.post('claim', {'satellite_id': self.id, 'capacity': capacity,
-                                                       'request_id': request_id,
-                                                       'pool_protocol': 1,
-                                                       'verify_protocol': 1,
-                                                       'screen_protocol': 1,
-                                                       'metrics': self.metrics.snapshot()})
-                    request_id = uuid.uuid4().hex
-                    if reply.get('room'):
-                        future = pool.submit(self.run_room, reply['room'])
-                        active.add(future)
+                    now_mono = time.monotonic()
+                    if len(checkpass_active) < 2 and now_mono - last_checkpass_poll >= 5:
+                        last_checkpass_poll = now_mono
+                        future = pool.submit(self.claim_checkpass_chunk)
+                        checkpass_active.add(future)
                         future.add_done_callback(lambda _: wake.set())
-                    else:
+                    if not claimed:
                         pause(1)
                 except (OSError, ValueError, RuntimeError) as exc:
                     self.last_control_error = type(exc).__name__

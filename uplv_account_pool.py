@@ -29,6 +29,8 @@ class AccountPool:
             "CREATE INDEX IF NOT EXISTS idx_uplv_tasks_queue ON uplv_tasks(status,level,mode,created_at)",
             "CREATE INDEX IF NOT EXISTS idx_uplv_tasks_room ON uplv_tasks(room_id,slot)",
             "CREATE INDEX IF NOT EXISTS idx_uplv_tasks_job_status ON uplv_tasks(job_id,status)",
+            "CREATE INDEX IF NOT EXISTS idx_uplv_tasks_fifo ON uplv_tasks(status,created_at,id)",
+            "CREATE INDEX IF NOT EXISTS idx_uplv_tasks_mode_fifo ON uplv_tasks(status,mode,created_at,id)",
             "CREATE TABLE IF NOT EXISTS uplv_pool_jobs (job_id TEXT PRIMARY KEY)",
             "CREATE TABLE IF NOT EXISTS uplv_job_owners (job_id TEXT PRIMARY KEY, user_id BIGINT NOT NULL)",
             "CREATE INDEX IF NOT EXISTS idx_uplv_job_owner ON uplv_job_owners(user_id)",
@@ -123,14 +125,20 @@ class AccountPool:
         if (self.store.fetchone("SELECT 1 FROM uplv_tasks WHERE status='screening' LIMIT 1") is None
                 and self.store.fetchone("SELECT 1 FROM uplv_check_chunks WHERE status='claimed' AND lease_until<? LIMIT 1", (now,)) is None):
             return None
-        with self.lock:
+        # Auxiliary screening must not join the queue ahead of room reports
+        # and heartbeats. Retry on the next CheckPass poll if admission is busy.
+        if not self.lock.acquire(False):
+            return None
+        try:
             if self.clear_state['running']:
                 return None
             # Build hidden chunks only from unowned screening tasks. Completed
             # rows are released independently and retries get fresh chunks.
             row = self.store.fetchone("SELECT c.id,c.tasks_json FROM uplv_check_chunks c JOIN uplv_jobs j ON j.id=c.job_id WHERE j.status='open' AND c.status='claimed' AND c.lease_until<? ORDER BY c.id LIMIT 1", (time.time(),))
             if not row:
-                tasks = self.store.fetch("SELECT t.id,t.job_id,t.account_json FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id LEFT JOIN uplv_check_leases l ON l.task_id=t.id LEFT JOIN uplv_check_members m ON m.task_id=t.id LEFT JOIN uplv_check_chunks c ON c.id=m.chunk_id WHERE t.status='screening' AND j.status='open' AND (l.task_id IS NULL OR l.lease_until<?) AND (c.id IS NULL OR c.status!='claimed') ORDER BY t.created_at LIMIT 15", (time.time(),))
+                # Ordered index scan can stop after 15 eligible tasks instead
+                # of joining/sorting the entire screening queue for every poll.
+                tasks = self.store.fetch("SELECT t.id,t.job_id,t.account_json FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id WHERE t.status='screening' AND j.status='open' AND NOT EXISTS (SELECT 1 FROM uplv_check_leases l WHERE l.task_id=t.id AND l.lease_until>=?) AND NOT EXISTS (SELECT 1 FROM uplv_check_members m JOIN uplv_check_chunks c ON c.id=m.chunk_id WHERE m.task_id=t.id AND c.status='claimed') ORDER BY t.created_at,t.id LIMIT 15", (time.time(),))
                 if not tasks:
                     return None
                 job = tasks[0][1]
@@ -147,6 +155,8 @@ class AccountPool:
             self.store.batch([{'sql': "UPDATE uplv_check_chunks SET status='claimed',satellite_id=?,token=?,lease_until=? WHERE id=?", 'args': [satellite, token, until, chunk]}])
             return {'chunk_id': chunk, 'kind': 'uplv_screening', 'lease_token': token,
                     'accounts': ['|'.join(item['account']) for item in items], 'lease_until': until}
+        finally:
+            self.lock.release()
 
     def hidden_check_report(self, body):
         with self.lock:

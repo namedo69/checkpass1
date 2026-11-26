@@ -184,3 +184,16 @@ CPU/RAM do plan Render quyết định, khác quota cgroup thử nghiệm trên 
 ```sh
 python -B -m unittest test_uplv test_uplv_health -q
 ```
+# Tối ưu chuyển lượt phòng (0.6.5-turnover)
+
+- Worker ưu tiên claim UpLv; claim/xử lý CheckPass phụ chạy ngoài vòng điều phối.
+- Báo cáo cuối được lưu atomically theo từng lease rồi gửi ở thread riêng, tối đa
+  5 báo cáo/lượt quét. Lỗi tạm giữ file và retry backoff 2–30 giây; không chặn
+  các slot khác. Chỉ xóa khi master xác nhận hoặc lease/generation bị thu hồi.
+- Master vẫn đếm lease đang chạy: báo cáo chưa nhận không tự giải phóng capacity.
+  Token, generation, target từng acc và đối soát trận cũ không thay đổi.
+- Index `idx_uplv_tasks_fifo` và `idx_uplv_tasks_mode_fifo` hỗ trợ lấy đầu hàng
+  đợi. Với PostgreSQL production, tạo bằng `CREATE INDEX CONCURRENTLY` trước
+  khi nạp source để tránh giữ khóa ghi khi khởi động.
+- `ROOM_END` nghĩa là đã lưu báo cáo, không phải master đã xác nhận trả lease.
+  Theo dõi `last_report_error` trong health để phân biệt lỗi gửi báo cáo.
