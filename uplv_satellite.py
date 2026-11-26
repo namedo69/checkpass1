@@ -1,4 +1,4 @@
-"""One-room headless satellite; stdlib control plane, lazy game imports."""
+"""Multi-room headless satellite with independent report delivery and lazy game imports."""
 import argparse
 import json
 import os
