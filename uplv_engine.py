@@ -54,6 +54,15 @@ class Engine:
         self.last_login = 0
 
     def run(self, room, stop, progress, completed, replacement=None):
+        # One account-bound OAuth cache for this owned operation, including its
+        # verification passes. Never persist tokens or share across leases.
+        room['_auth_context'] = ({}, threading.RLock())
+        try:
+            return self._run_owned(room, stop, progress, completed, replacement)
+        finally:
+            room.pop('_auth_context', None)
+
+    def _run_owned(self, room, stop, progress, completed, replacement=None):
         """Own transient recovery while the lease/heartbeat remains valid."""
         if not room.get('pool_protocol') and not room.get('verify_only'):
             return self._run_once(room, stop, progress, completed, replacement)
@@ -99,7 +108,7 @@ class Engine:
                 check = {'accounts': [room['accounts'][index]],
                           'levels': [results[index][2]],
                           'targets': [room.get('targets', [room.get('target', 12)] * len(room['accounts']))[index]],
-                         'verify_only': True}
+                          'verify_only': True, '_auth_context': room.get('_auth_context')}
                 recovered = self._run_once(check, stop,
                     lambda _, message, i=index: progress(i, message),
                     lambda _, row, i=index: publish(i, row))
@@ -126,8 +135,7 @@ class Engine:
 
     def _run_once(self, room, stop, progress, completed, replacement=None):
         run_rooms, run_cs, login, device, retry, checkpoints = self.runtime
-        bundles = {}
-        bundle_lock = threading.Lock()
+        bundles, bundle_lock = room.get('_auth_context') or ({}, threading.RLock())
 
         def authenticate(user, password):
             with bundle_lock:

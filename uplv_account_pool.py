@@ -326,14 +326,24 @@ class AccountPool:
             incoming = progress.get(str(slot), {})
             data.update({k: v for k, v in incoming.items() if v != '' and k != 'elapsed'})
             if results and str(slot) in results:
-                data['result'] = results[str(slot)]['status']
+                result = results[str(slot)]
+                data['result'] = result['status']
+                if result.get('final_error'):
+                    data.update(detail=result['final_error'], final_error=result['final_error'],
+                                failure_kind=result.get('failure_kind', ''),
+                                error_stage=result.get('error_stage', ''))
+                if result.get('root_cause'):
+                    data['root_cause'] = result['root_cause']
             # Structured diagnostics only; redact this occupant's credentials.
-            text = str(data.get('detail', ''))[:400]
-            for secret in sorted(json.loads(credentials), key=len, reverse=True):
-                if secret:
-                    text = text.replace(secret, '[REDACTED]')
-            text = re.sub(r'(?i)(bearer\s+|(?:password|token|sso_key|access_token)\s*[=:]\s*)\S+', r'\1[REDACTED]', text)
-            data['detail'] = text
+            for key in ('detail', 'final_error', 'root_cause', 'error_stage'):
+                if key not in data:
+                    continue
+                text = str(data[key])
+                for secret in sorted(json.loads(credentials), key=len, reverse=True):
+                    if secret:
+                        text = text.replace(secret, '[REDACTED]')
+                text = re.sub(r'(?i)(bearer\s+|(?:password|token|sso_key|access_token)\s*[=:]\s*)\S+', r'\1[REDACTED]', text)
+                data[key] = text[:400]
             if old and json.loads(old) == data:
                 continue
             changes.append({'sql': 'INSERT INTO uplv_task_details VALUES (?,?,?) ON CONFLICT(task_id) DO UPDATE SET updated_at=excluded.updated_at,detail_json=excluded.detail_json', 'args': [task, time.time(), json.dumps(data)]})
@@ -589,7 +599,11 @@ class AccountPool:
                      else 'waiting' if screening and result.get('screened') and after < 5
                      else ('waiting' if after < 5 else 'ready') if result.get('verified') and result.get('idle')
                      else 'screening' if screening and result['status'] != 'failed'
-                     else 'failed' if result['status'] == 'failed' and result.get('failure_kind') in ('login', 'create_character', 'restricted') else 'verifying')
+                      else 'failed' if result['status'] == 'failed' and result.get('failure_kind') in ('login', 'create_character', 'restricted') else 'verifying')
+            # Quarantine denials without silently re-login/replay. An explicit
+            # operator decision is required; old failed tasks are never reopened.
+            if not success and result.get('failure_kind') in ('session_conflict', 'rate_limit', 'server_error'):
+                state = 'stopped'
             statements.append({'sql': 'UPDATE uplv_tasks SET status=?,level=?,room_id=?,slot=? WHERE id=?',
                 'args': [state, after, '' if state in ('ready', 'verifying', 'screening', 'waiting') else body['room_id'], -1 if state in ('ready', 'verifying', 'screening', 'waiting') else slot, task]})
             if state in ('ready', 'waiting', 'success'):

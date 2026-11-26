@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 import uplv_config as config
 from uplv_logs import RoomLogs
 
-VERSION = 'uplv-satellite-0.6.5-turnover'
+VERSION = 'uplv-satellite-0.6.6-session-recovery'
 
 
 class RevokedLease(RuntimeError):
@@ -180,16 +180,18 @@ class Satellite:
                     print(f'room={room["id"]} slot={index} {safe[:400]}', flush=True)
 
         def completed(index, row):
+            from pve_runtime.failure_policy import terminal_result
+            row = terminal_result(row)
             ok, before, after, error = row
-            logs.add(index, f'[RESULT] {"success" if ok else "pending" if stop.is_set() or error in ('pool_ready', 'pool_verifying') else "failed"} Lv{after}')
+            logs.add(index, f'[RESULT] {"success" if ok else "pending" if stop.is_set() or not error.startswith(('terminal_login:', 'terminal_restricted:', 'terminal_create_character:')) else "failed"} Lv{after}')
             with lock:
                 if (not ok and progress.get(str(index), {}).get('stage') == 'WAIT_REPLACEMENT'
                         and results.get(str(index), {}).get('status') == 'failed'):
                     return  # The failed original is not merely pending on stop.
-                failure_kind = ('login' if error.startswith('terminal_login:') else
-                                'restricted' if error.startswith('terminal_restricted:') else
-                                'create_character' if error.startswith('terminal_create_character:') else '')
-                pending = stop.is_set() or (not ok and not failure_kind)
+                match = re.match(r'terminal_(login|restricted|create_character|session_conflict|rate_limit|server_error):', error)
+                failure_kind = match.group(1) if match else ''
+                pending = stop.is_set() or (not ok and failure_kind not in ('login', 'restricted', 'create_character'))
+                diagnostic = ''
                 if error:
                     diagnostic = str(error)
                     for account in room['accounts']:
@@ -198,13 +200,23 @@ class Satellite:
                                 diagnostic = diagnostic.replace(secret, '[REDACTED]')
                     diagnostic = re.sub(r'(?i)(bearer\s+|(?:password|token|sso_key|access_token)\s*[=:]\s*)\S+', r'\1[REDACTED]', diagnostic)
                     item = progress.setdefault(str(index), {})
-                    item.setdefault('stage', 'VERIFYING' if pending else 'FAILED')
-                    if not item.get('detail'):
+                    if failure_kind:
+                        item['stage'] = 'PAUSED_' + failure_kind.upper() if pending else 'FAILED'
+                    else:
+                        item.setdefault('stage', 'VERIFYING' if pending else 'FAILED')
+                    if failure_kind:
+                        if item.get('detail') and not item.get('root_cause'):
+                            item['root_cause'] = item['detail']
+                        item['detail'] = diagnostic[:400]
+                    elif not item.get('detail'):
                         item['detail'] = diagnostic[:400]
                 results[str(index)] = {'status': 'success' if ok else 'pending' if pending else 'failed',
                                         'level_before': before, 'level_after': after, 'failure_kind': failure_kind,
                                         'verified': ok or error in ('pool_ready', 'screen_ready'),
-                                        'idle': error in ('pool_ready', 'screen_ready'), 'screened': error == 'screen_ready'}
+                                        'idle': error in ('pool_ready', 'screen_ready'), 'screened': error == 'screen_ready',
+                                        'final_error': diagnostic[:400] if failure_kind else '',
+                                        'root_cause': progress.get(str(index), {}).get('root_cause', ''),
+                                        'error_stage': progress.get(str(index), {}).get('stage', '')}
 
         def snapshot():
             with lock:

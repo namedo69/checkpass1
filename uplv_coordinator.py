@@ -435,7 +435,7 @@ class UpLvCoordinator(AccountPool):
             return response
 
     @staticmethod
-    def clean_rows(rows):
+    def clean_rows(rows, secrets_to_hide=()):
         if not isinstance(rows, dict) or len(rows) > 5:
             raise ValueError('Tối đa 5 kết quả/phòng')
         clean = {}
@@ -449,7 +449,16 @@ class UpLvCoordinator(AccountPool):
                                'level_after': max(0, min(30, int(value.get('level_after', 0)))),
                                'verified': value.get('verified') is True, 'idle': value.get('idle') is True,
                                'screened': value.get('screened') is True,
-                               'failure_kind': value.get('failure_kind') if value.get('failure_kind') in ('login', 'create_character', 'restricted') else ''}
+                               'failure_kind': value.get('failure_kind') if value.get('failure_kind') in ('login', 'create_character', 'restricted', 'session_conflict', 'rate_limit', 'server_error') else '',
+                               'final_error': str(value.get('final_error') or '')[:400],
+                               'root_cause': str(value.get('root_cause') or '')[:400],
+                               'error_stage': str(value.get('error_stage') or '')[:60]}
+            for field in ('final_error', 'root_cause', 'error_stage'):
+                text = clean[str(key)][field]
+                for secret in sorted(secrets_to_hide, key=len, reverse=True):
+                    if secret:
+                        text = text.replace(secret, '[REDACTED]')
+                clean[str(key)][field] = re.sub(r'(?i)(bearer\s+|(?:password|token|sso_key|access_token)\s*[=:]\s*)\S+', r'\1[REDACTED]', text)
         return clean
 
     def heartbeat(self, body):
@@ -469,7 +478,7 @@ class UpLvCoordinator(AccountPool):
                     'elapsed': max(0, min(86400, int(value.get('elapsed', 0)))),
                     'detail': str(value.get('detail', ''))[:400]}
             results = json.loads(row[5])
-            results.update(self.clean_rows(body.get('results', {})))
+            results.update(self.clean_rows(body.get('results', {}), [s for a in json.loads(row[4]) for s in a if s]))
             until = time.time() + self.LEASE_SECONDS
             # One durable commit per renewal, not 2-3 fsyncs while holding the
             # fleet-wide lock. Ownership/generation checks remain serialized.
@@ -487,7 +496,7 @@ class UpLvCoordinator(AccountPool):
             if row[2] in ('done', 'stopped', 'failed', 'incomplete'):
                 return {'ok': True, 'duplicate': True}
             results = json.loads(row[5])
-            results.update(self.clean_rows(body.get('results', {})))
+            results.update(self.clean_rows(body.get('results', {}), [s for a in json.loads(row[4]) for s in a if s]))
             for i in range(len(json.loads(row[4]))):
                 results.setdefault(str(i), {'status': 'pending', 'level_before': 0, 'level_after': 0})
             pool_room = bool(self.room_tasks(body['room_id']))

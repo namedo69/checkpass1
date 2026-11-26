@@ -284,9 +284,10 @@ def run_five_batch(accounts, target, concurrency, stop, prepare, authenticate, p
                                    f'sau {time.monotonic()-match_started:.1f}s; tiếp tục xác minh profile')
                     # A settlement alone is not proof the profile was saved.
                     progress(index, '[STACK4] Đăng nhập lại / đối chiếu cấp (tối đa 35s)')
-                    with session_deadline(session, 35, 'Xác minh profile sau trận',
-                                          lambda msg: progress(index, msg)):
-                        session.connect()
+                    if not recovered_reward:
+                        with session_deadline(session, 35, 'Xác minh profile sau trận',
+                                              lambda msg: progress(index, msg)):
+                            session.connect()
                     # Fresh 1003 already binds UID/level to persisted server
                     # data. The vendor helper can wait for an old battle status
                     # even after a valid settlement; query only on recovery.

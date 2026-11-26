@@ -9,7 +9,8 @@ import struct
 
 def role_name():
     # Independent names avoid exposing the account login in a public character.
-    return 'KienTuong' + secrets.token_hex(4)
+    # Conservative short ASCII identity; do not resend on unrelated denials.
+    return 'KT' + secrets.token_hex(4)
 
 
 def _string(value):

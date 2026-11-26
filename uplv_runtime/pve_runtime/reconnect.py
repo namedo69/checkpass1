@@ -3,6 +3,7 @@ import time
 
 from .loader import load
 from .deadlines import session_deadline
+from .failure_policy import stop_on_denial
 
 
 def recover_battle(session, before, notify=lambda message: None, team=None, attempts=3):
@@ -39,15 +40,27 @@ def recover_battle(session, before, notify=lambda message: None, team=None, atte
             row["active_battle"] = active
             if active is None:
                 row["status"] = "battle_state_unknown"
+                break  # Silence does not authorize another immediate login.
             elif active:
                 notify("Server còn giữ trận cũ; khôi phục relay/kết toán")
-                with session_deadline(session, 90, 'Khôi phục / chờ kết toán', notify):
-                    load("relay_battle").RelayBattle(session, map_id=20011,
-                                                      player_count=10, team=team).run(recover=True)
+                try:
+                    with session_deadline(session, 90, 'Khôi phục / chờ kết toán', notify):
+                        load("relay_battle").RelayBattle(session, map_id=20011,
+                                                          player_count=10, team=team).run(recover=True)
+                except ConnectionError as exc:
+                    if type(exc).__name__ != 'ProfileReadbackRequired':
+                        raise
+                    # Normal readback signal: fall through to one UID-bound
+                    # reward read, rather than retrying active relay recovery.
+                    row['profile_readback_required'] = True
                 row["recovery_returned"] = True
             else:
                 row["status"] = "server_no_active_battle"
-                notify("Server đã về sảnh; đọc lại profile để kiểm tra thưởng")
+                # This connection already supplied a fresh UID-bound profile.
+                # Unchanged EXP + idle is unresolved reward, not permission for
+                # another login loop or another match.
+                notify("Server đã về sảnh; profile mới chưa tăng EXP, giữ đối soát, không đăng nhập dồn")
+                break
             session.close()
             with session_deadline(session, 35, 'Đọc lại phần thưởng', notify):
                 session.connect()
@@ -61,8 +74,10 @@ def recover_battle(session, before, notify=lambda message: None, team=None, atte
         except ValueError:
             raise
         except Exception as exc:
-            row["error"] = str(exc)
-            notify(f"Reconnect chưa hoàn tất: {exc}")
+            if stop_on_denial(exc):
+                raise
+            row["error"] = str(exc) or type(exc).__name__
+            notify(f"Reconnect chưa hoàn tất: {row['error']}")
         if attempt < attempts and session.stop.wait(2):
             break
     evidence["status"] = "reward_not_confirmed"
