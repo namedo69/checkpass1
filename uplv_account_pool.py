@@ -6,6 +6,23 @@ import re
 
 
 class AccountPool:
+    @staticmethod
+    def screening_evidence(result, legacy=False):
+        """Separate unreadable profiles from missing roles and explicit bans."""
+        status = str(result.get('check_status' if legacy else 'status', '')).strip().casefold()
+        kind = str(result.get('check_result' if legacy else 'result_type', '')).strip().casefold()
+        player = str(result.get('check_player_status' if legacy else 'player_status', '')).strip().casefold()
+        banned = (player in ('bị khóa', 'banned', 'ban')
+                  or status in ('ban', 'banned')
+                  or bool(result.get('banTime') or result.get('unbanTime')))
+        raw = result.get('level')
+        value = '' if raw is None else str(raw).strip()
+        level = int(value) if type(raw) is not bool and value.isdigit() and 1 <= int(value) <= 30 else None
+        unknown = (status == 'ok' and kind == 'lỗi ctnv'
+                   and not value and not banned
+                   and str(result.get('tcp_login_ok', '')).strip() not in ('0', 'False', 'false'))
+        return level, unknown, banned
+
     def init_pool(self):
         for sql in (
             "CREATE TABLE IF NOT EXISTS uplv_tasks (id TEXT PRIMARY KEY, job_id TEXT NOT NULL, username_key TEXT NOT NULL, account_json TEXT NOT NULL, target INTEGER NOT NULL, mode TEXT NOT NULL, level INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL, room_id TEXT NOT NULL DEFAULT '', slot INTEGER NOT NULL DEFAULT -1, created_at DOUBLE PRECISION NOT NULL)",
@@ -151,7 +168,7 @@ class AccountPool:
                     continue
                 item = items[index]
                 value = str(result.get('level', '')).strip()
-                level = int(value) if value.isdigit() and 1 <= int(value) <= 30 else None
+                level, unknown, banned = self.screening_evidence(result)
                 missing = value.casefold() == 'ctnv' and result.get('player_status') == 'Chưa tạo nhân vật'
                 task = self.store.fetchone('SELECT status,target,job_id FROM uplv_tasks WHERE id=?', (item['task_id'],))
                 if not task or task[0] != 'screening':
@@ -159,11 +176,20 @@ class AccountPool:
                 job = self.store.fetchone('SELECT status FROM uplv_jobs WHERE id=?', (task[2],))
                 if not job or job[0] != 'open':
                     continue
-                if level is not None or missing:
+                if banned:
+                    changes.append({'sql': "UPDATE uplv_tasks SET status='failed' WHERE id=?", 'args': [item['task_id']]})
+                elif unknown:
+                    # Keep the unconfirmed level untouched. UpLv must read the
+                    # live profile; creating still requires server csid 1007.
+                    changes.append({'sql': "UPDATE uplv_tasks SET status='waiting' WHERE id=?", 'args': [item['task_id']]})
+                elif level is not None or missing:
                     level = level or 0
                     state = 'success' if level >= task[1] else 'waiting' if level < 5 else 'ready'
                     changes.append({'sql': 'UPDATE uplv_tasks SET status=?,level=? WHERE id=?', 'args': [state, level, item['task_id']]})
-                changes.append({'sql': 'INSERT INTO uplv_task_details VALUES (?,?,?) ON CONFLICT(task_id) DO UPDATE SET updated_at=excluded.updated_at,detail_json=excluded.detail_json', 'args': [item['task_id'], time.time(), json.dumps({'stage': 'CHECKPASS_DONE' if level is not None or missing else 'CHECKPASS_RETRY', 'detail': 'CheckPass trả kết quả qua chunk nội bộ' if level is not None or missing else 'Chưa đọc được cấp; chờ chunk kiểm tra tiếp'})]})
+                detail = ({'stage': 'CHECKPASS_BANNED', 'detail': 'CheckPass có bằng chứng khóa; không chuyển UpLv'} if banned else
+                          {'stage': 'UPLV_PROFILE_PENDING', 'detail': 'OK / Lỗi CTNV: chuyển UpLv đọc profile và OAuth V2; chưa xác nhận cấp hoặc thiếu nhân vật', 'level_confirmed': False} if unknown else
+                          {'stage': 'CHECKPASS_DONE' if level is not None or missing else 'CHECKPASS_RETRY', 'detail': 'CheckPass trả kết quả qua chunk nội bộ' if level is not None or missing else 'Chưa đọc được cấp; chờ chunk kiểm tra tiếp'})
+                changes.append({'sql': 'INSERT INTO uplv_task_details VALUES (?,?,?) ON CONFLICT(task_id) DO UPDATE SET updated_at=excluded.updated_at,detail_json=excluded.detail_json', 'args': [item['task_id'], time.time(), json.dumps(detail)]})
             if body.get('done'):
                 changes.append({'sql': "UPDATE uplv_check_chunks SET status='done',lease_until=0 WHERE id=?", 'args': [body['chunk_id']]})
             self.store.batch(changes)
@@ -205,9 +231,18 @@ class AccountPool:
                 job = self.store.fetchone('SELECT status FROM uplv_jobs WHERE id=?', (owned[4],))
                 if job[0] != 'open':
                     continue
-                level = result.get('level')
+                level, unknown, banned = self.screening_evidence(result, legacy=True)
                 valid = type(level) is int and 1 <= level <= 30
                 missing = result.get('no_character') is True
+                if banned or unknown:
+                    state = 'failed' if banned else 'waiting'
+                    detail = ({'stage': 'CHECKPASS_BANNED', 'detail': 'CheckPass có bằng chứng khóa; không chuyển UpLv'} if banned else
+                              {'stage': 'UPLV_PROFILE_PENDING', 'detail': 'OK / Lỗi CTNV: chuyển UpLv đọc profile và OAuth V2; chưa xác nhận cấp hoặc thiếu nhân vật', 'level_confirmed': False})
+                    changes += [
+                        {'sql': 'UPDATE uplv_tasks SET status=? WHERE id=?', 'args': [state, task]},
+                        {'sql': 'INSERT INTO uplv_task_details VALUES (?,?,?) ON CONFLICT(task_id) DO UPDATE SET updated_at=excluded.updated_at,detail_json=excluded.detail_json', 'args': [task, time.time(), json.dumps(detail)]},
+                    ]
+                    continue
                 if not valid and not missing:
                     diagnostic = 'CheckPass chưa trả cấp hợp lệ; chờ 1 giây trước khi kiểm tra lại'
                     for field in ('check_status', 'check_result', 'check_stage', 'check_code'):

@@ -176,6 +176,33 @@ class RestoreTests(unittest.TestCase):
         self.assertEqual(state['reject'], 'server_error_csid_1003_code_91121')
         self.assertIsNone(state['level'])
 
+    def test_prepare_publishes_bounded_oauth_fallback_before_cs_creation(self):
+        from uplv_engine import Engine
+        engine = Engine.__new__(Engine)
+        engine.state_dir = HERE/'backups/synthetic-unused'
+        engine.login_lock, engine.last_login = threading.Lock(), 0
+        events = []
+        def login(*args, **kwargs):
+            for message in ('[oauth-v2] app_id=100054 action=fallback',
+                            '[oauth-v2] app_id=100055 action=success next=msdk-vn'):
+                kwargs['progress'](message)
+            events.append('authenticated')
+            return SimpleNamespace(access_token='synthetic', open_id='a'*32)
+        def cs(*args, **kwargs):
+            self.assertEqual(events[-1], 'authenticated')
+            self.assertIs(kwargs['create'], True)
+            return dict(ok=True, level_before=1, level_after=5)
+        def rooms(accounts, target, count, concurrency, stop, prepare, *args, **kwargs):
+            return {0: prepare(0, *accounts[0])}
+        engine.runtime = (rooms, cs, login, lambda user: {'device_id': 'unused'}, None, lambda path: None)
+        notify = Mock()
+        rows = engine._run_once({'accounts': [['synthetic', 'unused']], 'target': 5, 'mode': 'victory'},
+                                threading.Event(), notify, Mock())
+        self.assertTrue(rows[0][0])
+        messages = [call.args[1] for call in notify.call_args_list]
+        self.assertTrue(any('app_id=100054' in message for message in messages))
+        self.assertTrue(any('app_id=100055' in message for message in messages))
+
 
 if __name__ == '__main__':
     unittest.main()

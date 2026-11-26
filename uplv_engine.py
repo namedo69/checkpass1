@@ -140,10 +140,15 @@ class Engine:
                     raise RuntimeError('Stopped')
                 self.last_login = time.monotonic()
             try:
+                def auth_progress(message):
+                    for index, account in enumerate(room['accounts']):
+                        if account[0].casefold() == user.casefold():
+                            progress(index, message)
                 # V2 handles conditional OAuth 141 TCP/SSO/HTTP grant on this
                 # single credential session. Never restart login on 3/429/deny.
                 bundle = login(user, password, device(user)['device_id'], timeout=20,
-                               with_sso_key=False)
+                               with_sso_key=False,
+                               progress=auth_progress)
             except Exception as exc:
                 code = getattr(exc, 'code', None)
                 status = getattr(exc, 'http_status', None)

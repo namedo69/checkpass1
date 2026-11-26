@@ -1,5 +1,24 @@
 # Deploy vệ tinh UpLv lên Render — 0.5.1
 
+## Bàn giao CheckPass → UpLv cho `OK / Lỗi CTNV` — 26/11/2026
+
+- `OK / Lỗi CTNV`, cấp trống không phải ban, không phải xác nhận thiếu nhân vật,
+  cũng không phải UpLv đã thất bại. Hai endpoint screening chuyển trường hợp
+  này sang hàng chờ UpLv đọc profile, không lặp chunk CheckPass vô hạn.
+- Giữ cấp chưa xác nhận, ghi `UPLV_PROFILE_PENDING`, `level_confirmed=false`;
+  không ghi đè cấp đã biết. Có bằng chứng khóa thì dừng trước UpLv.
+- UpLv vẫn dùng OAuth V2 có điều kiện: `100054 → 100055` chỉ khi nhận
+  `141/error_require_grant`, sau đó SSO/HTTP grant nếu cần trên cùng phiên.
+  Log `[oauth-v2]`/`[http-grant-v2]` nay được chuyển ra log phòng.
+- Không đổi app ID tùy ý sau lỗi CS hoặc ban. Chỉ gửi tạo nhân vật khi server
+  yêu cầu `1007`; hết ngân sách hoặc bị từ chối cuối cùng thì dừng.
+- Cần cập nhật **master** (`uplv_account_pool.py`) và vệ tinh CheckPass
+  (`satellite_worker.py`) cho cả hai đường report; chỉ deploy worker UpLv
+  không cập nhật logic bàn giao của master. Không tự sửa trạng thái job cũ
+  đã failed; bản vá áp dụng khi nhận screening report mới hợp lệ.
+- Thay đổi này được kiểm tra offline; không chứng minh hết lỗi tạo nhân vật
+  trên server. Backup: `backups/before_ctnv_handoff_20261126_104813/source.zip`.
+
 ## Khôi phục UpLv — 26/11/2026 (0.6.4-v208-experimental)
 
 - Phạm vi lần này: **chỉ `D:\checkpass1`**. Báo cáo kiểm chứng được ghi trước
