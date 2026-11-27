@@ -596,9 +596,10 @@ class AccountPool:
         ]
 
     def auth_admission_blocked(self):
-        row = self.store.fetchone("SELECT until_at,pace_until,next_admit FROM uplv_auth_cooldown WHERE id='fleet'")
-        now = time.time()
-        return bool(row and (now < row[0] or (now < row[1] and now < row[2])))
+        # Only a fresh 429 starts a fleet quiet interval. Old retry metadata
+        # must never serialize every healthy worker to one room per 30 seconds.
+        row = self.store.fetchone("SELECT until_at FROM uplv_auth_cooldown WHERE id='fleet'")
+        return bool(row and time.time() < row[0])
 
     def auth_cooldown_changes(self):
         now = time.time()

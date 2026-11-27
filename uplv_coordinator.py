@@ -344,7 +344,6 @@ class UpLvCoordinator(AccountPool):
                     'mode': row[3], 'lease_token': token, 'lease_until': until}}
             if request_id:
                 self.store.batch([{'sql': 'INSERT INTO uplv_claim_requests VALUES (?,?,?,?,?)', 'args': [request_id, satellite, row[0], token, json.dumps(response)]}])
-            self.store.exec("UPDATE uplv_auth_cooldown SET next_admit=?,pace_until=CASE WHEN EXISTS (SELECT 1 FROM uplv_rate_limit_wait w JOIN uplv_tasks t ON t.id=w.task_id JOIN uplv_jobs j ON j.id=t.job_id WHERE j.status='open' AND t.status NOT IN ('success','failed','stopped')) THEN ? ELSE pace_until END WHERE id='fleet'", (time.time()+self.RATE_LIMIT_DELAY, time.time()+60))
             return response
 
     def owned(self, body):

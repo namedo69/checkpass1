@@ -2,6 +2,18 @@
 
 ## 0.6.10 — 429 durable retry / fixed 30-second waits
 
+- 2026-11-27 19:50 VN admission hotfix: production snapshot showed only
+  30 battle accounts plus3 inspections with26929 waiting and42 live workers.
+  A1-room/30s fleet pacing tail was perpetually renewed by old retry rows,
+  even without recent429. Remove claim-time pacing writes and ignore legacy
+  pace_until/next_admit fields; only until_at from a fresh429 blocks admission
+  for30s. Per-account30s retry, leases and unresolved-match gates unchanged.
+  169 offline tests pass, including42 workers admitted in one clock instant
+  after cooldown despite stale pacing fields. Two-file targeted VPS install,
+  backup `/home/sp1s/uplv-rate-speed-backup-20261127_195013`, health in1.738s,
+  all3 active-room ownership tokens and251510 terminal statuses preserved;
+  sibling CheckPass/VVIP PIDs unchanged. First read-only snapshot after install:
+  49 assigned across10 rooms, not proof of sustained throughput or auth health.
 - User correction: 429 must queue, not stop an account. Subsequent correction:
   use a fixed 30 seconds, not increasing minute-scale delays. Applies to 429,
   generic post-match verification and 91117 session-release checks. Existing
@@ -13,8 +25,8 @@
   session-release deadline. Repeated 429 alone never exhausts a terminal budget.
 - Durable fleet admission cooldown starts on a new 429 checkpoint or report.
   Heartbeat renewals and reports continue; identical heartbeat checkpoints do
-  not keep extending cooldown. Admission resumes one room per 30 seconds while
-  retry work remains, with a short 60-second pacing tail. Existing leased rooms
+  not keep extending cooldown. After the admission hotfix, all available workers
+  can resume after30s; no fleet pacing tail remains. Existing leased rooms
   are not revoked. Claims replayed by request ID remain idempotent.
 - Account details expose status/due time/429 count; admin/user filters label
   the wait. Pending exports, exclusive ownership, incomplete-tail protection,

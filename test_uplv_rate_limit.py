@@ -117,7 +117,7 @@ class RateLimitTests(unittest.TestCase):
         self.assertEqual(self.store.fetchone("SELECT count(*) FROM uplv_tasks WHERE job_id=? AND status='waiting'", (job,)), (20,))
         self.now = before
         self.assertIsNotNone(self.claim('probe'))
-        self.assertIsNone(self.claim('other'))
+        self.assertIsNotNone(self.claim('other'))
 
     def test_verify_429_refunds_read_attempt_and_retries_read_only(self):
         self.report(kind='')
@@ -129,17 +129,26 @@ class RateLimitTests(unittest.TestCase):
         self.now += 30
         self.assertTrue(self.claim()['verify_only'])
 
-    def test_pacing_tail_expires_after_retry_work_drains(self):
+    def test_stale_pacing_fields_never_limit_healthy_admission(self):
         self.report()
         self.store.exec("UPDATE uplv_tasks SET status='stopped'")
         self.pool.pool_create({'accounts': '\n'.join(f'offline_tail_{i}|unused' for i in range(20))})
         self.now += 30
+        self.store.exec('UPDATE uplv_auth_cooldown SET pace_until=?,next_admit=?', (self.now+99999,self.now+99999))
         self.assertIsNotNone(self.claim('one'))
-        self.now += 30
         self.assertIsNotNone(self.claim('two'))
-        self.now += 30
         self.assertIsNotNone(self.claim('three'))
         self.assertIsNotNone(self.claim('four'))
+
+    def test_expired_429_quiet_interval_allows_all_42_workers_not_one_probe(self):
+        self.report()
+        self.pool.pool_settings({'max_rooms': 250})
+        self.pool.pool_create({'accounts': '\n'.join(f'offline_fleet_{i}|unused' for i in range(210))})
+        self.now += 30
+        self.store.exec('UPDATE uplv_auth_cooldown SET pace_until=?,next_admit=?', (self.now+99999,self.now+99999))
+        for i in range(42):
+            self.assertIsNotNone(self.claim(f'worker_{i}'))
+        self.assertEqual(self.store.fetchone("SELECT count(*) FROM uplv_rooms WHERE status='running'"), (42,))
 
     def test_heartbeat_429_with_lost_report_is_queued_after_lease_cleanup(self):
         self.pool.heartbeat(self.body())
