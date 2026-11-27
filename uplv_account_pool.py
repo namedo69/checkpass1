@@ -125,46 +125,10 @@ class AccountPool:
             raise ValueError('Thao tác không hợp lệ')
 
     def hidden_check_claim(self, body):
-        import secrets
-        satellite = self.satellite_id(body)
-        # Mọi lần claim của vệ tinh CheckPass đều đi qua đây. Kiểm tra nhanh
-        # (index-only) trước khi giữ khóa UpLv và chạy truy vấn join 5 bảng.
-        now = time.time()
-        if (self.store.fetchone("SELECT 1 FROM uplv_tasks WHERE status='screening' LIMIT 1") is None
-                and self.store.fetchone("SELECT 1 FROM uplv_check_chunks WHERE status='claimed' AND lease_until<? LIMIT 1", (now,)) is None):
-            return None
-        # Auxiliary screening must not join the queue ahead of room reports
-        # and heartbeats. Retry on the next CheckPass poll if admission is busy.
-        if not self.lock.acquire(False):
-            return None
-        try:
-            if self.clear_state['running']:
-                return None
-            # Build hidden chunks only from unowned screening tasks. Completed
-            # rows are released independently and retries get fresh chunks.
-            row = self.store.fetchone("SELECT c.id,c.tasks_json FROM uplv_check_chunks c JOIN uplv_jobs j ON j.id=c.job_id WHERE j.status='open' AND c.status='claimed' AND c.lease_until<? ORDER BY c.id LIMIT 1", (time.time(),))
-            if not row:
-                # Ordered index scan can stop after 15 eligible tasks instead
-                # of joining/sorting the entire screening queue for every poll.
-                tasks = self.store.fetch("SELECT t.id,t.job_id,t.account_json FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id WHERE t.status='screening' AND j.status='open' AND NOT EXISTS (SELECT 1 FROM uplv_check_leases l WHERE l.task_id=t.id AND l.lease_until>=?) AND NOT EXISTS (SELECT 1 FROM uplv_check_members m JOIN uplv_check_chunks c ON c.id=m.chunk_id WHERE m.task_id=t.id AND c.status='claimed') ORDER BY t.created_at,t.id LIMIT 15", (time.time(),))
-                if not tasks:
-                    return None
-                job = tasks[0][1]
-                tasks = [r for r in tasks if r[1] == job]
-                chunk = uuid.uuid4().hex
-                items = [{'task_id': r[0], 'account': json.loads(r[2])} for r in tasks]
-                self.store.batch([{'sql': "INSERT INTO uplv_check_chunks (id,job_id,tasks_json,status) VALUES (?,?,?,'pending')", 'args': [chunk, job, json.dumps(items)]}])
-                self.store.batch([{'sql': 'INSERT INTO uplv_check_members VALUES (?,?) ON CONFLICT(task_id) DO UPDATE SET chunk_id=excluded.chunk_id', 'args': [item['task_id'], chunk]} for item in items])
-            else:
-                chunk, raw = row
-                items = json.loads(raw)
-            token = secrets.token_urlsafe(32)
-            until = time.time() + 300
-            self.store.batch([{'sql': "UPDATE uplv_check_chunks SET status='claimed',satellite_id=?,token=?,lease_until=? WHERE id=?", 'args': [satellite, token, until, chunk]}])
-            return {'chunk_id': chunk, 'kind': 'uplv_screening', 'lease_token': token,
-                    'accounts': ['|'.join(item['account']) for item in items], 'lease_until': until}
-        finally:
-            self.lock.release()
+        # Compatibility for old CheckPass workers: finish existing reports,
+        # but never take new UpLv accounts away from game workers.
+        self.satellite_id(body)
+        return None
 
     def hidden_check_report(self, body):
         with self.lock:
@@ -215,21 +179,8 @@ class AccountPool:
             return {'ok': True}
 
     def checkpass_claim(self, body):
-        import secrets
-        satellite = self.satellite_id(body)
-        with self.lock:
-            if self.clear_state['running']:
-                return {'ok': True, 'check': None}
-            active = self.store.fetchone("SELECT COUNT(*) FROM uplv_check_leases c JOIN uplv_tasks t ON t.id=c.task_id WHERE t.status='screening' AND c.lease_until>?", (time.time(),))[0]
-            if active >= 20:
-                return {'ok': True, 'check': None}
-            rows = self.store.fetch("SELECT t.id,t.account_json FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id LEFT JOIN uplv_check_leases c ON c.task_id=t.id WHERE t.status='screening' AND j.status='open' AND (c.task_id IS NULL OR c.lease_until<?) ORDER BY COALESCE(c.attempts,0),t.created_at LIMIT 5", (time.time(),))
-            if not rows:
-                return {'ok': True, 'check': None}
-            token = secrets.token_urlsafe(32)
-            self.store.batch([{'sql': 'INSERT INTO uplv_check_leases VALUES (?,?,?,?,1) ON CONFLICT(task_id) DO UPDATE SET satellite_id=excluded.satellite_id,token=excluded.token,lease_until=excluded.lease_until,attempts=uplv_check_leases.attempts+1',
-                'args': [r[0], satellite, token, time.time() + 600]} for r in rows])
-            return {'ok': True, 'check': {'token': token, 'accounts': [{'task_id': r[0], 'account': json.loads(r[1])} for r in rows]}}
+        self.satellite_id(body)
+        return {'ok': True, 'check': None}
 
     def checkpass_report(self, body):
         import secrets
@@ -339,14 +290,24 @@ class AccountPool:
             if results and str(slot) in results:
                 result = results[str(slot)]
                 data['result'] = result['status']
+                data['last_check'] = {'verified': result.get('verified') is True,
+                                      'idle': result.get('idle') is True,
+                                      'failure_kind': result.get('failure_kind', '')}
                 if result.get('final_error'):
                     data.update(detail=result['final_error'], final_error=result['final_error'],
                                 failure_kind=result.get('failure_kind', ''),
                                 error_stage=result.get('error_stage', ''))
+                elif 'failure_kind' in result:
+                    if data.get('final_error'):
+                        data['previous_error'] = data['final_error']
+                        if data.get('detail') == data['final_error']:
+                            data['detail'] = 'Lượt đọc mới không có mã từ chối; xem last_check để biết kết quả đối soát'
+                    data.update(final_error='', failure_kind='',
+                                error_stage=result.get('error_stage', ''))
                 if result.get('root_cause'):
                     data['root_cause'] = result['root_cause']
             # Structured diagnostics only; redact this occupant's credentials.
-            for key in ('detail', 'final_error', 'root_cause', 'error_stage'):
+            for key in ('detail', 'final_error', 'previous_error', 'root_cause', 'error_stage'):
                 if key not in data:
                     continue
                 text = str(data[key])
@@ -385,7 +346,8 @@ class AccountPool:
             if body.get('_owner_user_id'):
                 statements.append({'sql': 'INSERT INTO uplv_job_owners VALUES (?,?)', 'args': [job, int(body['_owner_user_id'])]})
             self.store.batch(statements)
-        return {'ok': True, 'job_id': job, 'rooms': 0, 'screening_accounts': len(accounts), 'waiting_accounts': len(accounts)}
+        return {'ok': True, 'job_id': job, 'rooms': 0, 'screening_accounts': 0,
+                'waiting_accounts': len(accounts), 'profile_source': 'game'}
 
     def assert_accounts_available(self, accounts, job=None):
         keys = {a[0].casefold() for a in accounts}
@@ -401,7 +363,7 @@ class AccountPool:
     def task_inserts(job, accounts, target, mode):
         now = time.time()
         return [{'sql': 'INSERT INTO uplv_tasks (id,job_id,username_key,account_json,target,mode,status,created_at) VALUES (?,?,?,?,?,?,?,?)',
-                 'args': [uuid.uuid4().hex, job, a[0].casefold(), json.dumps(a), target, mode, 'screening', now + i * .000001]}
+                 'args': [uuid.uuid4().hex, job, a[0].casefold(), json.dumps(a), target, mode, 'waiting', now + i * .000001]}
                 for i, a in enumerate(accounts)]
 
     def pool_add(self, body):
@@ -450,6 +412,7 @@ class AccountPool:
         return {'ok': True, 'max_rooms': value}
 
     def pool_form_room(self):
+        self.release_legacy_screening()
         # Give due inspection work a turn before new battles; otherwise a
         # large ready pool can starve interrupted accounts indefinitely.
         if time.monotonic() - getattr(self, '_verification_turn', 0) >= 5:
@@ -476,7 +439,7 @@ class AccountPool:
             group = self.store.fetchone("SELECT t.mode FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id WHERE t.status='waiting' AND j.status='open' GROUP BY t.mode HAVING COUNT(*)>=5 ORDER BY MIN(t.created_at) LIMIT 1")
             if not group:
                 # A partial continuation group can be completed by new,
-                # screened accounts; do not classify this as a terminal tail.
+                # uploaded accounts; the game reads their actual level.
                 combined = self.store.fetchone("SELECT t.mode FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id WHERE t.status IN ('ready','waiting') AND j.status='open' GROUP BY t.mode HAVING COUNT(*)>=5 ORDER BY MIN(t.created_at) LIMIT 1")
                 if combined:
                     selected = self.store.fetch("SELECT t.id,t.job_id,t.account_json FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id WHERE t.status IN ('ready','waiting') AND t.mode=? AND j.status='open' ORDER BY CASE WHEN t.status='ready' THEN 0 ELSE 1 END,t.created_at LIMIT 5", combined)
@@ -499,6 +462,25 @@ class AccountPool:
                         'args': [room, i, r[0]]} for i, r in enumerate(selected)]
         self.store.batch(statements)
         return room
+
+    def release_legacy_screening(self):
+        """Drain the old precheck queue without stealing any checker session.
+
+        No fresh CheckPass claims are issued. Allow expired owners 120 seconds
+        to finish/close before UpLv takes over; terminal tasks stay untouched.
+        Zero is unconfirmed metadata, never evidence of a missing character.
+        """
+        cutoff = time.time() - 120
+        rows = self.store.fetch("SELECT t.id FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id WHERE t.status='screening' AND j.status='open' AND NOT EXISTS (SELECT 1 FROM uplv_check_leases l WHERE l.task_id=t.id AND l.lease_until>=?) AND NOT EXISTS (SELECT 1 FROM uplv_check_members m JOIN uplv_check_chunks c ON c.id=m.chunk_id WHERE m.task_id=t.id AND c.status='claimed' AND c.lease_until>=?) ORDER BY t.created_at,t.id LIMIT 5", (cutoff, cutoff))
+        changes = []
+        for task, in rows:
+            changes.extend([
+                {'sql': "UPDATE uplv_tasks SET status='waiting' WHERE id=? AND status='screening'", 'args': [task]},
+                {'sql': 'INSERT INTO uplv_task_details VALUES (?,?,?) ON CONFLICT(task_id) DO UPDATE SET updated_at=excluded.updated_at,detail_json=excluded.detail_json',
+                 'args': [task, time.time(), json.dumps({'stage': 'UPLV_GAME_PENDING', 'detail': 'Vệ tinh UpLv tự đăng nhập game và đọc cấp; không chờ CheckPass/Kiện Tướng', 'level_confirmed': False})]},
+            ])
+        if changes:
+            self.store.batch(changes)
 
     def finish_unfillable_tail(self):
         """Finalize only a drained mode pool; never fail an in-flight account."""

@@ -165,7 +165,7 @@ class QuarantineTests(unittest.TestCase):
     def test_conflict_is_queued_not_failed_and_cannot_be_immediately_claimed(self):
         self.store.exec("UPDATE uplv_tasks SET status='waiting'")
         room = self.pool.claim(dict(satellite_id='offline', capacity=1, pool_protocol=1,
-                                    verify_protocol=1, screen_protocol=1))['room']
+                                    verify_protocol=1, screen_protocol=1, direct_game_protocol=1))['room']
         results = {str(i): dict(status='pending', level_after=10, failure_kind='session_conflict',
                    final_error='terminal_session_conflict: server_error_csid_1190_code_91117') for i in range(5)}
         self.pool.report(dict(satellite_id='offline', room_id=room['id'], lease_token=room['lease_token'],
@@ -178,7 +178,7 @@ class QuarantineTests(unittest.TestCase):
     def assign(self):
         self.store.exec("UPDATE uplv_tasks SET status='waiting'")
         return self.pool.claim(dict(satellite_id='offline', capacity=1, pool_protocol=1,
-                                    verify_protocol=1, screen_protocol=1))['room']
+                                    verify_protocol=1, screen_protocol=1, direct_game_protocol=1))['room']
 
     def pending_report(self, room):
         self.pool.report(dict(satellite_id='offline', room_id=room['id'], lease_token=room['lease_token'],

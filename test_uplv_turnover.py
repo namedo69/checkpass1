@@ -140,7 +140,7 @@ class ScreeningAdmissionTests(unittest.TestCase):
     def test_heartbeat_one_atomic_batch_and_stale_generation_no_write(self):
         self.store.exec("UPDATE uplv_tasks SET status='waiting'")
         room = self.pool.claim({'satellite_id': 'test', 'capacity': 1,
-                               'verify_protocol': 1, 'screen_protocol': 1})['room']
+                               'verify_protocol': 1, 'screen_protocol': 1, 'direct_game_protocol': 1})['room']
         body = dict(satellite_id='test', room_id=room['id'], lease_token=room['lease_token'],
                     versions=[0]*5, progress={'0': {'stage': 'VERIFYING', 'level': 3}})
         with patch.object(self.store, 'batch', wraps=self.store.batch) as batch:
@@ -169,22 +169,20 @@ class ScreeningAdmissionTests(unittest.TestCase):
             release.set()
             thread.join(3)
 
-    def test_active_membership_and_direct_lease_excluded_from_screening(self):
+    def test_no_new_checkpass_claims_after_direct_game_switch(self):
         tasks = [r[0] for r in self.store.fetch('SELECT id FROM uplv_tasks ORDER BY created_at')]
         self.store.exec('INSERT INTO uplv_check_leases VALUES (?,?,?,?,?)',
                         (tasks[0], 'other', 'unused', time.time()+300, 0))
-        first = self.pool.hidden_check_claim({'satellite_id': 'test'})
-        self.assertEqual(len(first['accounts']), 4)
+        self.assertIsNone(self.pool.hidden_check_claim({'satellite_id': 'test'}))
         self.assertIsNone(self.pool.hidden_check_claim({'satellite_id': 'other'}))
         self.store.exec('UPDATE uplv_check_leases SET lease_until=0')
-        second = self.pool.hidden_check_claim({'satellite_id': 'other'})
-        self.assertEqual(len(second['accounts']), 1)
-        self.assertNotEqual(first['accounts'], second['accounts'])
+        self.assertIsNone(self.pool.hidden_check_claim({'satellite_id': 'other'}))
+        self.assertIsNone(self.pool.checkpass_claim({'satellite_id': 'other'})['check'])
 
     def test_delayed_report_keeps_capacity_until_ack_then_immediate_refill(self):
         self.store.exec("UPDATE uplv_tasks SET status='waiting'")
         body = {'satellite_id': 'test', 'capacity': 1, 'pool_protocol': 1,
-                'verify_protocol': 1, 'screen_protocol': 1}
+                'verify_protocol': 1, 'screen_protocol': 1, 'direct_game_protocol': 1}
         room = self.pool.claim(body)['room']
         self.assertIsNotNone(room)
         self.assertEqual(self.pool.claim(body)['reason'], 'already_running')

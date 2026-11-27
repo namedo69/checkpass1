@@ -28,10 +28,26 @@ class ScreeningHandoffTests(unittest.TestCase):
         self.store.exec('CREATE TABLE app_settings (setting_key TEXT PRIMARY KEY, setting_value TEXT)')
         self.pool = UpLvCoordinator(self.store)
         self.job = self.pool.pool_create({'accounts': '\n'.join(f'synthetic{i}|unused' for i in range(5))})['job_id']
+        # Compatibility fixtures represent work already leased before upgrade.
+        self.store.exec("UPDATE uplv_tasks SET status='screening'")
+
+    def old_claim(self, legacy=False):
+        tasks = self.store.fetch('SELECT id,account_json FROM uplv_tasks ORDER BY created_at')
+        if legacy:
+            for task, _ in tasks:
+                self.store.exec('INSERT INTO uplv_check_leases VALUES (?,?,?,?,?)',
+                                (task, 'test', 'old-token', 9999999999, 1))
+            return {'token': 'old-token', 'accounts': [{'task_id':t,'account':json.loads(a)} for t,a in tasks]}
+        items = [{'task_id':t,'account':json.loads(a)} for t,a in tasks]
+        self.store.exec('INSERT INTO uplv_check_chunks VALUES (?,?,?,?,?,?,?)',
+                        ('old-chunk', self.job, json.dumps(items), 'claimed', 'test', 'old-token', 9999999999))
+        for task, _ in tasks:
+            self.store.exec('INSERT INTO uplv_check_members VALUES (?,?)', (task, 'old-chunk'))
+        return {'chunk_id':'old-chunk','lease_token':'old-token'}
 
     def report(self, row, legacy=False):
         if legacy:
-            claim = self.pool.checkpass_claim({'satellite_id': 'test'})['check']
+            claim = self.old_claim(legacy=True)
             rows = [dict(task_id=item['task_id'], level=None, check_status=row.get('status', ''),
                          check_result=row.get('result_type', ''),
                          check_player_status=row.get('player_status', ''),
@@ -39,7 +55,7 @@ class ScreeningHandoffTests(unittest.TestCase):
                          no_character=False) for item in claim['accounts']]
             self.pool.checkpass_report({'satellite_id': 'test', 'token': claim['token'], 'rows': rows})
         else:
-            claim = self.pool.hidden_check_claim({'satellite_id': 'test'})
+            claim = self.old_claim()
             self.pool.hidden_check_report(dict(satellite_id='test', chunk_id=claim['chunk_id'],
                 lease_token=claim['lease_token'], done=True,
                 rows=[dict(row, stt=str(i)) for i in range(1, 6)]))
@@ -83,7 +99,7 @@ class ScreeningHandoffTests(unittest.TestCase):
         self.assertEqual(self.store.fetch('SELECT DISTINCT status FROM uplv_tasks'), [('failed',)])
 
     def test_old_chunk_cannot_overwrite_assigned_tasks(self):
-        claim = self.pool.hidden_check_claim({'satellite_id': 'test'})
+        claim = self.old_claim()
         body = dict(satellite_id='test', chunk_id=claim['chunk_id'], lease_token=claim['lease_token'],
                     done=False, rows=[dict(stt=str(i), status='OK', result_type='Lỗi CTNV', level='') for i in range(1, 6)])
         self.pool.hidden_check_report(body)
@@ -92,7 +108,7 @@ class ScreeningHandoffTests(unittest.TestCase):
         self.assertEqual(self.store.fetch('SELECT DISTINCT status FROM uplv_tasks'), [('assigned',)])
 
     def test_invalid_chunk_lease_rejected_without_changes(self):
-        claim = self.pool.hidden_check_claim({'satellite_id': 'test'})
+        claim = self.old_claim()
         with self.assertRaises(ValueError):
             self.pool.hidden_check_report(dict(satellite_id='test', chunk_id=claim['chunk_id'],
                 lease_token='wrong', done=True, rows=[dict(stt='1', status='OK', result_type='Lỗi CTNV', level='')]))

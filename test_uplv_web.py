@@ -68,7 +68,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(engine._run_once.call_count, 1)
         self.assertFalse(result[0][0])
 
-    def test_recovery_game_failure_uses_web_fallback_for_completed_account(self):
+    def test_recovery_game_failure_never_uses_web_fallback(self):
         from uplv_engine import Engine
         engine = Engine.__new__(Engine)
         engine.login_lock = threading.Lock()
@@ -83,10 +83,11 @@ class WebTests(unittest.TestCase):
              patch('uplv_kientuong.PlayerSession', return_value=web):
             result = engine.run({'accounts':[['u','unused']], 'levels':[8], 'targets':[12], 'verify_only':True},
                                 threading.Event(), lambda *a:None, lambda *a:None)
-        self.assertTrue(result[0][0])
-        self.assertEqual(result[0][2],12)
-        web.read.assert_called_once()
-        web.close.assert_called_once()
+        self.assertFalse(result[0][0])
+        self.assertEqual(result[0][2],8)
+        self.assertEqual(result[0][3],'pool_verifying')
+        web.read.assert_not_called()
+        engine.runtime[2].assert_called_once()
 
     def test_game_restriction_is_terminal_but_generic_garena_error_is_not(self):
         from pve_runtime.failure_policy import restricted_account

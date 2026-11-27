@@ -186,20 +186,16 @@ class Engine:
 
         if room.get('verify_only') or room.get('screen_only'):
             from concurrent.futures import ThreadPoolExecutor
-            from pve_runtime.loader import load
-            from pve_runtime.deadlines import session_deadline
-            from pve_runtime.web_finish import idle_on_current_session
             def verify_account(index):
                 level = room['levels'][index]
                 target = room['targets'][index]
                 row = (False, level, level, 'pool_verifying')
-                session = web = None
-                bundle = None
                 try:
                     progress(index, '[VERIFYING] Đối soát cấp/trạng thái cũ; không mở trận')
                     bundle = authenticate(*room['accounts'][index])
                     from uplv_profile_v2 import read_profile
-                    level, idle = read_profile(run_cs, bundle, room['accounts'][index][0], stop)
+                    level, idle = read_profile(run_cs, bundle, room['accounts'][index][0], stop,
+                                               progress=lambda message: progress(index, message))
                     progress(index, f'[LEVEL] Lv{level}')
                     row = (level >= target, room['levels'][index], level,
                            '' if level >= target else 'screen_ready' if idle and room.get('screen_only') else 'pool_ready' if idle else 'pool_verifying')
@@ -221,39 +217,6 @@ class Engine:
                         row = (False, room['levels'][index], level, 'screen_wait')
                     progress(index, '[ERROR] Tài khoản bị hạn chế: ' + diagnostic if restricted_account(exc)
                              else '[VERIFY_WAIT] Đối soát chưa xong: ' + type(exc).__name__ + ': ' + diagnostic)
-                    if not create_rejected and not stop_on_denial(exc) and not stop.is_set():
-                        try:
-                            from uplv_kientuong import PlayerSession
-                            progress(index, '[VERIFYING] Không đọc được game; kiểm tra cấp Kiện Tướng dự phòng')
-                            if bundle is None:
-                                user, password = room['accounts'][index]
-                                bundle = login(user, password, device(user)['device_id'], timeout=15, with_sso_key=True)
-                            key = getattr(bundle, 'sso_key', '') if bundle is not None else ''
-                            if not key:
-                                from token_login import login_sso_key
-                                key = login_sso_key(*room['accounts'][index], timeout=15)
-                                key = key.sso_key if hasattr(key, 'sso_key') else str(key)
-                            # OAuth/game namespace is bound only when a bundle
-                            # was obtained. Never accept an unbound web player.
-                            if bundle is None:
-                                raise RuntimeError('Chưa có OAuth identity để đối chiếu Kiện Tướng')
-                            web = PlayerSession(key, bundle.open_id, stop)
-                            actual = web.read(time.monotonic() + 20)
-                            level = actual
-                            progress(index, f'[LEVEL] Lv{level}')
-                            if level >= target:
-                                row = (True, room['levels'][index], level, '')
-                                progress(index, '[STACK4_DONE] Kiện Tướng dự phòng xác nhận đạt mục tiêu')
-                            else:
-                                row = (False, room['levels'][index], level, 'pool_verifying')
-                                progress(index, '[VERIFYING] Kiện Tướng đã xác nhận cấp; còn chờ trạng thái trận trong game')
-                        except Exception as fallback:
-                            progress(index, '[VERIFYING] Kiện Tướng dự phòng chưa xong: ' + type(fallback).__name__)
-                finally:
-                    if session is not None:
-                        session.close()
-                    if web is not None:
-                        web.close()
                 completed(index, row)
                 return index, row
             with ThreadPoolExecutor(max_workers=min(5, len(room['accounts']))) as executor:
@@ -266,7 +229,9 @@ class Engine:
             return run_five_batch(room['accounts'], room['target'], concurrency, stop,
                 prepare, authenticate, progress, mode=room['mode'], prepare_cards=True,
                 checkpoint_store=checkpoints(self.state_dir / 'rewards'), completed=completed,
-                require_idle={i for i, level in enumerate(room.get('levels', [])) if level >= 5},
+                # Uploaded accounts have no trusted level yet. The first game
+                # login must not skip the old-match/idle gate for them either.
+                require_idle=set(range(len(room['accounts']))),
                 targets=room.get('targets'))
         return run_rooms(room['accounts'], room['target'], 1, concurrency, stop,
                          prepare, authenticate, progress, mode=room['mode'],

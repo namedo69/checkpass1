@@ -300,6 +300,8 @@ class UpLvCoordinator(AccountPool):
             paused = self.store.fetchone('SELECT paused FROM uplv_satellites WHERE id=?', (satellite,))
             if paused[0]:
                 return {'ok': True, 'room': None, 'reason': 'paused'}
+            if body.get('direct_game_protocol') != 1:
+                return {'ok': True, 'room': None, 'reason': 'worker_upgrade_required'}
             occupied = self.store.fetchone("SELECT COUNT(*) FROM uplv_rooms WHERE status IN ('running','interrupted')")[0]
             if occupied >= self.pool_limit():
                 return {'ok': True, 'room': None, 'reason': 'system_room_limit'}

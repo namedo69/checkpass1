@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 import uplv_config as config
 from uplv_logs import RoomLogs
 
-VERSION = 'uplv-satellite-0.6.8-session-wait'
+VERSION = 'uplv-satellite-0.6.9-direct-game'
 
 
 class RevokedLease(RuntimeError):
@@ -97,7 +97,8 @@ class Metrics:
                 pass
         return {'rss_mb': round(rss, 2), 'cpu_percent': round(percent, 2),
                  'threads': threading.active_count(), 'uptime_seconds': int(now - self.started),
-                 'capacity': max(1, min(5, int(getattr(config, 'MAX_ROOMS', 5))))}
+                  'capacity': max(1, min(5, int(getattr(config, 'MAX_ROOMS', 5)))),
+                  'direct_game_protocol': 1}
 
 
 class Satellite:
@@ -367,7 +368,11 @@ class Satellite:
 
     def claim_checkpass_chunk(self):
         # Slow auxiliary claims never occupy the UpLv scheduling thread.
+        if self.shutdown.is_set():
+            return
         try:
+            # Only explicitly pinned ordinary CheckPass jobs use this path.
+            # UpLv uploads never load the checker or request pre-screening.
             reply = self.client.checkpass_claim({'satellite_id': self.id, 'lease_minutes': 5})
             if reply.get('claim'):
                 self.run_checkpass_chunk(reply['claim'])
@@ -539,6 +544,7 @@ class Satellite:
                                                           'pool_protocol': 1,
                                                           'verify_protocol': 1,
                                                           'screen_protocol': 1,
+                                                          'direct_game_protocol': 1,
                                                           'metrics': self.metrics.snapshot()})
                         request_id = uuid.uuid4().hex
                         self.master_seen = time.monotonic()

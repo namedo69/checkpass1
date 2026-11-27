@@ -29,7 +29,7 @@ class SessionWaitTests(unittest.TestCase):
 
     def claim(self, worker='offline'):
         return self.pool.claim(dict(satellite_id=worker, capacity=1, pool_protocol=1,
-                                    verify_protocol=1, screen_protocol=1))['room']
+                                    verify_protocol=1, screen_protocol=1, direct_game_protocol=1))['room']
 
     def report(self, room=None, kind='session_conflict', **extra):
         room = room or self.room

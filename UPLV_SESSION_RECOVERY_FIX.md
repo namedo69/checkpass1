@@ -1,5 +1,59 @@
 # UpLv 0.6.6 — session recovery update
 
+## 0.6.9 direct-game/profile follow-up — PUSH/DEPLOY AUTHORIZED
+
+- Reproduced an idle-decoding defect with synthetic encrypted-frame payloads:
+  the bundled capture parser leaves pre-tsf4g padding in body_full. Comparing
+  that entire value with one-byte1061 `00` rejects valid idle replies. The V2
+  profile adapter now validates/removes the full trailer before extracting CS
+  bodies. Unknown, malformed, busy, closed and denied replies never imply idle.
+  Reads remain create=False/verify_only; one1060 probe, no match/re-login loop.
+- A synthetic end-to-end worker-report/master test confirms idleLv3 returns to
+  waiting/preparation, with wait budget cleared, rather than another inspection.
+  This establishes a code defect/fix, NOT the cause of every liveLv3 stop or a
+  measured production recovery rate. No claim that all historical waits recover.
+- Supersedes the UNDEPLOYED auxiliary-feeder proposal at user request: no3x
+  precheck tuning. New uploads/additions enter waiting directly, not screening.
+  Level0 in the database means unconfirmed metadata, NOT a confirmed missing
+  role. The existing game preparation/login reads actual level; a confirmed
+  target account finishes, lower levels use existing preparation and PvE flow.
+- Stop issuing hidden/direct CheckPass claims for UpLv accounts. Keep old report
+  endpoints compatible for already-running owners; do not change ordinary or
+  explicitly pinned CheckPass jobs. UpLv no longer loads the checker for uploads.
+- Drain at most5 old screening tasks per room-formation call, only for open jobs
+  and after any claimed hidden chunk/direct lease expires plus120s cleanup grace.
+  Still-live owners are not stolen. Late reports cannot overwrite assigned or
+  terminal tasks. No bulk migration or production DB edit has been run locally.
+- Remove Kiện Tướng fallback from read-only recovery too: a failed/unknown game
+  read stays unresolved, without another web/SSO profile login. Game-only match
+  confirmation remains in use; optional web client utilities remain unused by
+  the UpLv engine. OAuth exchange is still required for game authentication.
+- Require the existing UID/idle/old-match gate for every member entering5v5,
+  including fresh uploads with unknown level. Do not remove reward validation.
+- Game denial classification is preserved:91126 restricted/ban code,91117
+  session conflict (not ban),91123 registration-name rejection; unknown server
+  errors/429 stop their operation and do not imply ban or trigger bypass/retry.
+- Durable diagnostics separate previous_error from the current last_check; a
+  later no-denial result no longer appears as six repeated91117 errors merely
+  because the original error was retained. Historical room snapshots stay intact.
+- Do NOT increase room limits/check budgets, reopen terminal tasks, change the
+  missing-profile-after-create policy or edit runtime bundle assets.
+  Backups: backups/before_screening_recovery_20261127_141001/ and
+  backups/before_direct_game_login_20261127_153448/.
+- Deployment requires game-only workers for new claims: direct_game_protocol=1
+  is mandatory on master admission, and is advertised in worker metrics/claims.
+  Old workers can finish/report existing leases but cannot claim fresh work.
+  Push workers then switch master with this guard during the rolling update;
+  use a targeted VPS merge preserving admission/priority/live recovery capacity;
+  do not overwrite customized master/account-pool/coordinator files wholesale.
+- Validation:148 offline regressions, including upload/add -> direct claim,
+  legacy ownership/grace, game-level reads, target completion,91126/91117/429,
+  missing-profile stops and padded-idleLv3 recovery. No live-account test,
+  production throughput measurement. User authorized push/deploy afterwards.
+- Final integrity checks:9 changed/new Python files compile, git diff --check
+  clean, all90 runtime manifest entries unchanged/verified, both backup manifests
+  verified (9 and12 files), runtime self-check network-free and Qt-free.
+
 ## 0.6.8 session-wait follow-up — push/deployment authorized
 
 - New `session_wait` state retains account exclusivity and keeps the owning job
