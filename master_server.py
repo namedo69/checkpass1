@@ -1445,12 +1445,16 @@ class PostgreSQLStore:
         )
         with self._write_connection(uplv_only) as conn:
             with conn.transaction():
-                with conn.cursor() as cur:
-                    for statement in statements:
-                        if isinstance(statement, dict):
-                            cur.execute(self._sql(statement["sql"]), statement.get("args", ()))
-                        else:
-                            cur.execute(self._sql(str(statement)))
+                # UpLv renewals/reports contain many small statements. Pipeline
+                # preserves order/atomicity while avoiding one round trip each.
+                # Other services keep their existing transaction behavior.
+                with conn.pipeline() if uplv_only else contextlib.nullcontext():
+                    with conn.cursor() as cur:
+                        for statement in statements:
+                            if isinstance(statement, dict):
+                                cur.execute(self._sql(statement["sql"]), statement.get("args", ()))
+                            else:
+                                cur.execute(self._sql(str(statement)))
 
 
 @dataclass
