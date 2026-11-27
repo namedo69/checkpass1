@@ -307,6 +307,7 @@ def _level_result(state, target, before, stage, endpoint, rounds=0):
         'server_closed': state.get('server_closed', False),
         'transport_error': state.get('transport_error'),
         'identity_responses': state.get('identity_responses', []),
+        'login_limit': state.get('login_limit'),
     }
 
 
@@ -381,6 +382,21 @@ def _pump_state(sock, reader, seconds, state, initial=b''):
                 state['redirect_evidence'] = dict(csid=997, seq=row.get('seq'),
                     body_hex=row.get('body_full') or row.get('body'), endpoint=list(redirect))
         body = bytes.fromhex(row.get('body','')) if row.get('body') else b''
+        if csid == 1042:
+            from .login_limit import decode_login_limit_evidence
+            full = bytes.fromhex(row.get('body_full') or row.get('body', ''))
+            try:
+                limit = decode_login_limit_evidence(full)
+            except (ValueError, UnicodeError):
+                state['reject'] = 'login_1042_unparsed'
+            else:
+                state['login_limit'] = limit
+                if limit['code'] == 91126 and limit['reason'].strip():
+                    state['reject'] = 'Tài khoản game bị khóa / hạn chế: ' + limit['reason'][:300]
+                elif limit['code'] or limit['unparsed_tail_bytes']:
+                    state['reject'] = f'login_1042_unresolved_code_{limit["code"]}'
+                if state.get('progress_log'):
+                    state['progress_log'](f'[login-1042] code={limit["code"]} until={limit["until"]} reason={limit["reason"][:300]}')
         c1 = row.get('c1')
         if isinstance(c1, int) and 0 < c1 < 0x10000000:
             state['last_c1'] = max(int(state.get('last_c1') or 0), c1)
@@ -712,7 +728,7 @@ def run(devtoken_path, username, role_cs=None, port=6630, log=print,
             result.setdefault('redirect_history', list(history))
             return result
         if state.get('reject'):
-            sock.close(); return {'ok':False,'stage':'device-reg','reject':state['reject'],'device_registration_source':source,'burst_bytes':burst_bytes,'role_cs':role_cs}
+            sock.close(); return {'ok':False,'stage':'device-reg','reject':state['reject'],'login_limit':state.get('login_limit'),'device_registration_source':source,'burst_bytes':burst_bytes,'role_cs':role_cs}
         if create and not state.get('level_evidence') and not state.get('server_closed') and not state.get('transport_error'):
             try:
                 from .registration_v2 import create_character
@@ -751,7 +767,12 @@ def run(devtoken_path, username, role_cs=None, port=6630, log=print,
                 except Exception:
                     pass
             if not state.get('level_evidence'):
-                state['reject'] = state.get('reject') or ('role_level_not_received_after_create' if create else 'initial_role_level_not_received')
+                creation = state.get('creation_v2')
+                sent = creation.sent if creation else 0
+                missing = ('role_level_not_received_after_create' if sent else
+                           'login_closed_before_role' if state.get('server_closed') else
+                           'initial_role_level_not_received')
+                state['reject'] = state.get('reject') or state.get('transport_error') or missing
                 return _level_result(state, target, before, 'read-level', role_cs)
         if verify_only or (before >= target and not force_pve) or state.get('reject'):
             return _level_result(state, target, before, 'read-level', role_cs)

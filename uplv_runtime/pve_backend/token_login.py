@@ -88,7 +88,21 @@ class _Context:
     def __exit__(self,*args):
         if hasattr(self.obj,'close'): self.obj.close()
 
-def login_and_exchange(account,password,device_id,tcp_source_path=None,login_api_pyc_path=None,connect_base='https://100054.connect.garena.com',timeout=20,tcp_client_factory=None,opener=None,with_sso_key=True,progress=None):
+def _direct_or_web(client, account, password, session_factory, progress):
+    from bridge.core._core_data.garena_web_session import needs_web_session, web_login_grant
+    from bridge.core._core_data.garena_tcp import OAuthResult
+    try:
+        return client.oauth_token_login()
+    except Exception as exc:
+        if not needs_web_session(exc):
+            raise
+    if progress:
+        progress('[web-session] app_id=100055 trigger=error_no_session action=start')
+    token, open_id = web_login_grant(account, password, session_factory=session_factory, progress=progress)
+    return OAuthResult(client.uid, open_id, token, '', ())
+
+
+def login_and_exchange(account,password,device_id,tcp_source_path=None,login_api_pyc_path=None,connect_base='https://100054.connect.garena.com',timeout=20,tcp_client_factory=None,opener=None,with_sso_key=True,progress=None,web_session_factory=None):
     if not account or not password: raise SsoLoginError('Garena account and password are required',stage='tcp')
     if tcp_client_factory is None:
         try:
@@ -105,7 +119,7 @@ def login_and_exchange(account,password,device_id,tcp_source_path=None,login_api
         if opener is not None:
             c.http_grant_opener = opener
         try:
-            direct = c.oauth_token_login()
+            direct = _direct_or_web(c, account, password, web_session_factory, progress)
         except Exception as exc:
             # Do not include a raw server body/token in diagnostics.
             code = getattr(exc, 'code', None)
@@ -135,8 +149,12 @@ def login_and_exchange(account,password,device_id,tcp_source_path=None,login_api
                 message += f' ({type(exc).__name__})'
             if type(app_id) is int:
                 message += f' [app_id={app_id}]'
-            raise SsoLoginError(message, code=code, stage='tcp-token-v2',
-                                http_status=getattr(exc, 'http_status', None)) from None
+            error = SsoLoginError(message, code=code, stage='tcp-token-v2',
+                                  http_status=getattr(exc, 'http_status', None))
+            error.app_id = app_id if type(app_id) is int else None
+            error.reason = reason
+            error.diagnostics = getattr(exc, 'diagnostics', {})
+            raise error from None
         if not direct.open_id or not direct.response_data:
             raise SsoLoginError('V2 direct-token thiếu token/open ID', stage='tcp-token-v2')
         return TokenBundle(c.uid, direct.response_data, '', direct.open_id,

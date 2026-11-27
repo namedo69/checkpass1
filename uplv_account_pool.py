@@ -647,8 +647,14 @@ class AccountPool:
         # preparation. Unknown/missing level/state remains read-only inspection.
         text = str(result.get('final_error') or '')
         auth_only = ('SsoLoginError' in text or 'Auth V2 thất bại' in text)
+        # Explicit registration rejection precedes any match. Retry preparation
+        # rather than trapping an uncreated character in read-only inspection.
+        import re
+        registration_rejected = bool(re.search(
+            r'server_error_csid_(?:1009|1190)_code_(?:91103|91123)\b', text))
         session = self.store.fetchone('SELECT task_id FROM uplv_session_wait WHERE task_id=?', (task,))
-        resume = 'session_wait' if session else 'waiting' if auth_only and not inspection else 'verifying'
+        resume = ('session_wait' if session else 'waiting' if registration_rejected
+                  or (auth_only and not inspection) else 'verifying')
         detail.update(stage='WAIT_RETRY', pause_reason='', next_retry_at=now+self.VERIFY_DELAY)
         return [
             {'sql': 'INSERT INTO uplv_retry_wait VALUES (?,?,?,?) ON CONFLICT(task_id) DO UPDATE SET attempts=excluded.attempts,next_at=excluded.next_at,resume_state=excluded.resume_state',

@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 import uplv_config as config
 from uplv_logs import RoomLogs
 
-VERSION = 'uplv-satellite-0.6.11-evidence-only-failure'
+VERSION = 'uplv-satellite-0.6.12-web-session-ban-only'
 
 
 class RevokedLease(RuntimeError):
@@ -98,7 +98,10 @@ class Metrics:
         return {'rss_mb': round(rss, 2), 'cpu_percent': round(percent, 2),
                  'threads': threading.active_count(), 'uptime_seconds': int(now - self.started),
                   'capacity': max(1, min(5, int(getattr(config, 'MAX_ROOMS', 5)))),
-                  'direct_game_protocol': 1}
+                   'direct_game_protocol': 1,
+                   'worker_version': VERSION,
+                   'auth_web_session': 1,
+                   'ban_only_failure': 1}
 
 
 class Satellite:

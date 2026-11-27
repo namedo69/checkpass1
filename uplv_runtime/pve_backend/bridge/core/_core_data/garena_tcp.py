@@ -497,7 +497,10 @@ class GarenaTcpClient:
                     except GarenaError as exc:
                         if callback:
                             callback(f'[http-grant-v2] app_id=100055 http={exc.http_status} '
-                                     f'reason={exc.reason} action=reject next=stop')
+                                      f'reason={exc.reason} action=reject next=stop')
+                            if getattr(exc, 'diagnostics', None):
+                                import json
+                                callback('[http-grant-diagnostics] '+json.dumps(exc.diagnostics, sort_keys=True))
                         if exc.reason != 'require_grant':
                             raise
                     else:

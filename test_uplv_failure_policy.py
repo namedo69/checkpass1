@@ -7,7 +7,7 @@ import test_uplv_session_wait as fixtures
 
 class EvidenceTests(unittest.TestCase):
     def test_current_explicit_denial_only(self):
-        for code, expected in ((91126, 'restricted'), (91123, 'create_character'),
+        for code, expected in ((91126, 'restricted'), (91123, ''),
                                (91117, ''), (91121, ''), (99999, '')):
             self.assertEqual(terminal_account_failure(dict(
                 final_error=f'server_error_csid_1190_code_{code}')), expected)
@@ -24,6 +24,15 @@ class RetryTests(unittest.TestCase):
     report = fixtures.SessionWaitTests.report
     states = fixtures.SessionWaitTests.states
     due_claim = fixtures.SessionWaitTests.due_claim
+    def test_name_rejection_never_fails_or_stops_account(self):
+        self.report(kind='create_character', status='failed',
+                    final_error='server_error_csid_1009_code_91123')
+        self.assertEqual(self.states(), [('retry_wait',)])
+        self.now += 29
+        self.assertIsNone(self.claim())
+        self.now += 1
+        self.assertFalse(self.claim()['verify_only'])
+
     def test_auth_retry_survives_restart_and_waits_exactly_30_seconds(self):
         self.report(kind='restricted', status='failed', final_error='SsoLoginError HTTP=200')
         self.assertEqual(self.states(), [('retry_wait',)])
