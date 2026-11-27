@@ -576,9 +576,10 @@ class UpLvCoordinator(AccountPool):
                 changes.extend(self.auth_cooldown_changes())
             for i in range(len(json.loads(row[4]))):
                 results.setdefault(str(i), {'status': 'pending', 'level_before': 0, 'level_after': 0})
-            pool_room = bool(self.room_tasks(body['room_id']))
+            tasks = self.store.fetch('SELECT t.id,t.job_id,t.account_json,t.target,t.level,t.slot,t.status,d.detail_json FROM uplv_tasks t LEFT JOIN uplv_task_details d ON d.task_id=t.id WHERE t.room_id=? AND t.slot>=0 ORDER BY t.slot', (body['room_id'],))
+            pool_room = bool(tasks)
             progress_row = self.store.fetchone('SELECT progress_json FROM uplv_rooms WHERE id=?', (body['room_id'],))
-            details = self.save_task_details(body['room_id'], json.loads(progress_row[0]), results, defer=True)
+            details = self.save_task_details(body['room_id'], json.loads(progress_row[0]), results, defer=True, tasks=tasks)
             changes.extend(details)
             # A worker shutdown is not an operator stop of the owning job.
             # Mixed-owner rooms can also be interrupted by a different job.
@@ -592,7 +593,8 @@ class UpLvCoordinator(AccountPool):
             changes.append({'sql': 'UPDATE uplv_rooms SET status=?,results_json=?,lease_until=0 WHERE id=?',
                             'args': [state, json.dumps(results), body['room_id']]})
             changes.extend(self.pool_finish(body, results, bool(row[3] or body.get('stopped')), defer=True,
-                observed_details={c['args'][0]: json.loads(c['args'][2]) for c in details}) or [])
+                observed_details={c['args'][0]: json.loads(c['args'][2]) for c in details},
+                tasks=[task[:7] for task in tasks]) or [])
             self.store.batch(changes)
             self.store.exec("UPDATE uplv_jobs SET status='done' WHERE id=(SELECT job_id FROM uplv_rooms WHERE id=?) "
                             "AND NOT EXISTS (SELECT 1 FROM uplv_rooms r WHERE r.job_id=uplv_jobs.id AND r.status IN ('pending','running','interrupted'))",

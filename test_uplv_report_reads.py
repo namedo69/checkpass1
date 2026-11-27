@@ -66,3 +66,18 @@ class ReportReadsTests(unittest.TestCase):
             counts.append(len(calls))
         self.assertEqual(counts,[36,2])
         self.assertLess(timings[1],timings[0]/3)
+
+    def test_heartbeat_task_details_need_one_read_and_report_reuses_same_rows(self):
+        heartbeat=dict(self.body,progress={'0':dict(stage='VERIFYING',level=0)})
+        queries=[]
+        self.store.db.set_trace_callback(queries.append)
+        self.pool.heartbeat(heartbeat)
+        reads=[sql for sql in queries if sql.startswith('SELECT') and 'uplv_tasks' in sql]
+        self.assertEqual(len(reads),1)
+        self.assertIn('LEFT JOIN uplv_task_details',reads[0])
+        queries.clear()
+        results={str(i):dict(status='pending',level_after=0,failure_kind='rate_limit') for i in range(5)}
+        self.pool.report(dict(self.body,results=results))
+        reads=[sql for sql in queries if sql.startswith('SELECT') and 'uplv_tasks' in sql]
+        self.assertEqual(len(reads),2)
+        self.assertTrue(all('WHERE t.room_id=' in sql for sql in reads))

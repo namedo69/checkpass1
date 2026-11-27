@@ -295,11 +295,11 @@ class AccountPool:
                     'session_wait_deadline': 0})
             return {'ok': True, 'accounts': accounts, 'total': total, 'page': page, 'page_size': size}
 
-    def save_task_details(self, room, progress, results=None, defer=False):
+    def save_task_details(self, room, progress, results=None, defer=False, tasks=None):
         changes = []
-        previous = dict(self.store.fetch('SELECT d.task_id,d.detail_json FROM uplv_task_details d JOIN uplv_tasks t ON t.id=d.task_id WHERE t.room_id=? AND t.slot>=0', (room,)))
-        for task, _, credentials, _, _, slot, _ in self.room_tasks(room):
-            old = previous.get(task)
+        if tasks is None:
+            tasks = self.store.fetch('SELECT t.id,t.job_id,t.account_json,t.target,t.level,t.slot,t.status,d.detail_json FROM uplv_tasks t LEFT JOIN uplv_task_details d ON d.task_id=t.id WHERE t.room_id=? AND t.slot>=0 ORDER BY t.slot', (room,))
+        for task, _, credentials, _, _, slot, _, old in tasks:
             data = json.loads(old) if old else {}
             incoming = progress.get(str(slot), {})
             data.update({k: v for k, v in incoming.items() if v != '' and k != 'elapsed'})
@@ -701,8 +701,9 @@ class AccountPool:
             self.store.batch(changes)
             return {'ok': True, 'rechecking_failed_lv5': len(candidates)}
 
-    def pool_finish(self, body, results, stopped, defer=False, observed_details=None):
-        tasks = self.room_tasks(body['room_id'])
+    def pool_finish(self, body, results, stopped, defer=False, observed_details=None, tasks=None):
+        if tasks is None:
+            tasks = self.room_tasks(body['room_id'])
         if not tasks:
             return
         # One bounded join replaces repeated job/room/retry reads per occupant.
