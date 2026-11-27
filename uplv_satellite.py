@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 import uplv_config as config
 from uplv_logs import RoomLogs
 
-VERSION = 'uplv-satellite-0.6.7-deferred-verification'
+VERSION = 'uplv-satellite-0.6.8-session-wait'
 
 
 class RevokedLease(RuntimeError):
@@ -170,7 +170,7 @@ class Satellite:
                     row['level'] = int(level.group(1))
                 if elapsed:
                     row['elapsed'] = int(elapsed.group(1))
-                if any(marker in message for marker in ('[ERROR]', '[DEFERRED]', 'timeout', 'Timeout')):
+                if any(marker in message for marker in ('[ERROR]', '[DEFERRED]', '[VERIFY_WAIT]', 'timeout', 'Timeout')):
                     safe = message
                     for account in room['accounts']:
                         for secret in account:

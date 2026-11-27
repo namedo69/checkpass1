@@ -1,5 +1,40 @@
 # UpLv 0.6.6 — session recovery update
 
+## 0.6.8 session-wait follow-up — push/deployment authorized
+
+- New `session_wait` state retains account exclusivity and keeps the owning job
+  open, but frees the physical room after the worker has closed its operation.
+  Fresh `91117/session_conflict` results enter this queue, not immediate stop.
+- Durable `uplv_session_wait` stores a separate check count, start and next time.
+  Quiet intervals start at completion:120s initially, then240/480/900s (900s
+  capped). Maximum6 read-only inspections and2 hours per unresolved wait cycle.
+  These are conservative defaults, NOT a proven server TTL or success guarantee.
+- Due work uses existing verify-only leases; no novice preparation/battle is run
+  during a release check. Unknown/active state stays queued, even if a profile
+  was read. Only verified+idle re-enters preparation (belowLv5) or ready (Lv5+).
+  A confirmed target result can finish; silence cannot manufacture idle/reward.
+- The match-verification three-pass budget is neither consumed nor reset by
+  session-release checks. Verified+idle/target completion clears wait metadata.
+  Expired wait/check limits pause for manual review with91117 diagnostics.
+- Lost workers retain wait deadline/count after normal lease+120s cleanup.
+  A91117 result persisted in heartbeat also enters the wait queue if the final
+  report is lost. Late revoked-token/generation reports are still rejected.
+- Explicit job stop wins; no migration or reopening of old stopped/failed tasks,
+  including job f85e5d61.429/unknown server errors keep their previous quarantine.
+- Admin/user pages show the wait state; admin details show its own budget, due
+  time and deadline. Keep nonterminal waits out of unfillable-tail finalization.
+- Preserve verification-wait diagnostics instead of retaining only old CTNV text.
+- This does NOT fix the separate noviceLv3 continuation dead end, registration
+  error91123, auth429 throughput, or prove the source of91117 session conflicts.
+- Future VPS deployment requires an exact-hash guarded targeted merge preserving
+  its custom admission/queue/recovery-capacity settings; do not copy the local
+  coordinator/account-pool wholesale. Existing database is not touched locally.
+- Local validation:125 offline tests passed (26 new session-wait regressions),
+  runtime startup/integrity check passed without game network, both page scripts
+  passed JavaScript syntax checks. VPS-targeted candidate:67 offline tests passed;
+  customized admission, queue priority, recovery capacity and nonblocking reads
+  preserved. No real-account login or production test job used for validation.
+
 ## 0.6.7 follow-up — deployment authorized
 
 - Remove the worker's outer 2/4/8-second fresh-login verification loop. One

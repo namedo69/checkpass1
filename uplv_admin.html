@@ -196,6 +196,7 @@ tbody tr:hover{background:#f8fafc}
               <option value="assigned">Đang trong phòng xử lý</option>
               <option value="ready">Chờ ghép đội cùng cấp</option>
               <option value="verifying">Chờ đối soát sau trận</option>
+              <option value="session_wait">Chờ nhả phiên (91117)</option>
               <option value="success">Đã đạt cấp mục tiêu</option>
               <option value="failed">Lỗi</option>
               <option value="stopped">Đã dừng</option>
@@ -270,6 +271,7 @@ const statesMap={
   assigned:{text:'Đang trong phòng',badge:'badge-pending'},
   ready:{text:'Chờ ghép cùng cấp',badge:'badge-pending'},
   verifying:{text:'Chờ đối soát sau trận',badge:'badge-warn'},
+  session_wait:{text:'Chờ nhả phiên (91117)',badge:'badge-warn'},
   success:{text:'Đạt cấp mục tiêu',badge:'badge-success'},
   failed:{text:'Lỗi xử lý',badge:'badge-failed'},
   stopped:{text:'Đã dừng',badge:'badge-muted'}
@@ -283,6 +285,8 @@ const stagesMap={
   STACK4:'Xác minh sau trận',
   STACK4_DONE:'Đã xác minh mục tiêu',
   VERIFYING:'Đối soát Kiện Tướng',
+  WAIT_SESSION_RELEASE:'Chờ nhả phiên, chưa mở trận mới',
+  PAUSED_SESSION_WAIT_LIMIT:'Hết giới hạn chờ phiên, cần kiểm tra thủ công',
   POOL_READY:'Chờ ghép đội',
   WAIT_REPLACEMENT:'Chờ acc bù vị trí',
   BUFF:'Kiểm tra buff EXP',
@@ -430,6 +434,7 @@ function renderJobs(jobs){
           <div class="stat-box"><div class="stat-num">${c.waiting||0}</div><div class="stat-lbl">Chờ Lv5</div></div>
           <div class="stat-box"><div class="stat-num">${c.ready||0}</div><div class="stat-lbl">Sẵn Sàng Ghép</div></div>
           <div class="stat-box"><div class="stat-num warn">${c.verifying||0}</div><div class="stat-lbl">Chờ Đối Soát</div></div>
+          <div class="stat-box"><div class="stat-num warn">${c.session_wait||0}</div><div class="stat-lbl">Chờ Nhả Phiên</div></div>
           <div class="stat-box"><div class="stat-num bad">${fail}</div><div class="stat-lbl">Thất bại</div></div>
           <div class="stat-box"><div class="stat-num warn">${stop}</div><div class="stat-lbl">Đã dừng</div></div>
         </div>
@@ -536,7 +541,7 @@ async function loadAccounts(){
 }
 
 function accountReason(a){
-  if(a.status==='screening'||a.status==='verifying'){
+  if(a.status==='screening'||a.status==='verifying'||a.status==='session_wait'){
     if(a.next_retry_at>Date.now()/1000)return 'Chờ lượt kiểm tra lúc '+new Date(a.next_retry_at*1000).toLocaleTimeString();
     return 'Đang xếp hàng chờ lượt kiểm tra';
   }
@@ -556,7 +561,10 @@ function showAccountModal(idx){
     `Bước xử lý: ${stagesMap[a.stage]||a.stage||'—'}`,
     `Phòng: ${a.room?'P'+a.room:'Không chiếm phòng'} (${a.room_status||'trống'})`,
     `Vệ tinh xử lý: ${a.satellite_id||'Chưa cấp'}`,
-    `Số lượt đối soát: ${a.attempts} (tự tiếp tục, có backoff)`,
+    `Số lượt đối soát trận: ${a.attempts}`,
+    `Số lượt kiểm tra nhả phiên: ${a.session_wait_attempts||0} / 6 (hạn mức riêng)`,
+    `Lịch kiểm tra tiếp: ${a.next_retry_at?new Date(a.next_retry_at*1000).toLocaleString():'Không có'}`,
+    `Hạn chờ phiên: ${a.session_wait_deadline?new Date(a.session_wait_deadline*1000).toLocaleString():'Không có'}`,
     `Chi tiết chẩn đoán: ${a.detail||accountReason(a)||'Không có lỗi ghi nhận'}`
   ].join('\n');
   const btn=$('modalAccLogBtn');

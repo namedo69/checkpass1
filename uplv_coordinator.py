@@ -111,7 +111,7 @@ class UpLvCoordinator(AccountPool):
 
     def _clear_data_worker(self):
         tables = ('uplv_check_members', 'uplv_job_owners', 'uplv_check_chunks', 'uplv_claim_requests', 'uplv_logs', 'uplv_replacements', 'uplv_room_versions', 'uplv_reserves',
-                  'uplv_check_leases', 'uplv_verify_attempts', 'uplv_verify_rooms',
+                  'uplv_check_leases', 'uplv_verify_attempts', 'uplv_session_wait', 'uplv_verify_rooms',
                   'uplv_screen_rooms', 'uplv_room_history', 'uplv_task_details',
                   'uplv_tasks', 'uplv_pool_jobs', 'uplv_rooms', 'uplv_jobs')
         try:
@@ -240,10 +240,22 @@ class UpLvCoordinator(AccountPool):
             if not tasks:
                 continue
             progress = json.loads(self.store.fetchone('SELECT progress_json FROM uplv_rooms WHERE id=?', (room,))[0])
-            changes = []
+            results = json.loads(self.store.fetchone('SELECT results_json FROM uplv_rooms WHERE id=?', (room,))[0])
+            changes = self.save_task_details(room, progress, results, defer=True)
+            observed_details = {c['args'][0]: json.loads(c['args'][2]) for c in changes}
             for task, job, _, _, level, slot, _ in tasks:
                 state = self.store.fetchone('SELECT status FROM uplv_jobs WHERE id=?', (job,))[0]
                 observed = int(progress.get(str(slot), {}).get('level', 0) or 0)
+                waiting = self.store.fetchone('SELECT task_id FROM uplv_session_wait WHERE task_id=?', (task,))
+                if waiting or results.get(str(slot), {}).get('failure_kind') == 'session_conflict':
+                    # Preserve the independent deadline/check budget across a
+                    # lost inspection lease; never turn it into a battle retry.
+                    next_state = 'stopped'
+                    if state != 'stopped':
+                        next_state, planned = self.session_wait_result(task, observed_details.get(task))
+                        changes.extend(planned)
+                    changes.append({'sql': "UPDATE uplv_tasks SET status=?,level=?,room_id='',slot=-1 WHERE id=?", 'args': [next_state, max(level, observed), task]})
+                    continue
                 changes += [
                     {'sql': "UPDATE uplv_tasks SET status=?,level=?,room_id='',slot=-1 WHERE id=?", 'args': ['stopped' if state == 'stopped' else 'verifying', max(level, observed), task]},
                     {'sql': 'INSERT INTO uplv_task_details VALUES (?,?,?) ON CONFLICT(task_id) DO UPDATE SET updated_at=excluded.updated_at,detail_json=excluded.detail_json', 'args': [task, time.time(), json.dumps({'stage': 'VERIFYING', 'detail': 'Mất heartbeat/worker restart; thu hồi lease cũ, đối soát cấp và trận cũ trước khi chạy tiếp'})]},
@@ -625,7 +637,7 @@ class UpLvCoordinator(AccountPool):
                     {'sql': "UPDATE uplv_jobs SET status='stopped' WHERE id=?", 'args': [job]},
                     {'sql': "UPDATE uplv_rooms SET stop_requested=1,status=CASE WHEN status='pending' THEN 'stopped' ELSE status END WHERE job_id=?", 'args': [job]},
                 ])
-                self.store.exec("UPDATE uplv_tasks SET status='stopped' WHERE job_id=? AND status IN ('screening','waiting','ready','verifying')", (job,))
+                self.store.exec("UPDATE uplv_tasks SET status='stopped' WHERE job_id=? AND status IN ('screening','waiting','ready','verifying','session_wait')", (job,))
                 self.store.exec("UPDATE uplv_rooms SET stop_requested=1 WHERE id IN (SELECT room_id FROM uplv_tasks WHERE job_id=? AND status='assigned')", (job,))
             else:
                 raise ValueError('action: pause/resume/stop_job')

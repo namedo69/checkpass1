@@ -162,7 +162,7 @@ class RecoveryTests(unittest.TestCase):
 class QuarantineTests(unittest.TestCase):
     setUp = ScreeningHandoffTests.setUp
 
-    def test_conflict_is_stopped_not_failed_and_cannot_be_auto_claimed(self):
+    def test_conflict_is_queued_not_failed_and_cannot_be_immediately_claimed(self):
         self.store.exec("UPDATE uplv_tasks SET status='waiting'")
         room = self.pool.claim(dict(satellite_id='offline', capacity=1, pool_protocol=1,
                                     verify_protocol=1, screen_protocol=1))['room']
@@ -170,7 +170,7 @@ class QuarantineTests(unittest.TestCase):
                    final_error='terminal_session_conflict: server_error_csid_1190_code_91117') for i in range(5)}
         self.pool.report(dict(satellite_id='offline', room_id=room['id'], lease_token=room['lease_token'],
                               versions=[0]*5, results=results))
-        self.assertEqual(self.store.fetch('SELECT DISTINCT status FROM uplv_tasks'), [('stopped',)])
+        self.assertEqual(self.store.fetch('SELECT DISTINCT status FROM uplv_tasks'), [('session_wait',)])
         for raw, in self.store.fetch('SELECT detail_json FROM uplv_task_details'):
             self.assertIn('91117', json.loads(raw)['detail'])
         self.assertIsNone(self.pool.pool_form_room())

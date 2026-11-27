@@ -204,7 +204,7 @@ class Engine:
                     row = (level >= target, room['levels'][index], level,
                            '' if level >= target else 'screen_ready' if idle and room.get('screen_only') else 'pool_ready' if idle else 'pool_verifying')
                     progress(index, '[POOL_READY] Đã xác nhận rảnh; chờ ghép cùng cấp' if row[3] == 'pool_ready'
-                             else '[STACK4_DONE] Đã đạt mục tiêu' if row[0] else '[VERIFYING] Chưa xác nhận rảnh; retry có giới hạn')
+                             else '[STACK4_DONE] Đã đạt mục tiêu' if row[0] else '[VERIFY_WAIT] Đọc được cấp nhưng chưa xác nhận phiên rảnh; không mở trận')
                 except Exception as exc:
                     from pve_runtime.failure_policy import restricted_account, stop_on_denial
                     diagnostic = str(exc) or type(exc).__name__
@@ -220,7 +220,7 @@ class Engine:
                     elif room.get('screen_only'):
                         row = (False, room['levels'][index], level, 'screen_wait')
                     progress(index, '[ERROR] Tài khoản bị hạn chế: ' + diagnostic if restricted_account(exc)
-                             else '[VERIFYING] Đối soát chưa xong: ' + type(exc).__name__ + ': ' + diagnostic)
+                             else '[VERIFY_WAIT] Đối soát chưa xong: ' + type(exc).__name__ + ': ' + diagnostic)
                     if not create_rejected and not stop_on_denial(exc) and not stop.is_set():
                         try:
                             from uplv_kientuong import PlayerSession
