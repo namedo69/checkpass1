@@ -62,6 +62,12 @@ class AccountPool:
             "CREATE INDEX IF NOT EXISTS idx_uplv_check_chunk_status_lease ON uplv_check_chunks(status,lease_until)",
         ):
             self.store.exec(sql)
+        # Indexed scheduling order is separate from immutable upload time.
+        try:
+            self.store.fetchone('SELECT dispatch_at FROM uplv_tasks LIMIT 0')
+        except Exception:
+            self.store.exec('ALTER TABLE uplv_tasks ADD COLUMN dispatch_at DOUBLE PRECISION NOT NULL DEFAULT 0')
+        self.store.exec('CREATE INDEX IF NOT EXISTS idx_uplv_tasks_dispatch ON uplv_tasks(status,mode,dispatch_at,created_at,id)')
         migration = []
         for chunk, raw in self.store.fetch("SELECT id,tasks_json FROM uplv_check_chunks WHERE status='claimed'"):
             for item in json.loads(raw):
@@ -450,7 +456,15 @@ class AccountPool:
                 statements += [{'sql': "UPDATE uplv_tasks SET status='assigned',room_id=?,slot=? WHERE id=?", 'args': [room, i, r[0]]} for i, r in enumerate(selected)]
                 self.store.batch(statements)
                 return room
-            group = self.store.fetchone("SELECT t.mode FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id WHERE t.status='waiting' AND j.status='open' GROUP BY t.mode HAVING COUNT(*)>=5 ORDER BY MIN(t.created_at) LIMIT 1")
+            selected = []
+            # LIMIT must run against an ordered index, not after grouping/sorting
+            # all 27k pending accounts while holding the coordinator lock.
+            for (mode,) in self.store.fetch("SELECT mode FROM uplv_jobs WHERE status='open' GROUP BY mode ORDER BY MIN(created_at)"):
+                candidates = self.store.fetch("SELECT t.id,t.job_id,t.account_json FROM uplv_tasks t WHERE t.status='waiting' AND t.mode=? AND EXISTS (SELECT 1 FROM uplv_jobs j WHERE j.id=t.job_id AND j.status='open') ORDER BY t.dispatch_at,t.created_at,t.id LIMIT 5", (mode,))
+                if len(candidates) == 5:
+                    selected = candidates
+                    break
+            group = bool(selected)
             if not group:
                 # A partial continuation group can be completed by new,
                 # uploaded accounts; the game reads their actual level.
@@ -468,8 +482,6 @@ class AccountPool:
                     return verification
                 self.finish_unfillable_tail()
                 return None
-            # Rotate preparation retries behind untouched work and older retries.
-            selected = self.store.fetch("SELECT t.id,t.job_id,t.account_json FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id LEFT JOIN uplv_retry_wait q ON q.task_id=t.id LEFT JOIN uplv_rate_limit_wait r ON r.task_id=t.id WHERE t.status='waiting' AND t.mode=? AND j.status='open' ORDER BY COALESCE(q.next_at,0)+COALESCE(r.next_at,0),t.created_at,t.id LIMIT 5", group)
         room, statements = self.room_assignment(selected)
         if room is None:
             return None
@@ -618,7 +630,7 @@ class AccountPool:
         rows = self.store.fetch("SELECT t.id,r.resume_state,r.started_at FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id JOIN uplv_rate_limit_wait r ON r.task_id=t.id WHERE t.status='rate_limit_wait' AND j.status='open'")
         changes = []
         for task, resume, started in rows:
-            changes.append({'sql': 'UPDATE uplv_tasks SET status=? WHERE id=?', 'args': [resume, task]})
+            changes.append({'sql': 'UPDATE uplv_tasks SET status=?,dispatch_at=? WHERE id=?', 'args': [resume, now, task]})
             if resume == 'session_wait':
                 # Time lost to auth throttling is not evidence of a stuck session.
                 changes.append({'sql': 'UPDATE uplv_session_wait SET started_at=started_at+?,next_at=? WHERE task_id=?', 'args': [max(0, now-started), now, task]})
@@ -660,10 +672,11 @@ class AccountPool:
         ]
 
     def release_retry_wait(self):
+        now = time.time()
         rows = self.store.fetch("SELECT t.id,q.resume_state FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id JOIN uplv_retry_wait q ON q.task_id=t.id WHERE t.status='retry_wait' AND j.status='open'")
         changes = []
         for task, resume in rows:
-            changes.append({'sql': 'UPDATE uplv_tasks SET status=? WHERE id=?', 'args': [resume, task]})
+            changes.append({'sql': 'UPDATE uplv_tasks SET status=?,dispatch_at=? WHERE id=?', 'args': [resume, now, task]})
             changes.append({'sql': 'UPDATE uplv_verify_attempts SET next_at=? WHERE task_id=?', 'args': [time.time(), task]})
             if resume == 'session_wait':
                 changes.append({'sql': 'UPDATE uplv_session_wait SET next_at=? WHERE task_id=?', 'args': [time.time(), task]})

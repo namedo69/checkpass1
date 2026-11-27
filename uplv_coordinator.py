@@ -282,11 +282,34 @@ class UpLvCoordinator(AccountPool):
         # No work/request ID is consumed when this fast path returns busy.
         self.satellite_id(body)
         if not self.lock.acquire(False):
+            self.record_admission('coordinator_busy', 0)
             return {'ok': True, 'room': None, 'reason': 'coordinator_busy'}
+        started = time.monotonic()
         try:
-            return self._claim_locked(body)
+            reply = self._claim_locked(body)
+            self.record_admission('assigned' if reply.get('room') else reply.get('reason', 'no_work'),
+                                  time.monotonic() - started)
+            return reply
         finally:
             self.lock.release()
+
+    def record_admission(self, reason, elapsed):
+        # Aggregate counters only: no credentials, account IDs or lease tokens.
+        if not hasattr(self, '_admission_lock'):
+            self._admission_lock = threading.Lock()
+        with self._admission_lock:
+            counts = getattr(self, '_admission_counts', {})
+            counts[reason] = counts.get(reason, 0) + 1
+            self._admission_counts = counts
+            self._admission_max_ms = max(getattr(self, '_admission_max_ms', 0), round(elapsed * 1000, 2))
+            now = time.monotonic()
+            if now - getattr(self, '_admission_logged_at', now) >= 30:
+                print('[uplv-admission] ' + json.dumps({'counts': counts, 'max_claim_ms': self._admission_max_ms}), flush=True)
+                self._admission_counts = {}
+                self._admission_max_ms = 0
+                self._admission_logged_at = now
+            elif not hasattr(self, '_admission_logged_at'):
+                self._admission_logged_at = now
 
     def _claim_locked(self, body):
         with self.lock:
