@@ -23,7 +23,7 @@ class IndexedRefillTests(unittest.TestCase):
         pool.control({'action':'pause','satellite_id':'other'})
         self.assertEqual(pool.claim(dict(body,satellite_id='other'))['reason'],'paused')
 
-    def test_27k_queue_fills_210_slots_and_rotates_without_full_sort(self):
+    def test_27k_queue_fills_one_room_per_worker_without_full_sort(self):
         store=Store();self.addCleanup(store.db.close)
         store.exec('CREATE TABLE app_settings (setting_key TEXT PRIMARY KEY,setting_value TEXT)')
         pool=UpLvCoordinator(store);pool.pool_settings({'max_rooms':1000})
@@ -35,18 +35,19 @@ class IndexedRefillTests(unittest.TestCase):
         traces=[];store.db.set_trace_callback(traces.append)
         rooms=[]
         for worker in range(42):
-            for _ in range(5):
-                reply=pool.claim(dict(satellite_id=f'offline_{worker}',capacity=5,direct_game_protocol=1,verify_protocol=1))
-                self.assertIsNotNone(reply['room'])
-                rooms.append(reply['room'])
-        self.assertEqual(store.fetchone("SELECT count(*) FROM uplv_tasks WHERE status='assigned'"),(1050,))
+            body=dict(satellite_id=f'offline_{worker}',capacity=5,direct_game_protocol=1,verify_protocol=1)
+            reply=pool.claim(body)
+            self.assertIsNotNone(reply['room'])
+            rooms.append(reply['room'])
+            self.assertEqual(pool.claim(body)['reason'],'already_running')
+        self.assertEqual(store.fetchone("SELECT count(*) FROM uplv_tasks WHERE status='assigned'"),(210,))
         selectors=[sql for sql in traces if 'ORDER BY t.dispatch_at' in sql]
-        self.assertEqual(len(selectors),210)
+        self.assertEqual(len(selectors),42)
         self.assertTrue(all('LEFT JOIN uplv_retry_wait' not in sql for sql in selectors))
         plan=store.fetch('EXPLAIN QUERY PLAN '+selectors[0])
         self.assertTrue(any('idx_uplv_tasks_dispatch' in str(row) for row in plan))
         self.assertFalse(any('TEMP B-TREE' in str(row) for row in plan))
-        self.assertEqual(store.fetchone("SELECT count(DISTINCT username_key) FROM uplv_tasks WHERE status='assigned'"),(1050,))
+        self.assertEqual(store.fetchone("SELECT count(DISTINCT username_key) FROM uplv_tasks WHERE status='assigned'"),(210,))
 
     def test_busy_admission_is_observable_without_database_access(self):
         pool=object.__new__(UpLvCoordinator)

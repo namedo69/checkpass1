@@ -338,7 +338,9 @@ class UpLvCoordinator(AccountPool):
                 "(SELECT COUNT(*) FROM uplv_rooms WHERE status IN ('running','interrupted')),"
                 "(SELECT setting_value FROM app_settings WHERE setting_key='uplv_max_rooms'),"
                 "(SELECT id FROM uplv_rooms WHERE status='pending' LIMIT 1)", (satellite, satellite))
-            capacity = max(1, min(5, int(body.get('capacity', 1))))
+            # Enforce at admission too: older workers may still advertise five.
+            # Existing leases drain normally; never revoke an in-flight room.
+            capacity = 1
             if active >= capacity:
                 return {'ok': True, 'room': None, 'reason': 'already_running'}
             if paused:

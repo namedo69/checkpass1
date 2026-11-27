@@ -118,7 +118,8 @@ class RateLimitTests(unittest.TestCase):
         self.assertGreater(renewed['lease_until'], self.now)
         self.report()
         self.assertIsNotNone(self.claim('probe'))
-        self.assertIsNotNone(self.claim('other'))
+        self.assertIsNone(self.claim('other'))  # Its existing room still owns the only slot.
+        self.assertIsNotNone(self.claim('another'))
 
     def test_verify_429_refunds_read_attempt_and_retries_read_only(self):
         self.report(kind='')
@@ -141,17 +142,17 @@ class RateLimitTests(unittest.TestCase):
         self.assertIsNotNone(self.claim('three'))
         self.assertIsNotNone(self.claim('four'))
 
-    def test_429_and_legacy_cooldown_allow_all_210_worker_slots(self):
+    def test_429_and_legacy_cooldown_allow_one_room_for_each_of_42_workers(self):
         self.report()
         self.pool.pool_settings({'max_rooms': 250})
         self.pool.pool_create({'accounts': '\n'.join(f'offline_fleet_{i}|unused' for i in range(1050))})
         self.store.exec("INSERT INTO uplv_auth_cooldown VALUES ('fleet',?,?,?)", (self.now+99999, self.now+99999,self.now+99999))
         for i in range(42):
-            for _ in range(5):
-                self.assertIsNotNone(self.claim(f'worker_{i}'))
-        self.assertEqual(self.store.fetchone("SELECT count(*) FROM uplv_rooms WHERE status='running'"), (210,))
-        self.assertEqual(self.store.fetchone("SELECT count(*) FROM uplv_tasks WHERE status='assigned'"), (1050,))
-        self.assertEqual(self.store.fetchone("SELECT count(DISTINCT username_key) FROM uplv_tasks WHERE status='assigned'"), (1050,))
+            self.assertIsNotNone(self.claim(f'worker_{i}'))
+            self.assertIsNone(self.claim(f'worker_{i}'))
+        self.assertEqual(self.store.fetchone("SELECT count(*) FROM uplv_rooms WHERE status='running'"), (42,))
+        self.assertEqual(self.store.fetchone("SELECT count(*) FROM uplv_tasks WHERE status='assigned'"), (210,))
+        self.assertEqual(self.store.fetchone("SELECT count(DISTINCT username_key) FROM uplv_tasks WHERE status='assigned'"), (210,))
 
     def test_heartbeat_429_with_lost_report_is_queued_after_lease_cleanup(self):
         self.pool.heartbeat(self.body())

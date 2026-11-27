@@ -39,14 +39,23 @@ class ConcurrentRefillTests(unittest.TestCase):
                 start.wait(5)
                 count=0
                 deadline=time.monotonic()+15
-                while count<5 and time.monotonic()<deadline:
+                while count<1 and time.monotonic()<deadline:
                     reply=pool.claim(dict(satellite_id=f'fixture_{worker}',capacity=5,direct_game_protocol=1,
                                          verify_protocol=1,request_id=f'{worker*5+count:032x}'))
                     if reply.get('room'):
                         with guard:rooms.append(reply['room'])
                         count+=1
-                if count!=5:
+                if count!=1:
                     raise AssertionError(f'worker {worker} only got {count} slots')
+                while True:
+                    reply=pool.claim(dict(satellite_id=f'fixture_{worker}',capacity=5,direct_game_protocol=1,
+                                         verify_protocol=1,request_id=f'{1000+worker:032x}'))
+                    if reply.get('reason')!='coordinator_busy':
+                        break
+                    if time.monotonic()>=deadline:
+                        raise AssertionError('capacity check timed out')
+                if reply.get('reason')!='already_running':
+                    raise AssertionError('legacy capacity admitted a second room')
             except Exception as exc:
                 with guard:errors.append(exc)
         threads=[threading.Thread(target=scheduler,args=(i,)) for i in range(42)]
@@ -54,11 +63,11 @@ class ConcurrentRefillTests(unittest.TestCase):
         for thread in threads:thread.join(20)
         self.assertFalse(any(thread.is_alive() for thread in threads))
         self.assertEqual(errors,[])
-        self.assertEqual(len(rooms),210)
-        self.assertEqual(len({room['id'] for room in rooms}),210)
-        self.assertEqual(len({a[0] for room in rooms for a in room['accounts']}),1050)
-        self.assertEqual(store.fetchone('SELECT count(*) FROM uplv_claim_requests'),(210,))
-        self.assertEqual(store.fetchone("SELECT count(*) FROM uplv_tasks WHERE status='assigned'"),(1050,))
+        self.assertEqual(len(rooms),42)
+        self.assertEqual(len({room['id'] for room in rooms}),42)
+        self.assertEqual(len({a[0] for room in rooms for a in room['accounts']}),210)
+        self.assertEqual(store.fetchone('SELECT count(*) FROM uplv_claim_requests'),(42,))
+        self.assertEqual(store.fetchone("SELECT count(*) FROM uplv_tasks WHERE status='assigned'"),(210,))
         pool.control(dict(action='stop_job',job_id=job))
         self.assertFalse(pool.claim(dict(satellite_id='extra',capacity=5,direct_game_protocol=1)).get('room'))
-        self.assertEqual(store.fetchone("SELECT count(*) FROM uplv_tasks WHERE status='stopped'"),(50,))
+        self.assertEqual(store.fetchone("SELECT count(*) FROM uplv_tasks WHERE status='stopped'"),(890,))
