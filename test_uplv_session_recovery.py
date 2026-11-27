@@ -194,15 +194,17 @@ class QuarantineTests(unittest.TestCase):
             self.assertGreaterEqual(due, start+30)
         self.assertIsNone(self.pool.pool_verification_room())
 
-    def test_third_inconclusive_inspection_pauses_without_new_battle(self):
+    def test_third_inconclusive_inspection_retries_without_new_battle(self):
         room = self.assign()
         for task, in self.store.fetch('SELECT id FROM uplv_tasks'):
             self.store.exec('INSERT INTO uplv_verify_attempts VALUES (?,?,?)', (task,3,0))
         self.pending_report(room)
-        self.assertEqual(self.store.fetch('SELECT DISTINCT status FROM uplv_tasks'), [('stopped',)])
+        self.assertEqual(self.store.fetch('SELECT DISTINCT status FROM uplv_tasks'), [('verifying',)])
         self.assertIsNone(self.pool.pool_form_room())
-        for raw, in self.store.fetch('SELECT detail_json FROM uplv_task_details'):
-            self.assertEqual(json.loads(raw)['stage'], 'PAUSED_VERIFY_LIMIT')
+        self.assertIsNone(self.pool.pool_verification_room())
+        for count, due in self.store.fetch('SELECT attempts,next_at FROM uplv_verify_attempts'):
+            self.assertEqual(count, 3)
+            self.assertGreater(due, time.time())
 
     def test_unresolved_inspection_uses_backoff_not_immediate_reclaim(self):
         room = self.assign()

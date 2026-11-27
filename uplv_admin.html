@@ -198,6 +198,7 @@ tbody tr:hover{background:#f8fafc}
               <option value="verifying">Chờ đối soát sau trận</option>
               <option value="session_wait">Chờ nhả phiên (91117)</option>
               <option value="rate_limit_wait">Chờ thử lại (429)</option>
+              <option value="retry_wait">Chờ thử lại (30 giây)</option>
               <option value="success">Đã đạt cấp mục tiêu</option>
               <option value="failed">Lỗi</option>
               <option value="stopped">Đã dừng</option>
@@ -274,6 +275,7 @@ const statesMap={
   verifying:{text:'Chờ đối soát sau trận',badge:'badge-warn'},
   session_wait:{text:'Chờ nhả phiên (91117)',badge:'badge-warn'},
   rate_limit_wait:{text:'Chờ thử lại (429)',badge:'badge-warn'},
+  retry_wait:{text:'Chờ thử lại (30 giây)',badge:'badge-warn'},
   success:{text:'Đạt cấp mục tiêu',badge:'badge-success'},
   failed:{text:'Lỗi xử lý',badge:'badge-failed'},
   stopped:{text:'Đã dừng',badge:'badge-muted'}
@@ -463,6 +465,7 @@ function renderJobs(jobs){
           <div class="stat-box"><div class="stat-num warn">${c.verifying||0}</div><div class="stat-lbl">Chờ Đối Soát</div></div>
           <div class="stat-box"><div class="stat-num warn">${c.session_wait||0}</div><div class="stat-lbl">Chờ Nhả Phiên</div></div>
           <div class="stat-box"><div class="stat-num warn">${c.rate_limit_wait||0}</div><div class="stat-lbl">Chờ 429</div></div>
+          <div class="stat-box"><div class="stat-num warn">${c.retry_wait||0}</div><div class="stat-lbl">Chờ thử lại</div></div>
           <div class="stat-box"><div class="stat-num bad">${fail}</div><div class="stat-lbl">Thất bại</div></div>
           <div class="stat-box"><div class="stat-num warn">${stop}</div><div class="stat-lbl">Đã dừng</div></div>
         </div>
@@ -569,7 +572,7 @@ async function loadAccounts(){
 }
 
 function accountReason(a){
-  if(a.status==='screening'||a.status==='verifying'||a.status==='session_wait'||a.status==='rate_limit_wait'){
+  if(a.status==='screening'||a.status==='verifying'||a.status==='session_wait'||a.status==='rate_limit_wait'||a.status==='retry_wait'){
     if(a.next_retry_at>Date.now()/1000)return 'Chờ lượt kiểm tra lúc '+new Date(a.next_retry_at*1000).toLocaleTimeString();
     return 'Đang xếp hàng chờ lượt kiểm tra';
   }
@@ -591,7 +594,7 @@ function showAccountModal(idx){
     `Vệ tinh xử lý: ${a.satellite_id||'Chưa cấp'}`,
     `Số lượt đối soát trận: ${a.attempts}`,
     `Số lần gặp giới hạn 429: ${a.rate_limit_attempts||0}`,
-    `Số lượt kiểm tra nhả phiên: ${a.session_wait_attempts||0} / 6 (hạn mức riêng)`,
+    `Số lượt kiểm tra nhả phiên: ${a.session_wait_attempts||0} (tiếp tục mỗi 30 giây)`,
     `Lịch kiểm tra tiếp: ${a.next_retry_at?new Date(a.next_retry_at*1000).toLocaleString():'Không có'}`,
     `Hạn chờ phiên: ${a.session_wait_deadline?new Date(a.session_wait_deadline*1000).toLocaleString():'Không có'}`,
     `Chi tiết chẩn đoán: ${a.detail||accountReason(a)||'Không có lỗi ghi nhận'}`

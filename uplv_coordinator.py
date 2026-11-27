@@ -111,7 +111,7 @@ class UpLvCoordinator(AccountPool):
 
     def _clear_data_worker(self):
         tables = ('uplv_check_members', 'uplv_job_owners', 'uplv_check_chunks', 'uplv_claim_requests', 'uplv_logs', 'uplv_replacements', 'uplv_room_versions', 'uplv_reserves',
-                  'uplv_check_leases', 'uplv_verify_attempts', 'uplv_session_wait', 'uplv_rate_limit_wait', 'uplv_auth_cooldown', 'uplv_verify_rooms',
+                  'uplv_check_leases', 'uplv_verify_attempts', 'uplv_session_wait', 'uplv_rate_limit_wait', 'uplv_retry_wait', 'uplv_auth_cooldown', 'uplv_verify_rooms',
                   'uplv_screen_rooms', 'uplv_room_history', 'uplv_task_details',
                   'uplv_tasks', 'uplv_pool_jobs', 'uplv_rooms', 'uplv_jobs')
         try:
@@ -417,6 +417,11 @@ class UpLvCoordinator(AccountPool):
             result = self.clean_rows({str(slot): body.get('result')})[str(slot)]
             if result['status'] != 'failed':
                 raise ValueError('Cần kết quả lỗi chuẩn bị')
+            from uplv_failure_policy import terminal_account_failure
+            if not terminal_account_failure(result) and result.get('failure_kind') != 'rate_limit':
+                # Unknown failures retain the current occupant until final
+                # report/lease cleanup queues it; never mark it failed to swap.
+                return {'ok': True, 'stop': True}
             if result.get('failure_kind') == 'rate_limit':
                 # Do not discard this occupant or churn fresh accounts on 429.
                 self.store.batch(self.auth_cooldown_changes())
@@ -666,7 +671,7 @@ class UpLvCoordinator(AccountPool):
                     {'sql': "UPDATE uplv_jobs SET status='stopped' WHERE id=?", 'args': [job]},
                     {'sql': "UPDATE uplv_rooms SET stop_requested=1,status=CASE WHEN status='pending' THEN 'stopped' ELSE status END WHERE job_id=?", 'args': [job]},
                 ])
-                self.store.exec("UPDATE uplv_tasks SET status='stopped' WHERE job_id=? AND status IN ('screening','waiting','ready','verifying','session_wait','rate_limit_wait')", (job,))
+                self.store.exec("UPDATE uplv_tasks SET status='stopped' WHERE job_id=? AND status IN ('screening','waiting','ready','verifying','session_wait','rate_limit_wait','retry_wait')", (job,))
                 self.store.exec("UPDATE uplv_rooms SET stop_requested=1 WHERE id IN (SELECT room_id FROM uplv_tasks WHERE job_id=? AND status='assigned')", (job,))
             else:
                 raise ValueError('action: pause/resume/stop_job')

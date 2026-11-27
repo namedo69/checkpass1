@@ -122,7 +122,7 @@ class Engine:
                     details += f' code={code}'
                 if type(status) is int:
                     details += f' HTTP={status}'
-                raise RuntimeError('terminal_login: Auth V2 thất bại; đã dừng ('
+                raise RuntimeError('terminal_login: Auth V2 thất bại; kết thúc lượt hiện tại ('
                                    + details + ')') from None
             with bundle_lock:
                 bundles[user.casefold()] = bundle
@@ -216,7 +216,9 @@ class Engine:
                     elif create_rejected:
                         row = (False, room['levels'][index], level, 'terminal_create_character: ' + diagnostic)
                     elif stop_on_denial(exc):
-                        row = (False, room['levels'][index], level, 'terminal_restricted: ' + diagnostic)
+                        # End this read, not the account. Never turn arbitrary
+                        # auth/missing-level/server denials into a ban label.
+                        row = classified
                     elif room.get('screen_only'):
                         row = (False, room['levels'][index], level, 'screen_wait')
                     progress(index, '[ERROR] Tài khoản bị hạn chế: ' + diagnostic if restricted_account(exc)

@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 import uplv_config as config
 from uplv_logs import RoomLogs
 
-VERSION = 'uplv-satellite-0.6.10-rate-limit-queue'
+VERSION = 'uplv-satellite-0.6.11-evidence-only-failure'
 
 
 class RevokedLease(RuntimeError):
@@ -186,16 +186,18 @@ class Satellite:
 
         def completed(index, row):
             from pve_runtime.failure_policy import terminal_result
+            from uplv_failure_policy import terminal_account_failure
             row = terminal_result(row)
             ok, before, after, error = row
-            logs.add(index, f'[RESULT] {"success" if ok else "pending" if stop.is_set() or not error.startswith(('terminal_login:', 'terminal_restricted:', 'terminal_create_character:')) else "failed"} Lv{after}')
+            terminal = terminal_account_failure({'final_error': error})
+            logs.add(index, f'[RESULT] {"success" if ok else "failed" if terminal and not stop.is_set() else "pending"} Lv{after}')
             with lock:
                 if (not ok and progress.get(str(index), {}).get('stage') == 'WAIT_REPLACEMENT'
                         and results.get(str(index), {}).get('status') == 'failed'):
                     return  # The failed original is not merely pending on stop.
                 match = re.match(r'terminal_(login|restricted|create_character|session_conflict|rate_limit|server_error):', error)
                 failure_kind = match.group(1) if match else ''
-                pending = stop.is_set() or (not ok and failure_kind not in ('login', 'restricted', 'create_character'))
+                pending = stop.is_set() or (not ok and not terminal)
                 diagnostic = ''
                 if error:
                     diagnostic = str(error)
@@ -234,7 +236,8 @@ class Satellite:
             request = {**base, 'request_id': uuid.uuid4().hex, 'slot': index,
                        'generation': versions[index], 'phase': 'preparation',
                        'result': {'status': 'failed', 'level_before': row[1], 'level_after': row[2],
-                                  'failure_kind': 'login' if row[3].startswith('terminal_login:') else 'create_character' if row[3].startswith('terminal_create_character:') else ''}}
+                                   'failure_kind': 'login' if row[3].startswith('terminal_login:') else 'create_character' if row[3].startswith('terminal_create_character:') else '',
+                                   'final_error': row[3]}}
             while not stop.is_set() and not self.shutdown.is_set():
                 try:
                     # Serialize with heartbeat snapshot+send. A stale heartbeat

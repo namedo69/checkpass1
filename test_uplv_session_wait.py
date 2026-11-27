@@ -84,24 +84,24 @@ class SessionWaitTests(unittest.TestCase):
             self.assertEqual(self.store.fetch('SELECT DISTINCT attempts,started_at,next_at FROM uplv_session_wait'), [(n, started, self.now+delay)])
             self.assertIsNone(self.claim())
 
-    def test_sixth_inconclusive_check_pauses_without_infinite_retry(self):
+    def test_repeated_inconclusive_checks_keep_retrying_read_only(self):
         self.report()
-        for _ in range(6):
+        for _ in range(12):
             room = self.due_claim()
             self.report(room)
-        self.assertEqual(self.states(), [('stopped',)])
+        self.assertEqual(self.states(), [('session_wait',)])
         self.assertIsNone(self.claim())
         for raw, in self.store.fetch('SELECT detail_json FROM uplv_task_details'):
             d = json.loads(raw)
-            self.assertEqual(d['stage'], 'PAUSED_SESSION_WAIT_LIMIT')
+            self.assertEqual(d['stage'], 'WAIT_SESSION_RELEASE')
             self.assertIn('91117', d['final_error'])
 
-    def test_absolute_deadline_expires_even_when_no_worker_checked(self):
+    def test_old_absolute_deadline_does_not_end_retries(self):
         self.report()
         self.now += self.pool.SESSION_WAIT_MAX_SECONDS
-        self.assertIsNone(self.claim())
-        self.assertEqual(self.states(), [('stopped',)])
-        self.assertEqual(self.store.fetchone('SELECT status FROM uplv_jobs WHERE id=?', (self.job,)), ('done',))
+        self.assertTrue(self.claim()['verify_only'])
+        self.assertEqual(self.states(), [('assigned',)])
+        self.assertEqual(self.store.fetchone('SELECT status FROM uplv_jobs WHERE id=?', (self.job,)), ('open',))
 
     def test_nonidle_profile_below_target_never_enters_battle_queue(self):
         self.report()
@@ -209,7 +209,7 @@ class SessionWaitTests(unittest.TestCase):
         self.pool.expire_session_wait()
         self.assertEqual(self.states(), [('assigned',)])
         self.report(room, kind='')
-        self.assertEqual(self.states(), [('stopped',)])
+        self.assertEqual(self.states(), [('session_wait',)])
 
     def test_stale_generation_cannot_finish_a_wait_inspection(self):
         self.report()
@@ -250,7 +250,7 @@ class SessionWaitTests(unittest.TestCase):
             self.assertTrue(a['session_wait_active'])
             self.assertEqual(a['session_wait_attempts'], 0)
             self.assertEqual(a['next_retry_at'], self.now+30)
-            self.assertEqual(a['session_wait_deadline'], self.now+7200)
+            self.assertEqual(a['session_wait_deadline'], 0)
 
     def test_pending_wait_prevents_unfillable_tail_failure(self):
         self.report()

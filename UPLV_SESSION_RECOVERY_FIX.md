@@ -1,5 +1,23 @@
 # UpLv 0.6.6 — session recovery update
 
+## 0.6.11 — evidence-only terminal account outcomes
+
+- Only current explicit game restriction/91126 or character-name rejection/91123
+  can fail an account. Catch-all worker labels and stale root causes are not proof.
+- Other errors use durable 30-second retries or read-only verification. Former
+  three-read, six-session-read and two-hour limits no longer stop accounts.
+  Partial teams wait for teammates. Operator stops remain final.
+- Preserve session queue identity through auth retries to avoid stranded work.
+  UI exposes generic retry state; worker Docker includes the shared classifier.
+- 175 local tests and 175 customized VPS candidate tests passed. Targeted master
+  install at 20:06 VN, backup `/home/sp1s/uplv-outcome-policy-backup-20261127_200611`,
+  health restored in 1.27s; CheckPass/VVIP PIDs unchanged; all 278449 historical
+  terminal states preserved. No active rooms at cutover. No task restoration.
+- Read-only audit at 20:06:25 found latest job `29556848` already stopped:
+  879 failed, 26256 stopped, 15 success. Thus no active-job production retry
+  behavior can be inferred from this deployment. Auth HTTP200/parser causes
+  remain unresolved. Worker rollout is separate from master installation.
+
 ## 0.6.10 — 429 durable retry / fixed 30-second waits
 
 - 2026-11-27 19:50 VN admission hotfix: production snapshot showed only

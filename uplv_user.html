@@ -10,6 +10,8 @@ const $=id=>document.getElementById(id),esc=x=>String(x??'').replace(/[&<>"']/g,
 const labels={screening:'Chờ kiểm tra',waiting:'Chờ chuẩn bị',assigned:'Đang nâng cấp',ready:'Chờ tiếp tục',verifying:'Đang xác minh',session_wait:'Chờ nhả phiên (91117)',success:'Hoàn tất',failed:'Thất bại',stopped:'Đã dừng',open:'Đang xử lý',done:'Đã kết thúc (không đồng nghĩa tất cả đạt mục tiêu)'};
 const waitOption=document.createElement('option');waitOption.value='session_wait';waitOption.textContent=labels.session_wait;$('status').add(waitOption);
 labels.rate_limit_wait='Chờ thử lại (429)';
+labels.retry_wait='Chờ thử lại (30 giây)';
+const retryOption=document.createElement('option');retryOption.value='retry_wait';retryOption.textContent=labels.retry_wait;$('status').add(retryOption);
 const rateOption=document.createElement('option');rateOption.value='rate_limit_wait';rateOption.textContent=labels.rate_limit_wait;$('status').add(rateOption);
 let selected='',page=1,busy=false,detailSeq=0,searchTimer;
 function elapsedSince(createdAt, now=Date.now()){
