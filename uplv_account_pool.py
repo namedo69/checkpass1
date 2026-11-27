@@ -6,8 +6,10 @@ import re
 
 
 class AccountPool:
+    RATE_LIMIT_DELAY = 30
+    VERIFY_DELAY = 30
     # Conservative scheduling policy, not a claimed game-server session TTL.
-    SESSION_WAIT_DELAYS = (120, 240, 480, 900)
+    SESSION_WAIT_DELAYS = (30,)
     SESSION_WAIT_MAX_CHECKS = 6
     SESSION_WAIT_MAX_SECONDS = 2 * 60 * 60
 
@@ -42,6 +44,9 @@ class AccountPool:
             "CREATE TABLE IF NOT EXISTS uplv_verify_attempts (task_id TEXT PRIMARY KEY, attempts INTEGER NOT NULL DEFAULT 0, next_at DOUBLE PRECISION NOT NULL DEFAULT 0)",
             "CREATE TABLE IF NOT EXISTS uplv_session_wait (task_id TEXT PRIMARY KEY, attempts INTEGER NOT NULL DEFAULT 0, started_at DOUBLE PRECISION NOT NULL, next_at DOUBLE PRECISION NOT NULL)",
             "CREATE INDEX IF NOT EXISTS idx_uplv_session_wait_due ON uplv_session_wait(next_at)",
+            "CREATE TABLE IF NOT EXISTS uplv_rate_limit_wait (task_id TEXT PRIMARY KEY, attempts INTEGER NOT NULL, started_at DOUBLE PRECISION NOT NULL, next_at DOUBLE PRECISION NOT NULL, resume_state TEXT NOT NULL)",
+            "CREATE INDEX IF NOT EXISTS idx_uplv_rate_limit_due ON uplv_rate_limit_wait(next_at)",
+            "CREATE TABLE IF NOT EXISTS uplv_auth_cooldown (id TEXT PRIMARY KEY, until_at DOUBLE PRECISION NOT NULL, pace_until DOUBLE PRECISION NOT NULL, next_admit DOUBLE PRECISION NOT NULL)",
             "CREATE TABLE IF NOT EXISTS uplv_verify_rooms (room_id TEXT PRIMARY KEY)",
             "CREATE TABLE IF NOT EXISTS uplv_screen_rooms (room_id TEXT PRIMARY KEY)",
             "CREATE TABLE IF NOT EXISTS uplv_room_history (id TEXT PRIMARY KEY, room_id TEXT NOT NULL, finished_at DOUBLE PRECISION NOT NULL, snapshot_json TEXT NOT NULL)",
@@ -113,7 +118,7 @@ class AccountPool:
             if action == 'accounts':
                 result = self.account_details(body)
                 allowed = ('id','username','status','level','target','mode','attempts','next_retry_at',
-                           'session_wait_attempts','session_wait_deadline','session_wait_active')
+                           'session_wait_attempts','session_wait_deadline','session_wait_active','rate_limit_attempts')
                 result['accounts'] = [{k: row[k] for k in allowed} for row in result['accounts']]
                 return result
             if action == 'export':
@@ -258,10 +263,10 @@ class AccountPool:
                 where += " ESCAPE '\\'"
             total = self.store.fetchone('SELECT COUNT(*) FROM uplv_tasks t WHERE ' + where, tuple(params))[0]
             page = min(page, max(1, (total + size - 1) // size))
-            rows = self.store.fetch('SELECT t.id,t.account_json,t.status,t.level,t.target,t.mode,t.room_id,t.slot,d.updated_at,d.detail_json,v.attempts,v.next_at,w.attempts,w.started_at,w.next_at FROM uplv_tasks t LEFT JOIN uplv_task_details d ON d.task_id=t.id LEFT JOIN uplv_verify_attempts v ON v.task_id=t.id LEFT JOIN uplv_session_wait w ON w.task_id=t.id WHERE ' + where + ' ORDER BY t.created_at,t.id LIMIT ? OFFSET ?', tuple(params + [size, (page - 1) * size]))
+            rows = self.store.fetch('SELECT t.id,t.account_json,t.status,t.level,t.target,t.mode,t.room_id,t.slot,d.updated_at,d.detail_json,v.attempts,v.next_at,w.attempts,w.started_at,w.next_at,r.attempts,r.next_at FROM uplv_tasks t LEFT JOIN uplv_task_details d ON d.task_id=t.id LEFT JOIN uplv_verify_attempts v ON v.task_id=t.id LEFT JOIN uplv_session_wait w ON w.task_id=t.id LEFT JOIN uplv_rate_limit_wait r ON r.task_id=t.id WHERE ' + where + ' ORDER BY t.created_at,t.id LIMIT ? OFFSET ?', tuple(params + [size, (page - 1) * size]))
             rooms = {r[0]: r for r in self.store.fetch('SELECT id,ordinal,satellite_id,status,progress_json FROM uplv_rooms')}
             accounts = []
-            for task, credentials, status, level, target, mode, room, slot, updated, detail, attempts, next_at, wait_attempts, wait_started, wait_next in rows:
+            for task, credentials, status, level, target, mode, room, slot, updated, detail, attempts, next_at, wait_attempts, wait_started, wait_next, rate_attempts, rate_next in rows:
                 user = json.loads(credentials)[0]
                 saved = json.loads(detail) if detail else {}
                 current = rooms.get(room) if status == 'assigned' else None
@@ -273,7 +278,8 @@ class AccountPool:
                     'elapsed': progress.get('elapsed', 0) if current else 0,
                     'room': current[1] if current else None, 'room_status': current[3] if current else '',
                     'satellite_id': current[2] if current else '', 'updated_at': updated,
-                    'attempts': attempts or 0, 'next_retry_at': wait_next if status == 'session_wait' else next_at or 0,
+                    'attempts': attempts or 0, 'next_retry_at': (rate_next if status == 'rate_limit_wait' else wait_next if status == 'session_wait' else next_at) or 0,
+                    'rate_limit_attempts': rate_attempts or 0,
                     'session_wait_active': wait_started is not None and status not in ('success','failed','stopped'),
                     'session_wait_attempts': wait_attempts or 0,
                     'session_wait_deadline': wait_started + self.SESSION_WAIT_MAX_SECONDS if wait_started is not None else 0})
@@ -412,6 +418,9 @@ class AccountPool:
         return {'ok': True, 'max_rooms': value}
 
     def pool_form_room(self):
+        if self.auth_admission_blocked():
+            return None
+        self.release_rate_limit_wait()
         self.release_legacy_screening()
         # Give due inspection work a turn before new battles; otherwise a
         # large ready pool can starve interrupted accounts indefinitely.
@@ -487,7 +496,7 @@ class AccountPool:
         groups = self.store.fetch("SELECT t.mode,COUNT(*) FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id WHERE j.status='open' AND t.status IN ('ready','waiting') GROUP BY t.mode HAVING COUNT(*)<5")
         changes, jobs = [], set()
         for mode, _ in groups:
-            blocked = self.store.fetchone("SELECT COUNT(*) FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id WHERE j.status='open' AND t.mode=? AND t.status IN ('screening','preparing','assigned','verifying','session_wait')", (mode,))[0]
+            blocked = self.store.fetchone("SELECT COUNT(*) FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id WHERE j.status='open' AND t.mode=? AND (t.status IN ('screening','preparing','assigned','verifying','session_wait','rate_limit_wait') OR (t.status='waiting' AND EXISTS (SELECT 1 FROM uplv_rate_limit_wait r WHERE r.task_id=t.id)))", (mode,))[0]
             legacy = self.store.fetchone("SELECT COUNT(*) FROM uplv_rooms r JOIN uplv_jobs j ON j.id=r.job_id WHERE j.mode=? AND r.status IN ('pending','running','interrupted')", (mode,))[0]
             if blocked or legacy:
                 continue
@@ -548,7 +557,7 @@ class AccountPool:
                 ]
                 continue
             attempt = self.store.fetchone('SELECT attempts FROM uplv_verify_attempts WHERE task_id=?', (row[0],))
-            delay = min(300, 30 * (1 + (attempt[0] if attempt else 0)))
+            delay = self.VERIFY_DELAY
             statements += [
                 {'sql': "UPDATE uplv_tasks SET status='assigned',room_id=?,slot=? WHERE id=?", 'args': [room, slot, row[0]]},
                 {'sql': 'INSERT INTO uplv_verify_attempts (task_id,attempts,next_at) VALUES (?,1,?) ON CONFLICT(task_id) DO UPDATE SET attempts=uplv_verify_attempts.attempts+1,next_at=excluded.next_at', 'args': [row[0], time.time() + delay]},
@@ -586,6 +595,55 @@ class AccountPool:
             {'sql': 'INSERT INTO uplv_task_details VALUES (?,?,?) ON CONFLICT(task_id) DO UPDATE SET updated_at=excluded.updated_at,detail_json=excluded.detail_json', 'args': [task, now, json.dumps(detail)]},
         ]
 
+    def auth_admission_blocked(self):
+        row = self.store.fetchone("SELECT until_at,pace_until,next_admit FROM uplv_auth_cooldown WHERE id='fleet'")
+        now = time.time()
+        return bool(row and (now < row[0] or (now < row[1] and now < row[2])))
+
+    def auth_cooldown_changes(self):
+        now = time.time()
+        return [{'sql': "INSERT INTO uplv_auth_cooldown VALUES ('fleet',?,?,?) ON CONFLICT(id) DO UPDATE SET until_at=excluded.until_at,pace_until=excluded.pace_until,next_admit=excluded.next_admit",
+                 'args': [now + self.RATE_LIMIT_DELAY, now + self.RATE_LIMIT_DELAY + 60, now + self.RATE_LIMIT_DELAY]}]
+
+    def rate_limit_result(self, task, room, observed_detail=None):
+        """End this lease, not this account. A throttle spends no read budget."""
+        now = time.time()
+        prior = self.store.fetchone('SELECT attempts,resume_state FROM uplv_rate_limit_wait WHERE task_id=?', (task,))
+        inspection = self.store.fetchone('SELECT room_id FROM uplv_verify_rooms WHERE room_id=?', (room,))
+        session = self.store.fetchone('SELECT task_id FROM uplv_session_wait WHERE task_id=?', (task,))
+        resume = 'session_wait' if session else 'verifying' if inspection else 'waiting'
+        changes = []
+        if inspection:
+            table = 'uplv_session_wait' if session else 'uplv_verify_attempts'
+            changes.append({'sql': f'UPDATE {table} SET attempts=CASE WHEN attempts>0 THEN attempts-1 ELSE 0 END WHERE task_id=?', 'args': [task]})
+        saved = self.store.fetchone('SELECT detail_json FROM uplv_task_details WHERE task_id=?', (task,))
+        detail = json.loads(saved[0]) if saved else {}
+        if observed_detail:
+            detail.update(observed_detail)
+        detail.update(stage='WAIT_RATE_LIMIT', pause_reason='', detail='Giới hạn tần suất (429); chờ 30 giây rồi thử lại',
+                      next_retry_at=now+self.RATE_LIMIT_DELAY)
+        changes.extend([
+            {'sql': 'INSERT INTO uplv_rate_limit_wait VALUES (?,?,?,?,?) ON CONFLICT(task_id) DO UPDATE SET attempts=excluded.attempts,started_at=excluded.started_at,next_at=excluded.next_at,resume_state=excluded.resume_state',
+             'args': [task, (prior[0] if prior else 0)+1, now, now+self.RATE_LIMIT_DELAY, resume]},
+            {'sql': 'INSERT INTO uplv_task_details VALUES (?,?,?) ON CONFLICT(task_id) DO UPDATE SET updated_at=excluded.updated_at,detail_json=excluded.detail_json', 'args': [task, now, json.dumps(detail)]},
+        ])
+        return changes
+
+    def release_rate_limit_wait(self):
+        """Only release due nonterminal tasks of open jobs; never migrate stops."""
+        now = time.time()
+        rows = self.store.fetch("SELECT t.id,r.resume_state,r.started_at FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id JOIN uplv_rate_limit_wait r ON r.task_id=t.id WHERE t.status='rate_limit_wait' AND j.status='open' AND r.next_at<=?", (now,))
+        changes = []
+        for task, resume, started in rows:
+            changes.append({'sql': 'UPDATE uplv_tasks SET status=? WHERE id=?', 'args': [resume, task]})
+            if resume == 'session_wait':
+                # Time lost to auth throttling is not evidence of a stuck session.
+                changes.append({'sql': 'UPDATE uplv_session_wait SET started_at=started_at+?,next_at=? WHERE task_id=?', 'args': [max(0, now-started), now, task]})
+            elif resume == 'verifying':
+                changes.append({'sql': 'UPDATE uplv_verify_attempts SET next_at=? WHERE task_id=?', 'args': [now, task]})
+        if changes:
+            self.store.batch(changes)
+
     def expire_session_wait(self):
         # Only queued tasks, never revoke an in-flight owner before lease cleanup.
         rows = self.store.fetch("SELECT t.id,t.job_id FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id JOIN uplv_session_wait w ON w.task_id=t.id WHERE t.status='session_wait' AND j.status='open' AND (w.attempts>=? OR w.started_at<=?)", (self.SESSION_WAIT_MAX_CHECKS, time.time()-self.SESSION_WAIT_MAX_SECONDS))
@@ -614,7 +672,7 @@ class AccountPool:
             self.store.batch(changes)
             return {'ok': True, 'rechecking_failed_lv5': len(candidates)}
 
-    def pool_finish(self, body, results, stopped):
+    def pool_finish(self, body, results, stopped, defer=False, observed_details=None):
         tasks = self.room_tasks(body['room_id'])
         if not tasks:
             return
@@ -633,14 +691,17 @@ class AccountPool:
                      else ('waiting' if after < 5 else 'ready') if result.get('verified') and result.get('idle')
                      else 'screening' if screening and result['status'] != 'failed'
                       else 'failed' if result['status'] == 'failed' and result.get('failure_kind') in ('login', 'create_character', 'restricted') else 'verifying')
-            # End the current operation on denial. Only session conflict enters
-            # delayed read-only inspection; old terminal tasks are not reopened.
-            if not success and result.get('failure_kind') in ('rate_limit', 'server_error'):
+            # 429 ends only the current operation, never the account's queue.
+            rate_limited = not success and result.get('failure_kind') == 'rate_limit' and job_state != 'stopped'
+            if rate_limited:
+                state = 'rate_limit_wait'
+                statements.extend(self.rate_limit_result(task, body['room_id'], (observed_details or {}).get(task)))
+            elif not success and job_state != 'stopped' and result.get('failure_kind') == 'server_error':
                 state = 'stopped'
             waiting = self.store.fetchone('SELECT task_id FROM uplv_session_wait WHERE task_id=?', (task,))
             conflict = result.get('failure_kind') == 'session_conflict'
-            if not success and job_state != 'stopped' and (conflict or (waiting and state == 'verifying')):
-                state, changes = self.session_wait_result(task)
+            if not rate_limited and not success and job_state != 'stopped' and (conflict or (waiting and state == 'verifying')):
+                state, changes = self.session_wait_result(task, (observed_details or {}).get(task))
                 statements.extend(changes)
             if state == 'verifying':
                 attempt = self.store.fetchone('SELECT attempts FROM uplv_verify_attempts WHERE task_id=?', (task,))
@@ -651,24 +712,28 @@ class AccountPool:
                     # ended separately, never invent a ban or successful reward.
                     saved = self.store.fetchone('SELECT detail_json FROM uplv_task_details WHERE task_id=?', (task,))
                     detail = json.loads(saved[0]) if saved else {}
+                    detail.update((observed_details or {}).get(task, {}))
                     detail.update(stage='PAUSED_VERIFY_LIMIT', pause_reason='Đã hết 3 lượt đối soát; cần kiểm tra thủ công, không tự mở trận')
                     statements.append({'sql': 'INSERT INTO uplv_task_details VALUES (?,?,?) ON CONFLICT(task_id) DO UPDATE SET updated_at=excluded.updated_at,detail_json=excluded.detail_json', 'args': [task, time.time(), json.dumps(detail)]})
                 else:
-                    # Starts at completion, not assignment: slow reads must not
-                    # consume their own cooldown. Initial battle deferral=60s.
-                    delay = min(300, 60 * 2 ** count)
+                    # Starts at completion: slow reads do not consume the 30s wait.
+                    delay = self.VERIFY_DELAY
                     statements.append({'sql': 'INSERT INTO uplv_verify_attempts VALUES (?,?,?) ON CONFLICT(task_id) DO UPDATE SET next_at=excluded.next_at', 'args': [task, count, time.time() + delay]})
             statements.append({'sql': 'UPDATE uplv_tasks SET status=?,level=?,room_id=?,slot=? WHERE id=?',
-                'args': [state, after, '' if state in ('ready', 'verifying', 'screening', 'waiting', 'session_wait') else body['room_id'], -1 if state in ('ready', 'verifying', 'screening', 'waiting', 'session_wait') else slot, task]})
+                'args': [state, after, '' if state in ('ready', 'verifying', 'screening', 'waiting', 'session_wait','rate_limit_wait') else body['room_id'], -1 if state in ('ready', 'verifying', 'screening', 'waiting', 'session_wait','rate_limit_wait') else slot, task]})
+            if state != 'rate_limit_wait':
+                statements.append({'sql': 'DELETE FROM uplv_rate_limit_wait WHERE task_id=?', 'args': [task]})
             if state in ('ready', 'waiting', 'success'):
                 statements.append({'sql': 'DELETE FROM uplv_verify_attempts WHERE task_id=?', 'args': [task]})
                 statements.append({'sql': 'DELETE FROM uplv_session_wait WHERE task_id=?', 'args': [task]})
-        self.store.batch(statements)
         for job in {r[1] for r in tasks}:
-            self.store.exec("UPDATE uplv_jobs SET status='done' WHERE id=? AND status='open' AND NOT EXISTS (SELECT 1 FROM uplv_tasks WHERE job_id=? AND status NOT IN ('success','failed','stopped'))", (job, job))
+            statements.append({'sql': "UPDATE uplv_jobs SET status='done' WHERE id=? AND status='open' AND NOT EXISTS (SELECT 1 FROM uplv_tasks WHERE job_id=? AND status NOT IN ('success','failed','stopped'))", 'args': [job, job]})
+        if not defer:
+            self.store.batch(statements)
+        return statements
 
     def pool_snapshot(self):
         groups = [{'level': r[0], 'mode': r[1], 'status': r[2], 'count': r[3]} for r in self.store.fetch(
-            "SELECT level,mode,status,COUNT(*) FROM uplv_tasks WHERE status IN ('screening','waiting','ready','verifying','session_wait') GROUP BY level,mode,status ORDER BY level DESC")]
+            "SELECT level,mode,status,COUNT(*) FROM uplv_tasks WHERE status IN ('screening','waiting','ready','verifying','session_wait','rate_limit_wait') GROUP BY level,mode,status ORDER BY level DESC")]
         return {'max_rooms': self.pool_limit(), 'room_count': self.store.fetchone('SELECT COUNT(*) FROM uplv_rooms')[0],
                 'occupied_rooms': self.store.fetchone("SELECT COUNT(*) FROM uplv_rooms WHERE status IN ('running','interrupted')")[0], 'groups': groups}

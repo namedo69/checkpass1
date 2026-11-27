@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 import uplv_config as config
 from uplv_logs import RoomLogs
 
-VERSION = 'uplv-satellite-0.6.9-direct-game'
+VERSION = 'uplv-satellite-0.6.10-rate-limit-queue'
 
 
 class RevokedLease(RuntimeError):

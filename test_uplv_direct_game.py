@@ -159,7 +159,8 @@ class DirectGameTests(unittest.TestCase):
             report = json.loads(next(Path(folder).glob('pending_report_*.json')).read_text())
         self.pool.report(report)
         self.assertEqual(self.store.fetch('SELECT status FROM uplv_tasks WHERE room_id=? ORDER BY slot', (room['id'],)),
-                         [('success',), ('failed',), ('stopped',), ('stopped',)])
+                         [('success',), ('failed',), ('stopped',)])
+        self.assertEqual(self.store.fetchone("SELECT count(*) FROM uplv_tasks WHERE status='rate_limit_wait'")[0], 1)
         self.assertEqual(self.store.fetchone("SELECT count(*) FROM uplv_tasks WHERE status='session_wait'")[0], 1)
         self.assertEqual(report['results']['1']['failure_kind'], 'restricted')
         self.assertEqual(report['results']['2']['failure_kind'], 'session_conflict')

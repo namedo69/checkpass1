@@ -52,7 +52,7 @@ class SessionWaitTests(unittest.TestCase):
         self.report()
         self.assertEqual(self.states(), [('session_wait',)])
         self.assertEqual(self.store.fetch('SELECT DISTINCT room_id,slot FROM uplv_tasks'), [('', -1)])
-        self.assertEqual(self.store.fetch('SELECT attempts,started_at,next_at FROM uplv_session_wait'), [(0, self.now, self.now+120)]*5)
+        self.assertEqual(self.store.fetch('SELECT attempts,started_at,next_at FROM uplv_session_wait'), [(0, self.now, self.now+30)]*5)
         self.assertIsNone(self.claim())
         self.assertIsNone(self.claim('other-worker'))
         self.assertEqual(self.store.fetchone('SELECT status FROM uplv_jobs WHERE id=?', (self.job,)), ('open',))
@@ -76,7 +76,7 @@ class SessionWaitTests(unittest.TestCase):
     def test_backoff_starts_at_completion_with_no_room_held(self):
         self.report()
         started = self.now
-        for n, delay in ((1, 240), (2, 480), (3, 900), (4, 900), (5, 900)):
+        for n, delay in ((1, 30), (2, 30), (3, 30), (4, 30), (5, 30)):
             room = self.due_claim()
             self.now += 45  # A slow read must not consume its own quiet interval.
             self.report(room)
@@ -170,9 +170,10 @@ class SessionWaitTests(unittest.TestCase):
         self.report()
         room = self.due_claim()
         self.report(room, kind='rate_limit', final_error='HTTP=429')
-        self.assertEqual(self.states(), [('stopped',)])
-        self.now += 1000
-        self.assertIsNone(self.claim())
+        self.assertEqual(self.states(), [('rate_limit_wait',)])
+        self.assertEqual(self.store.fetch('SELECT DISTINCT attempts FROM uplv_session_wait'), [(0,)])
+        self.now += 30
+        self.assertTrue(self.claim()['verify_only'])
 
     def test_duplicate_report_does_not_reset_deadline(self):
         self.report()
@@ -248,7 +249,7 @@ class SessionWaitTests(unittest.TestCase):
             self.assertEqual(a['attempts'], 0)
             self.assertTrue(a['session_wait_active'])
             self.assertEqual(a['session_wait_attempts'], 0)
-            self.assertEqual(a['next_retry_at'], self.now+120)
+            self.assertEqual(a['next_retry_at'], self.now+30)
             self.assertEqual(a['session_wait_deadline'], self.now+7200)
 
     def test_pending_wait_prevents_unfillable_tail_failure(self):
@@ -292,6 +293,21 @@ class WaitWorkerTests(unittest.TestCase):
         self.assertIn('terminal_session_conflict:', rows[0][3])
         read.assert_called_once()
         login.assert_called_once()
+        run_cs.assert_not_called()
+
+    def test_auth_429_in_read_only_inspection_is_rate_limit_not_restricted(self):
+        engine, login, run_cs = self.engine()
+        error = RuntimeError('HTTP=429')
+        error.code = 429
+        error.http_status = 429
+        login.side_effect = error
+        room = dict(accounts=[['offline_wait', 'unused']], levels=[10], targets=[12], verify_only=True)
+        with patch('uplv_profile_v2.read_profile') as read:
+            rows = engine.run(room, threading.Event(), Mock(), Mock())
+        self.assertIn('terminal_rate_limit:', rows[0][3])
+        self.assertNotIn('terminal_restricted:', rows[0][3])
+        login.assert_called_once()
+        read.assert_not_called()
         run_cs.assert_not_called()
 
     def test_wait_diagnostic_survives_durable_worker_report(self):

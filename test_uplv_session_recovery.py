@@ -191,7 +191,7 @@ class QuarantineTests(unittest.TestCase):
         self.assertEqual(self.store.fetch('SELECT DISTINCT status FROM uplv_tasks'), [('verifying',)])
         for count, due in self.store.fetch('SELECT attempts,next_at FROM uplv_verify_attempts'):
             self.assertEqual(count, 0)
-            self.assertGreaterEqual(due, start+60)
+            self.assertGreaterEqual(due, start+30)
         self.assertIsNone(self.pool.pool_verification_room())
 
     def test_third_inconclusive_inspection_pauses_without_new_battle(self):
@@ -212,7 +212,7 @@ class QuarantineTests(unittest.TestCase):
         self.pending_report(room)
         for count, due in self.store.fetch('SELECT attempts,next_at FROM uplv_verify_attempts'):
             self.assertEqual(count, 1)
-            self.assertGreaterEqual(due, start+120)
+            self.assertGreaterEqual(due, start+30)
         self.assertIsNone(self.pool.pool_verification_room())
 
     def test_verified_idle_account_still_enters_ready_and_clears_budget(self):

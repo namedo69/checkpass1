@@ -1,5 +1,39 @@
 # UpLv 0.6.6 — session recovery update
 
+## 0.6.10 — 429 durable retry / fixed 30-second waits
+
+- User correction: 429 must queue, not stop an account. Subsequent correction:
+  use a fixed 30 seconds, not increasing minute-scale delays. Applies to 429,
+  generic post-match verification and 91117 session-release checks. Existing
+  verification/session check limits remain unchanged for non-throttled reads.
+- Separate `uplv_rate_limit_wait` records retain attempts, due time and resume
+  path. Initial-game throttles return to game preparation (with existing idle
+  guards), while read-only throttles return to read-only inspection. A 429
+  refunds that inspection's check count; its queued time does not spend the
+  session-release deadline. Repeated 429 alone never exhausts a terminal budget.
+- Durable fleet admission cooldown starts on a new 429 checkpoint or report.
+  Heartbeat renewals and reports continue; identical heartbeat checkpoints do
+  not keep extending cooldown. Admission resumes one room per 30 seconds while
+  retry work remains, with a short 60-second pacing tail. Existing leased rooms
+  are not revoked. Claims replayed by request ID remain idempotent.
+- Account details expose status/due time/429 count; admin/user filters label
+  the wait. Pending exports, exclusive ownership, incomplete-tail protection,
+  stop/clear and expired-lease cleanup include this queue. Final room, account
+  queue and due-time changes commit together so a failed report can be retried.
+- Read-only worker auth 429 is classified as rate_limit, not restricted. No
+  runtime asset changes or extra inline credential retries. Profile trailer
+  failures and HTTP200 auth diagnostic loss remain separate, unresolved issues.
+- User authorized push/deploy. No historical terminal tasks/jobs are reopened
+  and no real-account tests are permitted. VPS rollout must preserve custom admission/priority/recovery capacity and use
+  backups plus guarded targeted merges; it is not an HTML-only deployment.
+- Master deployed 2026-11-27 19:28 VN: four targeted files installed after
+  168 offline candidate tests and 10 UI tests. Backup:
+  `/home/sp1s/uplv-rate-limit-backup-20261127_192818`. Health ready in 1.22s;
+  CheckPass/VVIP PIDs unchanged, dependencies restored. All 251294 historical
+  terminal task IDs/statuses and all job statuses unchanged across cutover.
+  Worker release is `uplv-satellite-0.6.10-rate-limit-queue`; confirm Render
+  auto-deploy health separately after push, not from local test success.
+
 ## 0.6.9 direct-game/profile follow-up — PUSH/DEPLOY AUTHORIZED
 
 - Rollout verification follow-up: the master's resource telemetry allowlist

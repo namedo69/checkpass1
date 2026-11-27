@@ -209,7 +209,11 @@ class Engine:
                             if secret:
                                 diagnostic = diagnostic.replace(secret, '[REDACTED]')
                     create_rejected = 'tạo nhân vật bị từ chối' in str(exc).casefold()
-                    if create_rejected:
+                    from pve_runtime.failure_policy import terminal_result
+                    classified = terminal_result((False, room['levels'][index], level, diagnostic))
+                    if classified[3].startswith('terminal_rate_limit:'):
+                        row = classified
+                    elif create_rejected:
                         row = (False, room['levels'][index], level, 'terminal_create_character: ' + diagnostic)
                     elif stop_on_denial(exc):
                         row = (False, room['levels'][index], level, 'terminal_restricted: ' + diagnostic)

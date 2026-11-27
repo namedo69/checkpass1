@@ -111,7 +111,7 @@ class UpLvCoordinator(AccountPool):
 
     def _clear_data_worker(self):
         tables = ('uplv_check_members', 'uplv_job_owners', 'uplv_check_chunks', 'uplv_claim_requests', 'uplv_logs', 'uplv_replacements', 'uplv_room_versions', 'uplv_reserves',
-                  'uplv_check_leases', 'uplv_verify_attempts', 'uplv_session_wait', 'uplv_verify_rooms',
+                  'uplv_check_leases', 'uplv_verify_attempts', 'uplv_session_wait', 'uplv_rate_limit_wait', 'uplv_auth_cooldown', 'uplv_verify_rooms',
                   'uplv_screen_rooms', 'uplv_room_history', 'uplv_task_details',
                   'uplv_tasks', 'uplv_pool_jobs', 'uplv_rooms', 'uplv_jobs')
         try:
@@ -249,6 +249,12 @@ class UpLvCoordinator(AccountPool):
             for task, job, _, _, level, slot, _ in tasks:
                 state = self.store.fetchone('SELECT status FROM uplv_jobs WHERE id=?', (job,))[0]
                 observed = int(progress.get(str(slot), {}).get('level', 0) or 0)
+                result = results.get(str(slot), {})
+                if state != 'stopped' and result.get('failure_kind') == 'rate_limit':
+                    changes.extend(self.rate_limit_result(task, room, observed_details.get(task)))
+                    changes.extend(self.auth_cooldown_changes())
+                    changes.append({'sql': "UPDATE uplv_tasks SET status='rate_limit_wait',level=?,room_id='',slot=-1 WHERE id=?", 'args': [max(level, observed, result.get('level_after', 0)), task]})
+                    continue
                 waiting = self.store.fetchone('SELECT task_id FROM uplv_session_wait WHERE task_id=?', (task,))
                 if waiting or results.get(str(slot), {}).get('failure_kind') == 'session_conflict':
                     # Preserve the independent deadline/check budget across a
@@ -305,6 +311,8 @@ class UpLvCoordinator(AccountPool):
                 return {'ok': True, 'room': None, 'reason': 'paused'}
             if body.get('direct_game_protocol') != 1:
                 return {'ok': True, 'room': None, 'reason': 'worker_upgrade_required'}
+            if self.auth_admission_blocked():
+                return {'ok': True, 'room': None, 'reason': 'auth_rate_limit_cooldown', 'retry_after': self.RATE_LIMIT_DELAY}
             occupied = self.store.fetchone("SELECT COUNT(*) FROM uplv_rooms WHERE status IN ('running','interrupted')")[0]
             if occupied >= self.pool_limit():
                 return {'ok': True, 'room': None, 'reason': 'system_room_limit'}
@@ -336,6 +344,7 @@ class UpLvCoordinator(AccountPool):
                     'mode': row[3], 'lease_token': token, 'lease_until': until}}
             if request_id:
                 self.store.batch([{'sql': 'INSERT INTO uplv_claim_requests VALUES (?,?,?,?,?)', 'args': [request_id, satellite, row[0], token, json.dumps(response)]}])
+            self.store.exec("UPDATE uplv_auth_cooldown SET next_admit=?,pace_until=CASE WHEN EXISTS (SELECT 1 FROM uplv_rate_limit_wait w JOIN uplv_tasks t ON t.id=w.task_id JOIN uplv_jobs j ON j.id=t.job_id WHERE j.status='open' AND t.status NOT IN ('success','failed','stopped')) THEN ? ELSE pace_until END WHERE id='fleet'", (time.time()+self.RATE_LIMIT_DELAY, time.time()+60))
             return response
 
     def owned(self, body):
@@ -409,6 +418,12 @@ class UpLvCoordinator(AccountPool):
             result = self.clean_rows({str(slot): body.get('result')})[str(slot)]
             if result['status'] != 'failed':
                 raise ValueError('Cần kết quả lỗi chuẩn bị')
+            if result.get('failure_kind') == 'rate_limit':
+                # Do not discard this occupant or churn fresh accounts on 429.
+                self.store.batch(self.auth_cooldown_changes())
+                return {'ok': True, 'stop': True}
+            if self.auth_admission_blocked():
+                return {'ok': True, 'waiting': True, 'retry_after': self.RATE_LIMIT_DELAY}
             reserve = self.store.fetchone("SELECT id,account_json FROM uplv_reserves WHERE job_id=? AND status='pending' ORDER BY id LIMIT 1", (lease[1],))
             task = self.store.fetchone('SELECT id,job_id,mode FROM uplv_tasks WHERE room_id=? AND slot=?', (body['room_id'], slot))
             candidate = None
@@ -495,12 +510,15 @@ class UpLvCoordinator(AccountPool):
                     'elapsed': max(0, min(86400, int(value.get('elapsed', 0)))),
                     'detail': str(value.get('detail', ''))[:400]}
             results = json.loads(row[5])
+            previous_results = dict(results)
             results.update(self.clean_rows(body.get('results', {}), [s for a in json.loads(row[4]) for s in a if s]))
             until = time.time() + self.LEASE_SECONDS
             # One durable commit per renewal, not 2-3 fsyncs while holding the
             # fleet-wide lock. Ownership/generation checks remain serialized.
             changes = [{'sql': "UPDATE uplv_rooms SET status='running',lease_until=?,progress_json=?,results_json=? WHERE id=?",
                         'args': [until, json.dumps(progress), json.dumps(results), body['room_id']]}]
+            if any(r.get('failure_kind') == 'rate_limit' and previous_results.get(k, {}).get('failure_kind') != 'rate_limit' for k, r in results.items()):
+                changes.extend(self.auth_cooldown_changes())
             self.touch(body, changes=changes)
             changes.extend(self.save_task_details(body['room_id'], progress, results, defer=True))
             self.store.batch(changes)
@@ -513,12 +531,17 @@ class UpLvCoordinator(AccountPool):
             if row[2] in ('done', 'stopped', 'failed', 'incomplete'):
                 return {'ok': True, 'duplicate': True}
             results = json.loads(row[5])
+            previous_results = dict(results)
             results.update(self.clean_rows(body.get('results', {}), [s for a in json.loads(row[4]) for s in a if s]))
+            changes = []
+            if any(r.get('failure_kind') == 'rate_limit' and previous_results.get(k, {}).get('failure_kind') != 'rate_limit' for k, r in results.items()):
+                changes.extend(self.auth_cooldown_changes())
             for i in range(len(json.loads(row[4]))):
                 results.setdefault(str(i), {'status': 'pending', 'level_before': 0, 'level_after': 0})
             pool_room = bool(self.room_tasks(body['room_id']))
             progress_row = self.store.fetchone('SELECT progress_json FROM uplv_rooms WHERE id=?', (body['room_id'],))
-            self.save_task_details(body['room_id'], json.loads(progress_row[0]), results)
+            details = self.save_task_details(body['room_id'], json.loads(progress_row[0]), results, defer=True)
+            changes.extend(details)
             # A worker shutdown is not an operator stop of the owning job.
             # Mixed-owner rooms can also be interrupted by a different job.
             job_state = self.store.fetchone('SELECT j.status FROM uplv_jobs j JOIN uplv_rooms r ON r.job_id=j.id WHERE r.id=?', (body['room_id'],))[0]
@@ -528,9 +551,11 @@ class UpLvCoordinator(AccountPool):
                 state = 'incomplete'
             elif state == 'done' and any(r['status'] == 'failed' for r in results.values()):
                 state = 'failed'
-            self.store.exec('UPDATE uplv_rooms SET status=?,results_json=?,lease_until=0 WHERE id=?',
-                            (state, json.dumps(results), body['room_id']))
-            self.pool_finish(body, results, bool(row[3] or body.get('stopped')))
+            changes.append({'sql': 'UPDATE uplv_rooms SET status=?,results_json=?,lease_until=0 WHERE id=?',
+                            'args': [state, json.dumps(results), body['room_id']]})
+            changes.extend(self.pool_finish(body, results, bool(row[3] or body.get('stopped')), defer=True,
+                observed_details={c['args'][0]: json.loads(c['args'][2]) for c in details}) or [])
+            self.store.batch(changes)
             self.store.exec("UPDATE uplv_jobs SET status='done' WHERE id=(SELECT job_id FROM uplv_rooms WHERE id=?) "
                             "AND NOT EXISTS (SELECT 1 FROM uplv_rooms r WHERE r.job_id=uplv_jobs.id AND r.status IN ('pending','running','interrupted'))",
                              (body['room_id'],)) if not pool_room else None
@@ -642,7 +667,7 @@ class UpLvCoordinator(AccountPool):
                     {'sql': "UPDATE uplv_jobs SET status='stopped' WHERE id=?", 'args': [job]},
                     {'sql': "UPDATE uplv_rooms SET stop_requested=1,status=CASE WHEN status='pending' THEN 'stopped' ELSE status END WHERE job_id=?", 'args': [job]},
                 ])
-                self.store.exec("UPDATE uplv_tasks SET status='stopped' WHERE job_id=? AND status IN ('screening','waiting','ready','verifying','session_wait')", (job,))
+                self.store.exec("UPDATE uplv_tasks SET status='stopped' WHERE job_id=? AND status IN ('screening','waiting','ready','verifying','session_wait','rate_limit_wait')", (job,))
                 self.store.exec("UPDATE uplv_rooms SET stop_requested=1 WHERE id IN (SELECT room_id FROM uplv_tasks WHERE job_id=? AND status='assigned')", (job,))
             else:
                 raise ValueError('action: pause/resume/stop_job')

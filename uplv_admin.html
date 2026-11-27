@@ -197,6 +197,7 @@ tbody tr:hover{background:#f8fafc}
               <option value="ready">Chờ ghép đội cùng cấp</option>
               <option value="verifying">Chờ đối soát sau trận</option>
               <option value="session_wait">Chờ nhả phiên (91117)</option>
+              <option value="rate_limit_wait">Chờ thử lại (429)</option>
               <option value="success">Đã đạt cấp mục tiêu</option>
               <option value="failed">Lỗi</option>
               <option value="stopped">Đã dừng</option>
@@ -272,6 +273,7 @@ const statesMap={
   ready:{text:'Chờ ghép cùng cấp',badge:'badge-pending'},
   verifying:{text:'Chờ đối soát sau trận',badge:'badge-warn'},
   session_wait:{text:'Chờ nhả phiên (91117)',badge:'badge-warn'},
+  rate_limit_wait:{text:'Chờ thử lại (429)',badge:'badge-warn'},
   success:{text:'Đạt cấp mục tiêu',badge:'badge-success'},
   failed:{text:'Lỗi xử lý',badge:'badge-failed'},
   stopped:{text:'Đã dừng',badge:'badge-muted'}
@@ -397,6 +399,30 @@ async function controlSatellite(id,action){
   }catch(e){toast(e.message);}
 }
 
+function elapsedSince(createdAt, now=Date.now()){
+  const start=Number(createdAt);
+  if(!Number.isFinite(start)||start<=0)return '—';
+  const seconds=Math.max(0,Math.floor((now-start*1000)/1000));
+  const days=Math.floor(seconds/86400),hours=Math.floor(seconds%86400/3600);
+  const clock=[hours,Math.floor(seconds%3600/60),seconds%60].map(n=>String(n).padStart(2,'0')).join(':');
+  return (days?days+' ngày ':'')+clock;
+}
+
+function renderJobTime(job){
+  const start=Number(job.created_at);
+  if(!Number.isFinite(start)||start<=0)return 'Thời gian tạo: chưa rõ';
+  const created=`Tạo lúc: ${esc(new Date(start*1000).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'}))} (VN)`;
+  if(job.status!=='open')return created;
+  return `${created} · Từ lúc tạo: <b data-job-created="${start}" style="font-variant-numeric:tabular-nums">${elapsedSince(start)}</b>`;
+}
+
+function updateJobTimers(){
+  const now=Date.now();
+  document.querySelectorAll('[data-job-created]').forEach(el=>{el.textContent=elapsedSince(el.dataset.jobCreated,now);});
+}
+setInterval(()=>{if(!document.hidden)updateJobTimers();},1000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)updateJobTimers();});
+
 function renderJobs(jobs){
   jobsCache=jobs||[];
   const el=$('jobDashboard');
@@ -424,6 +450,7 @@ function renderJobs(jobs){
             <button class="btn ${isSelected?'btn-blue':'btn-light'}" style="padding:5px 10px;font-size:11px" onclick="selectJob('${j.id}')"><i class="fa-solid fa-list-check"></i> ${isSelected?'Đang Xem':'Xem Acc'}</button>
           </div>
         </div>
+        <p class="muted" style="font-size:12px;margin:0 0 10px">${renderJobTime(j)}</p>
         <div class="progress-bar"><div class="progress-val" style="width:${pct.toFixed(1)}%"></div></div>
         <div class="muted" style="font-size:12px;margin-bottom:12px">Tiến độ xác nhận: <b>${pct.toFixed(1)}%</b> (${succ}/${total} nick đã đạt mục tiêu)</div>
         <div class="stats-grid">
@@ -435,6 +462,7 @@ function renderJobs(jobs){
           <div class="stat-box"><div class="stat-num">${c.ready||0}</div><div class="stat-lbl">Sẵn Sàng Ghép</div></div>
           <div class="stat-box"><div class="stat-num warn">${c.verifying||0}</div><div class="stat-lbl">Chờ Đối Soát</div></div>
           <div class="stat-box"><div class="stat-num warn">${c.session_wait||0}</div><div class="stat-lbl">Chờ Nhả Phiên</div></div>
+          <div class="stat-box"><div class="stat-num warn">${c.rate_limit_wait||0}</div><div class="stat-lbl">Chờ 429</div></div>
           <div class="stat-box"><div class="stat-num bad">${fail}</div><div class="stat-lbl">Thất bại</div></div>
           <div class="stat-box"><div class="stat-num warn">${stop}</div><div class="stat-lbl">Đã dừng</div></div>
         </div>
@@ -541,7 +569,7 @@ async function loadAccounts(){
 }
 
 function accountReason(a){
-  if(a.status==='screening'||a.status==='verifying'||a.status==='session_wait'){
+  if(a.status==='screening'||a.status==='verifying'||a.status==='session_wait'||a.status==='rate_limit_wait'){
     if(a.next_retry_at>Date.now()/1000)return 'Chờ lượt kiểm tra lúc '+new Date(a.next_retry_at*1000).toLocaleTimeString();
     return 'Đang xếp hàng chờ lượt kiểm tra';
   }
@@ -562,6 +590,7 @@ function showAccountModal(idx){
     `Phòng: ${a.room?'P'+a.room:'Không chiếm phòng'} (${a.room_status||'trống'})`,
     `Vệ tinh xử lý: ${a.satellite_id||'Chưa cấp'}`,
     `Số lượt đối soát trận: ${a.attempts}`,
+    `Số lần gặp giới hạn 429: ${a.rate_limit_attempts||0}`,
     `Số lượt kiểm tra nhả phiên: ${a.session_wait_attempts||0} / 6 (hạn mức riêng)`,
     `Lịch kiểm tra tiếp: ${a.next_retry_at?new Date(a.next_retry_at*1000).toLocaleString():'Không có'}`,
     `Hạn chờ phiên: ${a.session_wait_deadline?new Date(a.session_wait_deadline*1000).toLocaleString():'Không có'}`,
