@@ -202,9 +202,13 @@ class UpLvCoordinator(AccountPool):
             value = body.get('metrics', {}).get(key)
             if isinstance(value, (int, float)) and 0 <= value < 1e12:
                 metrics[key] = value
-        protocol = body.get('metrics', {}).get('direct_game_protocol')
-        if type(protocol) is int and protocol == 1:
-            metrics['direct_game_protocol'] = protocol
+        for key in ('direct_game_protocol', 'auth_web_session', 'ban_only_failure'):
+            value = body.get('metrics', {}).get(key)
+            if type(value) is int and value == 1:
+                metrics[key] = value
+        version = body.get('metrics', {}).get('worker_version')
+        if isinstance(version, str) and re.fullmatch(r'uplv-satellite-[A-Za-z0-9_.-]{1,80}', version):
+            metrics['worker_version'] = version
         # Store.exec on PostgreSQL auto-returns an integer id; these IDs are
         # text, so use the portable batch interface for the upsert.
         statements = [{'sql':

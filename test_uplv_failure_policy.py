@@ -33,6 +33,31 @@ class RetryTests(unittest.TestCase):
         self.now += 1
         self.assertFalse(self.claim()['verify_only'])
 
+    def test_worker_shutdown_does_not_stop_account_or_owning_job(self):
+        self.pool.report(dict(satellite_id='offline',room_id=self.room['id'],
+            lease_token=self.room['lease_token'],versions=[0]*5,stopped=True,results={}))
+        self.assertEqual(self.states(), [('verifying',)])
+        self.assertEqual(self.store.fetchone('SELECT status FROM uplv_jobs WHERE id=?',(self.job,)),('open',))
+        self.now += 30
+        self.assertTrue(self.claim()['verify_only'])
+
+    def test_unknown_worker_failed_label_stays_pending_even_after_many_checks(self):
+        room=self.room
+        for _ in range(15):
+            self.report(room,kind='',status='failed',final_error='Unrecognized transient failure')
+            self.assertEqual(self.states(), [('verifying',)])
+            self.assertEqual(self.store.fetchone('SELECT status FROM uplv_jobs WHERE id=?',(self.job,)),('open',))
+            self.assertIsNone(self.claim())
+            self.now += 30
+            room=self.claim()
+            self.assertTrue(room['verify_only'])
+
+    def test_lease_loss_on_active_job_never_marks_account_stopped(self):
+        self.now=self.room['lease_until']+121
+        self.pool.expire()
+        self.assertEqual(self.states(), [('verifying',)])
+        self.assertEqual(self.store.fetchone('SELECT status FROM uplv_jobs WHERE id=?',(self.job,)),('open',))
+
     def test_auth_retry_survives_restart_and_waits_exactly_30_seconds(self):
         self.report(kind='restricted', status='failed', final_error='SsoLoginError HTTP=200')
         self.assertEqual(self.states(), [('retry_wait',)])

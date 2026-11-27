@@ -50,6 +50,20 @@ class DirectGameTests(unittest.TestCase):
                     expected['direct_game_protocol'] = 1
                 self.assertEqual(metrics, expected)
 
+    def test_presence_records_bounded_version_and_exact_capabilities(self):
+        from uplv_satellite import VERSION
+        self.pool.presence(dict(satellite_id='telemetry', metrics={
+            'worker_version': VERSION, 'auth_web_session': 1,
+            'ban_only_failure': 1, 'password': 'must-not-be-stored'}))
+        metrics = json.loads(self.store.fetchone(
+            'SELECT metrics_json FROM uplv_satellites WHERE id=?', ('telemetry',))[0])
+        self.assertEqual(metrics, dict(worker_version=VERSION, auth_web_session=1, ban_only_failure=1))
+        for value in (None, 1, {}, 'secret\nvalue', 'uplv-satellite-' + 'x'*81):
+            self.pool.presence(dict(satellite_id='telemetry', metrics={
+                'worker_version': value, 'auth_web_session': True, 'ban_only_failure': '1'}))
+            self.assertEqual(json.loads(self.store.fetchone(
+                'SELECT metrics_json FROM uplv_satellites WHERE id=?', ('telemetry',))[0]), {})
+
     def test_upload_and_add_go_straight_to_game_queue_without_level_claim(self):
         self.pool.pool_add(dict(job_id=self.job, accounts='extra|unused'))
         self.assertEqual(self.created['screening_accounts'], 0)
