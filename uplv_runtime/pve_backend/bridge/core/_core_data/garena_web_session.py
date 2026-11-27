@@ -80,6 +80,11 @@ def web_login_grant(account, password, *, session_factory=None, progress=None):
             if progress:
                 progress(f'[web-session] app_id={APP_ID} phase={phase} http={status} action=accepted')
             return obj
+        except GarenaError as exc:
+            if status in (429, 503):
+                from .garena_http_grant import retry_after_seconds
+                exc.retry_after = retry_after_seconds(response.headers.get('Retry-After'))
+            raise
         finally:
             response.close()
 

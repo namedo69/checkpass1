@@ -7,7 +7,7 @@ from uplv_failure_policy import terminal_account_failure
 
 
 class AccountPool:
-    RATE_LIMIT_DELAY = 30
+    RATE_LIMIT_DELAY = 0
     VERIFY_DELAY = 30
     # Conservative scheduling policy, not a claimed game-server session TTL.
     SESSION_WAIT_DELAYS = (30,)
@@ -468,7 +468,8 @@ class AccountPool:
                     return verification
                 self.finish_unfillable_tail()
                 return None
-            selected = self.store.fetch("SELECT t.id,t.job_id,t.account_json FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id WHERE t.status='waiting' AND t.mode=? AND j.status='open' ORDER BY t.created_at LIMIT 5", group)
+            # Rotate preparation retries behind untouched work and older retries.
+            selected = self.store.fetch("SELECT t.id,t.job_id,t.account_json FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id LEFT JOIN uplv_retry_wait q ON q.task_id=t.id LEFT JOIN uplv_rate_limit_wait r ON r.task_id=t.id WHERE t.status='waiting' AND t.mode=? AND j.status='open' ORDER BY COALESCE(q.next_at,0)+COALESCE(r.next_at,0),t.created_at,t.id LIMIT 5", group)
         room, statements = self.room_assignment(selected)
         if room is None:
             return None
@@ -581,15 +582,11 @@ class AccountPool:
         ]
 
     def auth_admission_blocked(self):
-        # Only a fresh 429 starts a fleet quiet interval. Old retry metadata
-        # must never serialize every healthy worker to one room per 30 seconds.
-        row = self.store.fetchone("SELECT until_at FROM uplv_auth_cooldown WHERE id='fleet'")
-        return bool(row and time.time() < row[0])
+        # Capacity/ownership controls admission; ignore legacy fleet cooldowns.
+        return False
 
     def auth_cooldown_changes(self):
-        now = time.time()
-        return [{'sql': "INSERT INTO uplv_auth_cooldown VALUES ('fleet',?,?,?) ON CONFLICT(id) DO UPDATE SET until_at=excluded.until_at,pace_until=excluded.pace_until,next_admit=excluded.next_admit",
-                 'args': [now + self.RATE_LIMIT_DELAY, now + self.RATE_LIMIT_DELAY + 60, now + self.RATE_LIMIT_DELAY]}]
+        return []
 
     def rate_limit_result(self, task, room, observed_detail=None):
         """End this lease, not this account. A throttle spends no read budget."""
@@ -606,7 +603,7 @@ class AccountPool:
         detail = json.loads(saved[0]) if saved else {}
         if observed_detail:
             detail.update(observed_detail)
-        detail.update(stage='WAIT_RATE_LIMIT', pause_reason='', detail='Giới hạn tần suất (429); chờ 30 giây rồi thử lại',
+        detail.update(stage='WAIT_RATE_LIMIT', pause_reason='', detail='Giới hạn tần suất (429); trả hàng đợi ngay, không khóa toàn đội',
                       next_retry_at=now+self.RATE_LIMIT_DELAY)
         changes.extend([
             {'sql': 'INSERT INTO uplv_rate_limit_wait VALUES (?,?,?,?,?) ON CONFLICT(task_id) DO UPDATE SET attempts=excluded.attempts,started_at=excluded.started_at,next_at=excluded.next_at,resume_state=excluded.resume_state',
@@ -618,7 +615,7 @@ class AccountPool:
     def release_rate_limit_wait(self):
         """Only release due nonterminal tasks of open jobs; never migrate stops."""
         now = time.time()
-        rows = self.store.fetch("SELECT t.id,r.resume_state,r.started_at FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id JOIN uplv_rate_limit_wait r ON r.task_id=t.id WHERE t.status='rate_limit_wait' AND j.status='open' AND r.next_at<=?", (now,))
+        rows = self.store.fetch("SELECT t.id,r.resume_state,r.started_at FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id JOIN uplv_rate_limit_wait r ON r.task_id=t.id WHERE t.status='rate_limit_wait' AND j.status='open'")
         changes = []
         for task, resume, started in rows:
             changes.append({'sql': 'UPDATE uplv_tasks SET status=? WHERE id=?', 'args': [resume, task]})
@@ -636,7 +633,7 @@ class AccountPool:
         return
 
     def retry_result(self, task, room, result, observed_detail=None):
-        """Durable 30s retry, without reopening a possibly unresolved match."""
+        """Immediate durable retry; unresolved matches remain inspection-only."""
         now = time.time()
         prior = self.store.fetchone('SELECT attempts FROM uplv_retry_wait WHERE task_id=?', (task,))
         inspection = self.store.fetchone('SELECT room_id FROM uplv_verify_rooms WHERE room_id=?', (room,))
@@ -655,15 +652,15 @@ class AccountPool:
         session = self.store.fetchone('SELECT task_id FROM uplv_session_wait WHERE task_id=?', (task,))
         resume = ('session_wait' if session else 'waiting' if registration_rejected
                   or (auth_only and not inspection) else 'verifying')
-        detail.update(stage='WAIT_RETRY', pause_reason='', next_retry_at=now+self.VERIFY_DELAY)
+        detail.update(stage='WAIT_RETRY', pause_reason='', next_retry_at=now)
         return [
             {'sql': 'INSERT INTO uplv_retry_wait VALUES (?,?,?,?) ON CONFLICT(task_id) DO UPDATE SET attempts=excluded.attempts,next_at=excluded.next_at,resume_state=excluded.resume_state',
-             'args': [task, (prior[0] if prior else 0)+1, now+self.VERIFY_DELAY, resume]},
+             'args': [task, (prior[0] if prior else 0)+1, now, resume]},
             {'sql': 'INSERT INTO uplv_task_details VALUES (?,?,?) ON CONFLICT(task_id) DO UPDATE SET updated_at=excluded.updated_at,detail_json=excluded.detail_json', 'args': [task, now, json.dumps(detail)]},
         ]
 
     def release_retry_wait(self):
-        rows = self.store.fetch("SELECT t.id,q.resume_state FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id JOIN uplv_retry_wait q ON q.task_id=t.id WHERE t.status='retry_wait' AND j.status='open' AND q.next_at<=?", (time.time(),))
+        rows = self.store.fetch("SELECT t.id,q.resume_state FROM uplv_tasks t JOIN uplv_jobs j ON j.id=t.job_id JOIN uplv_retry_wait q ON q.task_id=t.id WHERE t.status='retry_wait' AND j.status='open'")
         changes = []
         for task, resume in rows:
             changes.append({'sql': 'UPDATE uplv_tasks SET status=? WHERE id=?', 'args': [resume, task]})

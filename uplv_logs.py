@@ -22,7 +22,7 @@ class RoomLogs:
         with self.lock:
             timer = re.search(r'\[TIMER\]\s*(\d+)', message)
             if timer:
-                bucket = int(timer.group(1)) // 30
+                bucket = int(timer.group(1)) // 5
                 if self.timers.get(slot) == bucket:
                     return
                 self.timers[slot] = bucket
@@ -31,6 +31,7 @@ class RoomLogs:
             message = re.sub(r'(?i)(bearer\s+|(?:password|token|sso_key|access_token)\s*[=:]\s*)\S+',
                              r'\1[REDACTED]', message)
             self.items.append({'id': uuid.uuid4().hex, 'at': time.time(), 'room_id': self.room_id, 'slot': slot, 'text': message[:500]})
+            return message[:500]
 
     def view(self):
         with self.lock:

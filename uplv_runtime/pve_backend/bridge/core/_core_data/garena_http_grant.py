@@ -11,6 +11,7 @@ import hashlib
 import socket
 import ssl
 import time
+from email.utils import parsedate_to_datetime
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -27,6 +28,19 @@ HTTP_TIMEOUT = 10.0
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
+
+
+def retry_after_seconds(value):
+    """Honor an explicit server wait only; never invent a retry interval."""
+    text = str(value or '').strip()
+    if not text or len(text) > 128:
+        return 0
+    if text.isascii() and text.isdigit():
+        return int(text)
+    try:
+        return max(0, parsedate_to_datetime(text).timestamp() - time.time())
+    except (ValueError, TypeError, OverflowError):
+        return 0
 
 
 def extract_token_open_id(uri: str) -> tuple[str, str]:
@@ -173,7 +187,9 @@ def grant_token(sso_key: str, *, opener=None) -> tuple[str, str]:
             raise _failure('require_grant', status=status, code=141)
         raise _failure('http_rejected' if error or status != 200 else 'missing_token',
                        status=status, diagnostics=response_diagnostics(obj))
-    except GarenaError:
+    except GarenaError as exc:
+        if response is not None and exc.http_status in (429, 503):
+            exc.retry_after = retry_after_seconds(response.headers.get('Retry-After'))
         raise
     except Exception as exc:
         raise _failure('http_transport', status=status,

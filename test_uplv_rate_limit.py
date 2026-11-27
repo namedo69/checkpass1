@@ -42,29 +42,34 @@ class RateLimitTests(unittest.TestCase):
         self.report()
         self.assertEqual(self.states(), [('rate_limit_wait',)])
         self.assertEqual(self.store.fetch('SELECT DISTINCT room_id,slot FROM uplv_tasks'), [('', -1)])
-        self.assertEqual(self.store.fetch('SELECT DISTINCT attempts,next_at,resume_state FROM uplv_rate_limit_wait'), [(1, self.now+30, 'waiting')])
+        self.assertEqual(self.store.fetch('SELECT DISTINCT attempts,next_at,resume_state FROM uplv_rate_limit_wait'), [(1, self.now, 'waiting')])
         self.assertEqual(self.store.fetchone('SELECT status FROM uplv_jobs'), ('open',))
         for a in self.pool.account_details({'job_id': self.job})['accounts']:
-            self.assertEqual(a['next_retry_at'], self.now+30)
+            self.assertEqual(a['next_retry_at'], self.now)
             self.assertEqual(a['rate_limit_attempts'], 1)
         self.pool = UpLvCoordinator(self.store)
-        self.now += 29
-        self.assertIsNone(self.claim())
-        self.now += 1
         retry = self.claim()
         self.assertFalse(retry['verify_only'])
         self.assertFalse(retry['screen_only'])
 
-    def test_repeated_429_always_waits_30_seconds_never_exhausts_budget(self):
+    def test_repeated_429_has_no_master_wait_and_never_exhausts_budget(self):
         room = self.room
         for count in range(1, 12):
             self.report(room)
             self.assertEqual(self.states(), [('rate_limit_wait',)])
-            self.assertEqual(self.store.fetch('SELECT DISTINCT attempts,next_at FROM uplv_rate_limit_wait'), [(count, self.now+30)])
+            self.assertEqual(self.store.fetch('SELECT DISTINCT attempts,next_at FROM uplv_rate_limit_wait'), [(count, self.now)])
             self.assertEqual(self.store.fetchone('SELECT count(*) FROM uplv_verify_attempts'), (0,))
-            self.now += 30
             room = self.claim()
             self.assertIsNotNone(room)
+
+    def test_retry_rotation_does_not_starve_untouched_accounts(self):
+        self.pool.pool_create({'accounts': '\n'.join(f'untouched_{i}|unused' for i in range(5))})
+        self.report()
+        next_room = self.claim()
+        self.assertTrue(all(account[0].startswith('untouched_') for account in next_room['accounts']))
+        self.report(next_room)
+        self.assertIsNotNone(self.claim('offline'))
+
 
     def test_duplicate_and_stale_reports_cannot_extend_wait(self):
         self.report()
@@ -102,20 +107,16 @@ class RateLimitTests(unittest.TestCase):
         self.assertIsNone(self.claim())
         self.assertEqual(self.states(), [('failed',)])
 
-    def test_fleet_cooldown_blocks_new_accounts_but_not_renewal_or_report(self):
+    def test_429_never_blocks_other_workers_renewal_or_report(self):
         job = self.pool.pool_create({'accounts': '\n'.join(f'offline_new_{i}|unused' for i in range(20))})['job_id']
         heartbeat = self.body()
         self.pool.heartbeat(heartbeat)
-        before = self.store.fetchone("SELECT until_at FROM uplv_auth_cooldown")[0]
-        self.now += 5
-        self.assertIsNone(self.claim('other'))
-        self.assertIsNone(self.pool.pool_form_room())
+        self.assertEqual(self.store.fetchone('SELECT count(*) FROM uplv_auth_cooldown'), (0,))
+        self.assertIsNotNone(self.claim('other'))
+        self.assertIsNotNone(self.pool.pool_form_room())
         renewed = self.pool.heartbeat(heartbeat)
         self.assertGreater(renewed['lease_until'], self.now)
-        self.assertEqual(self.store.fetchone('SELECT until_at FROM uplv_auth_cooldown')[0], before)
         self.report()
-        self.assertEqual(self.store.fetchone("SELECT count(*) FROM uplv_tasks WHERE job_id=? AND status='waiting'", (job,)), (20,))
-        self.now = before
         self.assertIsNotNone(self.claim('probe'))
         self.assertIsNotNone(self.claim('other'))
 
@@ -140,15 +141,17 @@ class RateLimitTests(unittest.TestCase):
         self.assertIsNotNone(self.claim('three'))
         self.assertIsNotNone(self.claim('four'))
 
-    def test_expired_429_quiet_interval_allows_all_42_workers_not_one_probe(self):
+    def test_429_and_legacy_cooldown_allow_all_210_worker_slots(self):
         self.report()
         self.pool.pool_settings({'max_rooms': 250})
-        self.pool.pool_create({'accounts': '\n'.join(f'offline_fleet_{i}|unused' for i in range(210))})
-        self.now += 30
-        self.store.exec('UPDATE uplv_auth_cooldown SET pace_until=?,next_admit=?', (self.now+99999,self.now+99999))
+        self.pool.pool_create({'accounts': '\n'.join(f'offline_fleet_{i}|unused' for i in range(1050))})
+        self.store.exec("INSERT INTO uplv_auth_cooldown VALUES ('fleet',?,?,?)", (self.now+99999, self.now+99999,self.now+99999))
         for i in range(42):
-            self.assertIsNotNone(self.claim(f'worker_{i}'))
-        self.assertEqual(self.store.fetchone("SELECT count(*) FROM uplv_rooms WHERE status='running'"), (42,))
+            for _ in range(5):
+                self.assertIsNotNone(self.claim(f'worker_{i}'))
+        self.assertEqual(self.store.fetchone("SELECT count(*) FROM uplv_rooms WHERE status='running'"), (210,))
+        self.assertEqual(self.store.fetchone("SELECT count(*) FROM uplv_tasks WHERE status='assigned'"), (1050,))
+        self.assertEqual(self.store.fetchone("SELECT count(DISTINCT username_key) FROM uplv_tasks WHERE status='assigned'"), (1050,))
 
     def test_heartbeat_429_with_lost_report_is_queued_after_lease_cleanup(self):
         self.pool.heartbeat(self.body())
@@ -223,7 +226,7 @@ class RateLimitTests(unittest.TestCase):
         self.report()
         data = self.pool.user_action('accounts', {'job_id': self.job}, {'user_id': 123})
         for row in data['accounts']:
-            self.assertEqual(row['next_retry_at'], self.now+30)
+            self.assertEqual(row['next_retry_at'], self.now)
             self.assertEqual(row['rate_limit_attempts'], 1)
             self.assertNotIn('detail', row)
             self.assertNotIn('unused', json.dumps(row))

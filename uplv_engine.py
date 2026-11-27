@@ -52,6 +52,7 @@ class Engine:
         self.runtime = load_runtime()
         self.login_lock = threading.Lock()
         self.last_login = 0
+        self.auth_retry_until = 0
 
     def run(self, room, stop, progress, completed, replacement=None):
         # One account-bound OAuth cache for this owned operation, including its
@@ -99,11 +100,20 @@ class Engine:
                 cached = bundles.get(user.casefold())
             if cached is not None:
                 return cached
+            # Keep the existing worker login spacing; explicit server waits are
+            # local to this engine and never hold master/report locks.
             with self.login_lock:
                 delay = max(0, self.last_login + 0.6 - time.monotonic())
                 if stop.wait(delay):
                     raise RuntimeError('Stopped')
                 self.last_login = time.monotonic()
+            while True:
+                with self.login_lock:
+                    delay = getattr(self, 'auth_retry_until', 0) - time.monotonic()
+                if delay <= 0:
+                    break
+                if stop.wait(min(delay, 0.5)):
+                    raise RuntimeError('Stopped')
             try:
                 def auth_progress(message):
                     for index, account in enumerate(room['accounts']):
@@ -122,6 +132,17 @@ class Engine:
                     details += f' code={code}'
                 if type(status) is int:
                     details += f' HTTP={status}'
+                metadata = getattr(exc, 'diagnostics', {})
+                for key, value in (('phase', metadata.get('phase') if isinstance(metadata, dict) else None),
+                                   ('reason', getattr(exc, 'reason', None))):
+                    if isinstance(value, str) and 0 < len(value) <= 64 and all(
+                            c in 'abcdefghijklmnopqrstuvwxyz0123456789_-' for c in value):
+                        details += f' {key}={value}'
+                wait = getattr(exc, 'retry_after', 0)
+                if type(wait) in (int, float) and wait > 0:
+                    with self.login_lock:
+                        self.auth_retry_until = max(getattr(self, 'auth_retry_until', 0), time.monotonic() + wait)
+                    details += f' server_retry_after={wait:.0f}'
                 raise RuntimeError('terminal_login: Auth V2 thất bại; kết thúc lượt hiện tại ('
                                    + details + ')') from None
             with bundle_lock:

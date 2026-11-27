@@ -28,9 +28,6 @@ class RetryTests(unittest.TestCase):
         self.report(kind='create_character', status='failed',
                     final_error='server_error_csid_1009_code_91123')
         self.assertEqual(self.states(), [('retry_wait',)])
-        self.now += 29
-        self.assertIsNone(self.claim())
-        self.now += 1
         self.assertFalse(self.claim()['verify_only'])
 
     def test_worker_shutdown_does_not_stop_account_or_owning_job(self):
@@ -58,13 +55,10 @@ class RetryTests(unittest.TestCase):
         self.assertEqual(self.states(), [('verifying',)])
         self.assertEqual(self.store.fetchone('SELECT status FROM uplv_jobs WHERE id=?',(self.job,)),('open',))
 
-    def test_auth_retry_survives_restart_and_waits_exactly_30_seconds(self):
+    def test_auth_retry_survives_restart_without_master_delay(self):
         self.report(kind='restricted', status='failed', final_error='SsoLoginError HTTP=200')
         self.assertEqual(self.states(), [('retry_wait',)])
         self.pool = type(self.pool)(self.store)
-        self.now += 29
-        self.assertIsNone(self.claim())
-        self.now += 1
         self.assertFalse(self.claim()['verify_only'])
 
     def test_auth_error_during_session_check_never_strands_account(self):
@@ -81,8 +75,6 @@ class RetryTests(unittest.TestCase):
             self.report(room, kind='server_error', status='failed',
                         final_error='server_error_csid_1190_code_99999')
             self.assertEqual(self.states(), [('retry_wait',)])
-            self.assertIsNone(self.claim())
-            self.now += 30
             room = self.claim()
             self.assertTrue(room['verify_only'])
 

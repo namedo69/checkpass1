@@ -153,6 +153,7 @@ def login_and_exchange(account,password,device_id,tcp_source_path=None,login_api
                                   http_status=getattr(exc, 'http_status', None))
             error.app_id = app_id if type(app_id) is int else None
             error.reason = reason
+            error.retry_after = getattr(exc, 'retry_after', 0)
             error.diagnostics = getattr(exc, 'diagnostics', {})
             raise error from None
         if not direct.open_id or not direct.response_data:

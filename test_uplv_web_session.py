@@ -12,6 +12,29 @@ from uplv_failure_policy import terminal_account_failure
 
 
 class WebSessionTests(unittest.TestCase):
+    def test_explicit_retry_after_is_preserved_without_internal_retry(self):
+        from bridge.core._core_data import garena_http_grant as http
+        response = oauth_tests.Response(b'{"error":"error_too_many_requests"}',
+                                       status=429, headers={'Retry-After':'17'})
+        opener = Mock(return_value=response)
+        with self.assertRaises(GarenaError) as caught:
+            http.grant_token('synthetic', opener=opener)
+        self.assertEqual(caught.exception.retry_after, 17)
+        opener.assert_called_once()
+        session, replies = self.session([{}])
+        replies[0].status_code = 429
+        replies[0].headers = {'Retry-After':'19'}
+        with self.assertRaises(GarenaError) as caught:
+            web.web_login_grant('user','password',session_factory=lambda:session)
+        self.assertEqual(caught.exception.retry_after, 19)
+        self.assertEqual(caught.exception.diagnostics['phase'], 'web-prelogin')
+        session.request.assert_called_once()
+
+    def test_retry_after_invalid_or_missing_does_not_invent_delay(self):
+        from bridge.core._core_data.garena_http_grant import retry_after_seconds
+        for value in (None, '', 'invalid', '-1'):
+            self.assertEqual(retry_after_seconds(value), 0)
+
     def session(self, objects):
         replies=[]
         for obj in objects:

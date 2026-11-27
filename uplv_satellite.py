@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 import uplv_config as config
 from uplv_logs import RoomLogs
 
-VERSION = 'uplv-satellite-0.6.12-web-session-ban-only'
+VERSION = 'uplv-satellite-0.6.13-continuous-refill'
 
 
 class RevokedLease(RuntimeError):
@@ -162,7 +162,9 @@ class Satellite:
         base = {'satellite_id': self.id, 'room_id': room['id'], 'lease_token': room['lease_token']}
 
         def status(index, message):
-            logs.add(index, message)
+            safe_message = logs.add(index, message)
+            if safe_message:
+                print(f'room={room["id"]} slot={index} {safe_message}', flush=True)
             with lock:
                 row = progress.setdefault(str(index), {})
                 stage = re.search(r'\[(STACK\d(?:_DONE)?|BUFF|REGROUP|WAIT|RECONNECT|DEFERRED|VERIFYING|POOL_READY)\]', message)
@@ -185,7 +187,6 @@ class Satellite:
                     if '[DEFERRED]' in message and row.get('detail'):
                         row.setdefault('root_cause', row['detail'])
                     row['detail'] = safe[:400]
-                    print(f'room={room["id"]} slot={index} {safe[:400]}', flush=True)
 
         def completed(index, row):
             from pve_runtime.failure_policy import terminal_result
@@ -193,7 +194,9 @@ class Satellite:
             row = terminal_result(row)
             ok, before, after, error = row
             terminal = terminal_account_failure({'final_error': error})
-            logs.add(index, f'[RESULT] {"success" if ok else "failed" if terminal and not stop.is_set() else "pending"} Lv{after}')
+            safe_result = logs.add(index, f'[RESULT] {"success" if ok else "failed" if terminal and not stop.is_set() else "pending"} Lv{before} -> Lv{after}')
+            if safe_result:
+                print(f'room={room["id"]} slot={index} {safe_result}', flush=True)
             with lock:
                 if (not ok and progress.get(str(index), {}).get('stage') == 'WAIT_REPLACEMENT'
                         and results.get(str(index), {}).get('status') == 'failed'):
