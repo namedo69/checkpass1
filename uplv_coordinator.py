@@ -10,6 +10,7 @@ import urllib.request
 import urllib.parse
 import copy
 from uplv_account_pool import AccountPool
+from uplv_lock import CoordinatorLock
 
 
 class UpLvCoordinator(AccountPool):
@@ -70,7 +71,7 @@ class UpLvCoordinator(AccountPool):
 
     def __init__(self, store):
         self.store = store
-        self.lock = threading.RLock()
+        self.lock = CoordinatorLock()
         self._dashboard_lock = threading.Lock()
         self.clear_state = {'running': False, 'state': 'idle', 'message': ''}
         for sql in (
@@ -278,10 +279,12 @@ class UpLvCoordinator(AccountPool):
             self.store.batch(changes)
 
     def claim(self, body):
-        # Admission must never queue ahead of lease renewals/final reports.
-        # No work/request ID is consumed when this fast path returns busy.
+        # Bounded FIFO handoff gives short-held locks a chance to clear, but
+        # queued lease renewals/reports/STOP always have priority over admission.
+        # No work/request ID is consumed on timeout.
         self.satellite_id(body)
-        if not self.lock.acquire(False):
+        admission = getattr(self.lock, 'acquire_admission', None)
+        if not (admission() if admission else self.lock.acquire(False)):
             self.record_admission('coordinator_busy', 0)
             return {'ok': True, 'room': None, 'reason': 'coordinator_busy'}
         started = time.monotonic()
@@ -329,25 +332,30 @@ class UpLvCoordinator(AccountPool):
                     if not lease or lease[0] != previous[2] or lease[1] <= time.time() or lease[2] != 'running':
                         return {'ok': True, 'room': None, 'reason': 'claim_expired'}
                     return json.loads(previous[3])
-            active = self.store.fetchone("SELECT COUNT(*) FROM uplv_rooms WHERE satellite_id=? AND status IN ('running','interrupted')", (satellite,))[0]
+            active, paused, occupied, limit, pending = self.store.fetchone(
+                "SELECT (SELECT COUNT(*) FROM uplv_rooms WHERE satellite_id=? AND status IN ('running','interrupted')),"
+                "(SELECT paused FROM uplv_satellites WHERE id=?),"
+                "(SELECT COUNT(*) FROM uplv_rooms WHERE status IN ('running','interrupted')),"
+                "(SELECT setting_value FROM app_settings WHERE setting_key='uplv_max_rooms'),"
+                "(SELECT id FROM uplv_rooms WHERE status='pending' LIMIT 1)", (satellite, satellite))
             capacity = max(1, min(5, int(body.get('capacity', 1))))
             if active >= capacity:
                 return {'ok': True, 'room': None, 'reason': 'already_running'}
-            paused = self.store.fetchone('SELECT paused FROM uplv_satellites WHERE id=?', (satellite,))
-            if paused[0]:
+            if paused:
                 return {'ok': True, 'room': None, 'reason': 'paused'}
             if body.get('direct_game_protocol') != 1:
                 return {'ok': True, 'room': None, 'reason': 'worker_upgrade_required'}
             if self.auth_admission_blocked():
                 return {'ok': True, 'room': None, 'reason': 'auth_rate_limit_cooldown', 'retry_after': self.RATE_LIMIT_DELAY}
-            occupied = self.store.fetchone("SELECT COUNT(*) FROM uplv_rooms WHERE status IN ('running','interrupted')")[0]
-            if occupied >= self.pool_limit():
+            if occupied >= (int(limit) if limit is not None else 10):
                 return {'ok': True, 'room': None, 'reason': 'system_room_limit'}
-            pending = self.store.fetchone("SELECT id FROM uplv_rooms WHERE status='pending' LIMIT 1")
             if not pending:
                 self.pool_form_room()
             row = self.store.fetchone(
-                "SELECT r.id,r.accounts_json,j.target,j.mode FROM uplv_rooms r JOIN uplv_jobs j ON j.id=r.job_id "
+                "SELECT r.id,r.accounts_json,j.target,j.mode,"
+                "EXISTS (SELECT 1 FROM uplv_verify_rooms v WHERE v.room_id=r.id),"
+                "EXISTS (SELECT 1 FROM uplv_screen_rooms s WHERE s.room_id=r.id) "
+                "FROM uplv_rooms r JOIN uplv_jobs j ON j.id=r.job_id "
                 "WHERE r.status='pending' AND j.status='open' ORDER BY j.created_at,r.ordinal LIMIT 1")
             if not row:
                 return {'ok': True, 'room': None}
@@ -356,8 +364,7 @@ class UpLvCoordinator(AccountPool):
             self.store.exec("UPDATE uplv_rooms SET status='running',satellite_id=?,lease_token=?,lease_until=? WHERE id=?",
                             (satellite, token, until, row[0]))
             tasks = self.room_tasks(row[0])
-            verify_only = self.store.fetchone('SELECT room_id FROM uplv_verify_rooms WHERE room_id=?', (row[0],)) is not None
-            screen_only = self.store.fetchone('SELECT room_id FROM uplv_screen_rooms WHERE room_id=?', (row[0],)) is not None
+            verify_only, screen_only = bool(row[4]), bool(row[5])
             if (verify_only and not body.get('verify_protocol')) or (screen_only and not body.get('screen_protocol')):
                 # Older workers cannot safely process verification-only leases.
                 self.store.exec("UPDATE uplv_rooms SET status='pending',satellite_id='',lease_token='',lease_until=0 WHERE id=?", (row[0],))

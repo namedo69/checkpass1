@@ -6,6 +6,23 @@ from uplv_coordinator import UpLvCoordinator
 
 
 class IndexedRefillTests(unittest.TestCase):
+    def test_claim_batches_capacity_and_room_flags_without_weakening_limits(self):
+        store=Store();self.addCleanup(store.db.close)
+        store.exec('CREATE TABLE app_settings (setting_key TEXT PRIMARY KEY,setting_value TEXT)')
+        pool=UpLvCoordinator(store)
+        pool.pool_create({'accounts':'\n'.join(f'fixture_{i}|unused' for i in range(10))})
+        queries=[];store.db.set_trace_callback(queries.append)
+        body=dict(satellite_id='fixture',capacity=1,direct_game_protocol=1,verify_protocol=1)
+        first=pool.claim(body)
+        self.assertIsNotNone(first['room'])
+        self.assertTrue(any('SELECT (SELECT COUNT(*)' in sql for sql in queries))
+        self.assertFalse(any(sql.startswith('SELECT paused FROM') for sql in queries))
+        self.assertFalse(any(sql.startswith('SELECT room_id FROM uplv_verify_rooms WHERE room_id=') for sql in queries))
+        self.assertEqual(pool.claim(body)['reason'],'already_running')
+        pool.touch({'satellite_id':'other'})
+        pool.control({'action':'pause','satellite_id':'other'})
+        self.assertEqual(pool.claim(dict(body,satellite_id='other'))['reason'],'paused')
+
     def test_27k_queue_fills_210_slots_and_rotates_without_full_sort(self):
         store=Store();self.addCleanup(store.db.close)
         store.exec('CREATE TABLE app_settings (setting_key TEXT PRIMARY KEY,setting_value TEXT)')
