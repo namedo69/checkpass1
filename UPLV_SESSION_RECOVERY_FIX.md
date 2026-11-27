@@ -2,6 +2,19 @@
 
 ## 0.6.9 direct-game/profile follow-up — PUSH/DEPLOY AUTHORIZED
 
+- Rollout verification follow-up: the master's resource telemetry allowlist
+  initially discarded `direct_game_protocol` even though fresh claims used it.
+  Preserve only integer protocol `1` from heartbeat metrics; do not infer an
+  upgrade from liveness alone. 20 configured health endpoints reported the new
+  version; full fleet coverage must be verified after this telemetry correction.
+  149 offline regressions include invalid-protocol and credential-filter tests.
+- Deployment verified 2026-11-27: master active; 42/42 fresh live satellite
+  heartbeats advertise direct_game_protocol=1, and 20/20 configured health URLs
+  are healthy on uplv-satellite-0.6.9-direct-game. 45 synthetic tests passed
+  against installed master imports. No real-account tests were performed.
+  Job statuses and terminal task counts stayed unchanged; CheckPass/VVIP PIDs
+  remained unchanged. Targeted VPS customizations and auto-deploy were retained.
+
 - Reproduced an idle-decoding defect with synthetic encrypted-frame payloads:
   the bundled capture parser leaves pre-tsf4g padding in body_full. Comparing
   that entire value with one-byte1061 `00` rejects valid idle replies. The V2

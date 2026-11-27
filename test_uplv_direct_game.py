@@ -37,6 +37,19 @@ class DirectGameTests(unittest.TestCase):
         self.assertEqual(self.store.fetch('SELECT DISTINCT status FROM uplv_tasks'), [('waiting',)])
         self.assertEqual(self.store.fetchone('SELECT count(*) FROM uplv_rooms')[0], 0)
 
+    def test_presence_preserves_only_valid_direct_game_telemetry(self):
+        for value in (1, None, 0, 2, '1', True, {}, float('nan')):
+            with self.subTest(protocol=value):
+                self.pool.presence(dict(satellite_id='telemetry', metrics={
+                    'direct_game_protocol': value, 'capacity': 5,
+                    'access_token': 'must-not-be-stored'}))
+                metrics = json.loads(self.store.fetchone(
+                    'SELECT metrics_json FROM uplv_satellites WHERE id=?', ('telemetry',))[0])
+                expected = {'capacity': 5}
+                if type(value) is int and value == 1:
+                    expected['direct_game_protocol'] = 1
+                self.assertEqual(metrics, expected)
+
     def test_upload_and_add_go_straight_to_game_queue_without_level_claim(self):
         self.pool.pool_add(dict(job_id=self.job, accounts='extra|unused'))
         self.assertEqual(self.created['screening_accounts'], 0)
