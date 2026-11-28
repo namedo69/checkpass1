@@ -607,6 +607,23 @@ function showAccountModal(idx){
   openModal('accountModal');
 }
 
+function roomSlotDisplay(p,z){
+  // Legacy master drops confirmation flags; positive read levels remain known.
+  // Never substitute an unread zero for a profile that has not been received.
+  const after=Number(z.level_after), current=Number(p.level);
+  const lvl=Number.isFinite(after)&&after>0?after:
+    Number.isFinite(current)&&current>0?current:
+    (z.level_confirmed===true&&after===0)||(p.level_confirmed===true&&current===0)?0:'?';
+  const terminal=['success','failed','stopped'].includes(z.status);
+  const stage=terminal?z.status:(p.stage||z.status||'Chờ');
+  const reason=(p.detail||'').match(/\breason=(account_backoff|worker_backoff|start_spacing|auth_queue)\b/);
+  const remaining=(p.detail||'').match(/\bremaining=(\d+)s\b/);
+  const labels={account_backoff:'chờ riêng acc',worker_backoff:'backoff chung vệ tinh',
+    start_spacing:'giãn lượt đăng nhập',auth_queue:'chờ lượt xác thực'};
+  const wait=stage==='AUTH_WAIT'&&reason?' · '+labels[reason[1]]+(remaining?' ('+remaining[1]+'s tại heartbeat gần nhất)':''):'';
+  return {level:lvl,stage:stage+wait};
+}
+
 function renderRooms(jobs){
   const el=$('roomsGrid');
   const activeRooms=[];
@@ -631,8 +648,9 @@ function renderRooms(jobs){
           ${(r.users||[]).map((u,i)=>{
             const p=r.progress[i]||{};
             const z=r.results[i]||{};
-            const lvl=z.level_after||p.level||0;
-            const st=z.status||p.stage||'Chờ';
+            const display=roomSlotDisplay(p,z);
+            const lvl=display.level;
+            const st=display.stage;
             return `<div class="room-user"><span>${i+1}. <b>${esc(u)}</b></span><span class="muted">Lv${lvl} &middot; ${esc(st)}</span></div>`;
           }).join('')}
         </div>

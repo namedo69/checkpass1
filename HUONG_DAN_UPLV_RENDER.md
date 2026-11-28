@@ -1,5 +1,23 @@
 # Deploy vệ tinh UpLv lên Render — 0.5.1
 
+## AUTH_WAIT fairness — 0.6.18
+
+- Giữ4phòng/vệ tinh. Thời hạn riêng của acc được chờ ngoài mutex xác thực;
+  acc khác đã đủ điều kiện có thể vào cổng trước. Cổng chỉ được giữ khi đã
+  kiểm tra lại backoff chung/khoảng cách bắt đầu dưới khóa, rồi chạy auth.
+- Không thay mức backoff429/web403, không cắt `Retry-After`, không thay TCP
+  protocol, không thêm fallback/retry, proxy hay cache token qua lease.
+- AUTH_WAIT có reason `account_backoff`, `worker_backoff`, `start_spacing`,
+  `auth_queue`; worker gửi chi tiết qua heartbeat hiện có. Dashboard hiện Lv?
+  cho cấp0chưa xác nhận, giữ stage cụ thể thay vì để pending che AUTH_WAIT.
+  Countdown là giá trị tại heartbeat gần nhất, không phải đồng hồ live.
+- UI dùng hunk HTML đọc mỗi request, không cần restart master hay đổi DB.
+  Worker cập nhật qua Render bình thường; phòng gián đoạn phải đi luồng
+  báo cáo/lease/đối soát hiện có, không tự mở trận lại hoặc reset hàng chờ.
+- Sửa fairness/UI không đảm bảo login thành công: chẩn đoán trước sửa thấy
+  TCPheader code3 và web403; cần kiểm chứng login/cấp game sau rollout.
+- Backup: `backups/before_auth_wait_fairness_6af4d0a.zip`.
+
 ## Thử nghiệm 4 phòng/vệ tinh — 28/11/2026 (0.6.17)
 
 - Giới hạn hiện hành **4 phòng/vệ tinh**, tối đa20 acc đang giữ lease.

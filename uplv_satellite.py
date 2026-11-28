@@ -17,7 +17,7 @@ import uplv_config as config
 from uplv_logs import RoomLogs
 from uplv_auth_policy import clean_auth_wait
 
-VERSION = 'uplv-satellite-0.6.17-four-rooms'
+VERSION = 'uplv-satellite-0.6.18-auth-wait-fairness'
 
 
 class RevokedLease(RuntimeError):
@@ -193,7 +193,7 @@ class Satellite:
                     row['level_confirmed'] = False
                 if elapsed:
                     row['elapsed'] = int(elapsed.group(1))
-                if any(marker in message for marker in ('[ERROR]', '[AUTH_ERROR]', '[AUTH_BACKOFF]', '[DEFERRED]', '[VERIFY_WAIT]', 'timeout', 'Timeout')):
+                if any(marker in message for marker in ('[ERROR]', '[AUTH_ERROR]', '[AUTH_WAIT]', '[AUTH_BACKOFF]', '[DEFERRED]', '[VERIFY_WAIT]', 'timeout', 'Timeout')):
                     safe = message
                     for account in room['accounts']:
                         for secret in account:

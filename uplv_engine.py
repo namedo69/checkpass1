@@ -26,33 +26,48 @@ class AuthGate:
         self.denial_streak = 0
 
     def enter(self, stop, progress, not_before=0):
-        announced = False
+        last_notice = -math.inf
         # Convert transferred wall-clock metadata once; actual waits use a
         # monotonic deadline and remain STOP/lease-revocation interruptible.
         transferred = nonnegative_number(not_before)
         account_until = (time.monotonic() + max(0, transferred - time.time())) if transferred else 0
         while not stop.is_set():
+            now = time.monotonic()
+            # Account-owned deadlines must never occupy the whole-auth mutex.
+            # Other accounts may be eligible, including peers in other rooms.
+            delay = account_until - now
+            if delay > 0:
+                if now - last_notice >= 5:
+                    progress(f'[AUTH_WAIT] reason=account_backoff remaining={math.ceil(delay)}s; chờ riêng acc, không giữ cổng đăng nhập')
+                    last_notice = now
+                if stop.wait(min(delay, 0.5)):
+                    raise RuntimeError('Stopped')
+                continue
             if self.lock.acquire(timeout=0.25):
+                admitted = False
                 try:
-                    last_notice = -math.inf
-                    while True:
-                        if stop.is_set():
-                            raise RuntimeError('Stopped')
-                        now = time.monotonic()
-                        delay = max(self.retry_until, account_until, self.last_start + 2.5) - now
-                        if delay <= 0:
-                            return
-                        if now - last_notice >= 5:
-                            progress(f'[AUTH_WAIT] worker_local remaining={math.ceil(delay)}s; giữ lease, chưa gửi đăng nhập')
-                            last_notice = now
-                        if stop.wait(min(delay, 0.5)):
-                            raise RuntimeError('Stopped')
-                except BaseException:
-                    self.lock.release()
-                    raise
-            if not announced:
-                progress('[AUTH_WAIT] worker_local serialized; chờ lượt xác thực, chưa gửi đăng nhập')
-                announced = True
+                    if stop.is_set():
+                        raise RuntimeError('Stopped')
+                    # Recheck shared admission under the same lock used by the
+                    # complete auth flow; never bypass a new worker/server wait.
+                    now = time.monotonic()
+                    deadline = max(self.retry_until, self.last_start + 2.5)
+                    delay = deadline - now
+                    if delay <= 0:
+                        admitted = True
+                        return
+                    reason = 'worker_backoff' if self.retry_until >= self.last_start + 2.5 else 'start_spacing'
+                finally:
+                    if not admitted:
+                        self.lock.release()
+                if now - last_notice >= 5:
+                    progress(f'[AUTH_WAIT] reason={reason} worker_local remaining={math.ceil(delay)}s; giữ lease, chưa gửi đăng nhập')
+                    last_notice = now
+                if stop.wait(min(delay, 0.5)):
+                    raise RuntimeError('Stopped')
+            elif time.monotonic() - last_notice >= 5:
+                progress('[AUTH_WAIT] reason=auth_queue worker_local serialized; chờ lượt xác thực, chưa gửi đăng nhập')
+                last_notice = time.monotonic()
         raise RuntimeError('Stopped')
 
     def rejected(self, exc, prior_attempt=0):
