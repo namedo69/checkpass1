@@ -36,13 +36,13 @@ class AuthGateTests(unittest.TestCase):
     def test_capped_policy_and_server_wait_take_maximum(self):
         gate, clock = AuthGate(), ClockStop()
         throttle = SimpleNamespace(reason='rate_limited', retry_after=0)
-        with patch('uplv_engine.time', SimpleNamespace(monotonic=lambda: clock.now)):
-            for delay in (10, 20, 30, 30):
+        with patch('uplv_engine.time', SimpleNamespace(monotonic=lambda: clock.now)), patch('uplv_auth_policy.random.uniform', return_value=0):
+            for delay in (10, 20, 40, 80):
                 self.assertEqual(gate.rejected(throttle), (True, delay, False))
                 self.assertEqual(gate.retry_until, clock.now + delay)
                 clock.now += delay
-            throttle.retry_after = 120
-            self.assertEqual(gate.rejected(throttle), (True, 120, True))
+            throttle.retry_after = 1200
+            self.assertEqual(gate.rejected(throttle), (True, 1200, True))
 
     def test_no_burst_after_shared_deadline_and_start_spacing(self):
         gate, clock = AuthGate(), ClockStop()
@@ -55,7 +55,7 @@ class AuthGateTests(unittest.TestCase):
                 gate.last_start = clock.now
                 gate.lock.release()
         self.assertGreaterEqual(starts[0], 117)
-        self.assertTrue(all(b - a >= 0.6 - 1e-9 for a, b in zip(starts, starts[1:])))
+        self.assertTrue(all(b - a >= 2.5 - 1e-9 for a, b in zip(starts, starts[1:])))
 
     def test_stop_during_cooldown_releases_gate_without_admission(self):
         gate, clock = AuthGate(), ClockStop()
@@ -145,7 +145,7 @@ class AuthEngineTests(unittest.TestCase):
                 return list(executor.map(lambda account: authenticate(*account), self.room['accounts']))
         self.assertEqual(len(self.run_auth(batch)), 5)
         self.assertEqual(peak, 1)
-        self.assertTrue(all(b - a >= 0.59 for a, b in zip(starts, starts[1:])))
+        self.assertTrue(all(b - a >= 2.49 for a, b in zip(starts, starts[1:])))
 
     def test_same_lease_single_flight_but_new_lease_authenticates_fresh(self):
         def batch(prepare, authenticate):

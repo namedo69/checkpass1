@@ -58,6 +58,10 @@ def web_login_grant(account, password, *, session_factory=None, progress=None, s
             status = response.status_code
             if status == 429:
                 raise fail('rate_limited', code=429)
+            if status != 200:
+                # Do not parse HTML/WAF bodies or follow alternate auth routes
+                # after an explicit rejection. Keep403 distinct from429.
+                raise fail('web_http_rejected')
             raw = response.raw.read(BODY_LIMIT + 1, decode_content=True)
             check_auth_stop(stop_event)
             if len(raw) > BODY_LIMIT:
@@ -85,9 +89,8 @@ def web_login_grant(account, password, *, session_factory=None, progress=None, s
             check_auth_stop(stop_event)
             return obj
         except GarenaError as exc:
-            if status in (429, 503):
-                from .garena_http_grant import retry_after_seconds
-                exc.retry_after = retry_after_seconds(response.headers.get('Retry-After'))
+            from .garena_http_grant import retry_after_seconds
+            exc.retry_after = retry_after_seconds(response.headers.get('Retry-After'))
             raise
         finally:
             response.close()

@@ -1,5 +1,33 @@
 # Deploy vệ tinh UpLv lên Render — 0.5.1
 
+## Web backpressure — 28/11/2026 (0.6.16)
+
+- Cấu hình hiện tại: **1 vệ tinh / 1 phòng**, tối đa 5 acc trong phòng.
+  Các đoạn nói 5 phòng bên dưới là lịch sử, không phải cấu hình hiện hành.
+- Master vẫn cấp việc ngay, không khóa đăng nhập toàn đội. Thời hạn chờ và
+  số lần lỗi được lưu theo task/acc rồi chuyển cùng lease; worker thực hiện
+  chờ, vẫn heartbeat và có thể dừng bằng STOP/mất lease.
+- Đăng nhập được tuần tự hóa trong worker, cách tối thiểu 2,5 giây giữa các
+  lần bắt đầu. 429 dùng backoff 10 giây, nhân đôi tới mức cơ sở 300 giây;
+  web403 dùng 60 giây, nhân đôi tới 900 giây. Cộng jitter dương tối đa 10%;
+  `Retry-After` dài hơn được giữ nguyên, không bị cắt theo mức cơ sở.
+- HTTP429 không được nhận token dù body giống thành công. Web không đọc
+  HTML/WAF của response khác200; 403 vẫn là lỗi đăng nhập, không đổi thành429
+  hay bằng chứng ban. Không thêm retry nội bộ hoặc vượt CAPTCHA/OTP.
+- Báo cáo cuối giữ/reset thời hạn ngay cả khi không kịp heartbeat; acc bù
+  nhận metadata của chính nó, không kế thừa chờ theo vị trí slot.
+- Cache token chỉ trong lease đang sở hữu; không cache qua lease, không proxy,
+  không điều phối theo IP egress. Chưa sửa dashboard `Lv0/pending`.
+- Master cần cài `uplv_auth_policy.py` cùng các hunk coordinator/account-pool;
+  giữ nguyên phần tùy biến VPS, không thay nguyên file bằng bản repository.
+  Worker dùng Docker COPY đã bổ sung helper; giữ Render auto-deploy.
+- Kiểm tra trước triển khai: 287 lượt test offline đạt trên nguồn repository
+  và trên candidate ghép hunk vào nguồn master VPS. Có test kế thừa, không phải
+  287 tình huống mới. Runtime không dùng mạng, không Qt, capacity1.
+- Đây không phải chứng cứ giảm429 hoặc lên cấp thật. Chỉ nghiệm thu online
+  khi có job được ủy quyền và cấp được xác nhận từ game; không tự tạo job test
+  hoặc mở lại job đã dừng. Trạng thái rollout được ghi riêng sau triển khai.
+
 ## Bàn giao CheckPass → UpLv cho `OK / Lỗi CTNV` — 26/11/2026
 
 - `OK / Lỗi CTNV`, cấp trống không phải ban, không phải xác nhận thiếu nhân vật,

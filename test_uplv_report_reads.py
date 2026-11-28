@@ -44,6 +44,14 @@ class ReportReadsTests(unittest.TestCase):
                 with patch('uplv_account_pool.time.time',return_value=1000000):
                     before = old.pool_finish(self.body,results,stopped,defer=True)
                     after = self.pool.pool_finish(self.body,results,stopped,defer=True)
+                # The queue/ownership plan is unchanged. New additive metadata
+                # transfers auth waits to workers instead of delaying dispatch.
+                for change in after:
+                    if change['sql'].startswith('INSERT INTO uplv_task_details'):
+                        data = json.loads(change['args'][2])
+                        data.pop('auth_retry_until', None)
+                        data.pop('auth_attempt', None)
+                        change['args'][2] = json.dumps(data)
                 self.assertEqual(before,after)
 
     def test_429_report_bounded_reads_with_simulated_database_latency(self):

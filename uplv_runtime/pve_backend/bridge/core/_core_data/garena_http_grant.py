@@ -152,6 +152,10 @@ def grant_token(sso_key: str, *, opener=None, stop_event=None) -> tuple[str, str
             response = exc  # Redirects and non-2xx still have a parseable body.
         check_auth_stop(stop_event)
         status = response.getcode()
+        # An explicit throttle is authoritative even if its body resembles a
+        # successful response. Never consume/accept tokens from HTTP429.
+        if status == 429:
+            raise _failure('rate_limited', status=status, code=429)
         if status in (301, 302, 303, 307):
             token, open_id = extract_token_open_id(response.headers.get('Location', ''))
             if token and open_id:
@@ -180,13 +184,11 @@ def grant_token(sso_key: str, *, opener=None, stop_event=None) -> tuple[str, str
         if not token or not open_id:
             uri_token, uri_open_id = extract_token_open_id(obj.get('redirect_uri') or '')
             token, open_id = token or uri_token, open_id or uri_open_id
-        # Match the binary's ordering: complete credentials precede error/status
-        # classification, not an invented requirement for HTTP 200 alone.
-        if token and open_id:
-            return token, open_id
         error = (obj.get('error') or '').strip()
         if status == 429 or error == 'error_too_many_requests':
             raise _failure('rate_limited', status=status, code=429)
+        if token and open_id and not error and 200 <= status < 300:
+            return token, open_id
         if error == 'error_require_grant':
             raise _failure('require_grant', status=status, code=141)
         raise _failure('http_rejected' if error or status != 200 else 'missing_token',
@@ -194,7 +196,7 @@ def grant_token(sso_key: str, *, opener=None, stop_event=None) -> tuple[str, str
     except AuthStopped:
         raise
     except GarenaError as exc:
-        if response is not None and exc.http_status in (429, 503):
+        if response is not None:
             exc.retry_after = retry_after_seconds(response.headers.get('Retry-After'))
         raise
     except Exception as exc:

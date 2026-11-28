@@ -378,6 +378,7 @@ class UpLvCoordinator(AccountPool):
                     'levels': [r[4] for r in tasks] if tasks else [0] * 5,
                     'pool_protocol': 1 if tasks else 0,
                     'mode': row[3], 'lease_token': token, 'lease_until': until}}
+            response['room']['auth_waits'] = self.room_auth_waits(row[0], tasks)
             if request_id:
                 self.store.batch([{'sql': 'INSERT INTO uplv_claim_requests VALUES (?,?,?,?,?)', 'args': [request_id, satellite, row[0], token, json.dumps(response)]}])
             return response
@@ -484,6 +485,9 @@ class UpLvCoordinator(AccountPool):
             response = {'ok': True, 'account': accounts[slot], 'generation': versions[slot]}
             if candidate:
                 response.update(target=candidate[2], level=candidate[3])
+                saved_wait = self.store.fetchone('SELECT detail_json FROM uplv_task_details WHERE task_id=?', (candidate[0],))
+                from uplv_auth_policy import clean_auth_wait
+                response['auth_wait'] = clean_auth_wait(json.loads(saved_wait[0]) if saved_wait else {})
             results = json.loads(row[5]); results.pop(str(slot), None)
             progress = json.loads(progress[0]); progress.pop(str(slot), None)
             changes = [
@@ -531,6 +535,9 @@ class UpLvCoordinator(AccountPool):
                     if secret:
                         text = text.replace(secret, '[REDACTED]')
                 clean[str(key)][field] = re.sub(r'(?i)(bearer\s+|(?:password|token|sso_key|access_token)\s*[=:]\s*)\S+', r'\1[REDACTED]', text)
+            if 'auth_retry_until' in value or 'auth_attempt' in value:
+                from uplv_auth_policy import clean_auth_wait
+                clean[str(key)].update(clean_auth_wait(value))
         return clean
 
     def heartbeat(self, body):
@@ -549,6 +556,9 @@ class UpLvCoordinator(AccountPool):
                     'level': max(0, min(30, int(value.get('level', 0)))),
                     'elapsed': max(0, min(86400, int(value.get('elapsed', 0)))),
                     'detail': str(value.get('detail', ''))[:400]}
+                from uplv_auth_policy import clean_auth_wait
+                if 'auth_retry_until' in value or 'auth_attempt' in value:
+                    progress[str(key)].update(clean_auth_wait(value))
             results = json.loads(row[5])
             previous_results = dict(results)
             results.update(self.clean_rows(body.get('results', {}), [s for a in json.loads(row[4]) for s in a if s]))

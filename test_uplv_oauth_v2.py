@@ -179,9 +179,11 @@ class GrantTests(unittest.TestCase):
             _, opener = self.send(obj)
             self.assertEqual(http.grant_token('sso', opener=opener), ('token', 'open'))
 
-    def test_complete_credentials_precede_status_error(self):
+    def test_explicit_throttle_precedes_token_like_body(self):
         _, opener = self.send({'access_token': 'token', 'open_id': 'open', 'error': 'error_too_many_requests'}, status=429)
-        self.assertEqual(http.grant_token('sso', opener=opener), ('token', 'open'))
+        with self.assertRaises(tcp.GarenaError) as caught:
+            http.grant_token('sso', opener=opener)
+        self.assertEqual(caught.exception.reason, 'rate_limited')
 
     def test_gzip_and_limits(self):
         raw = b'{"access_token":"token","open_id":"open"}'

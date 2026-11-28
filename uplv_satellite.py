@@ -15,8 +15,9 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 import uplv_config as config
 from uplv_logs import RoomLogs
+from uplv_auth_policy import clean_auth_wait
 
-VERSION = 'uplv-satellite-0.6.15-auth-backpressure'
+VERSION = 'uplv-satellite-0.6.16-web-backpressure'
 
 
 class RevokedLease(RuntimeError):
@@ -142,6 +143,11 @@ class Satellite:
         done = threading.Event()
         lock = threading.Lock()
         progress, results = {}, {}
+        incoming_waits = room.get('auth_waits') or []
+        room['auth_waits'] = [clean_auth_wait(incoming_waits[index] if index < len(incoming_waits) else {})
+                              for index in range(len(room['accounts']))]
+        for index, state in enumerate(room['auth_waits']):
+            progress[str(index)] = dict(state)
         logs = RoomLogs(room['id'])
         self.logs = logs
         with self.room_logs_lock:
@@ -172,6 +178,14 @@ class Satellite:
                 elapsed = re.search(r'\[TIMER\]\s*(\d+)', message)
                 if stage:
                     row['stage'] = stage.group(1)
+                if '[AUTH_BACKOFF]' in message:
+                    deadline = re.search(r'\bretry_at=(\d+(?:\.\d+)?)\b', message)
+                    attempt = re.search(r'\battempt=(\d+)\b', message)
+                    if deadline and attempt:
+                        row['auth_retry_until'] = float(deadline.group(1))
+                        row['auth_attempt'] = min(1000000, int(attempt.group(1)))
+                elif '[AUTH_OK]' in message:
+                    row.update(auth_retry_until=0, auth_attempt=0)
                 if level:
                     row['level'] = int(level.group(1))
                     row['level_confirmed'] = True
@@ -237,6 +251,8 @@ class Satellite:
                                         'final_error': diagnostic[:400] if failure_kind else '',
                                         'root_cause': progress.get(str(index), {}).get('root_cause', ''),
                                         'error_stage': progress.get(str(index), {}).get('stage', '')}
+                if 'auth_retry_until' in progress.get(str(index), {}):
+                    results[str(index)].update(clean_auth_wait(progress[str(index)]))
 
         def snapshot():
             with lock:
@@ -264,11 +280,12 @@ class Satellite:
                             logs.protect([reply['account']])
                             logs.add(index, '[REPLACEMENT] Đã nhận acc bù')
                             room['accounts'][index] = reply['account']
+                            room.setdefault('auth_waits', [None] * len(room['accounts']))[index] = clean_auth_wait(reply.get('auth_wait'))
                             if 'target' in reply:
                                 room.setdefault('targets', [room['target']] * 5)[index] = reply['target']
                                 room.setdefault('levels', [0] * 5)[index] = reply['level']
                             versions[index] = reply['generation']
-                            progress.pop(str(index), None)
+                            progress[str(index)] = dict(room['auth_waits'][index])
                             results.pop(str(index), None)
                             return reply['account']
                         progress[str(index)] = {'stage': 'WAIT_REPLACEMENT', 'level': row[2]}
@@ -324,6 +341,8 @@ class Satellite:
                 if key not in results:
                     level = progress.get(key, {}).get('level', 0)
                     results[key] = {'status': 'pending', 'level_before': level, 'level_after': level}
+                if 'auth_retry_until' in progress.get(key, {}):
+                    results[key].update(clean_auth_wait(progress[key]))
         report = {**snapshot(), 'stopped': stop.is_set() or self.shutdown.is_set()}
         temporary = checkpoint.with_suffix('.tmp')
         temporary.write_text(json.dumps(report), encoding='utf-8')

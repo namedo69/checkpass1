@@ -12,7 +12,7 @@
   "pve_backend/bridge/__init__.py": "ba58b6e25885bfe447de4f5af84f3ad9b04c483da2b24ea96a8853e7d89d0554",
   "pve_backend/bridge/core/__init__.py": "820bb522bd8d05a3f0175a0b08c2dc3ba959e880ed63d247fd56d2d808a7f9ab",
   "pve_backend/bridge/core/_core_data/__init__.py": "94de6b3b7a07f673b366b373c00763385f8f92ec6bf6d51b2ae03d4b86054418",
-  "pve_backend/bridge/core/_core_data/garena_http_grant.py": "bf437b1593ab8ba65fa0fbd9024c1420595c1bc8a52e6302ad3fd1e0faf83e72",
+  "pve_backend/bridge/core/_core_data/garena_http_grant.py": "c3dbe0d50f7d110723ad524509fc7bc443ffe918e740e200cc70dbb88687d80d",
   "pve_backend/bridge/core/_core_data/garena_tcp.py": "06b45572a43390aa6c90d7282452d8ea09bfa1681c070018118e5bb1b3a401b7",
   "pve_backend/kientuong_checker.py": "bfc35f23b280c6d169e07d1d9f2105a7eca9bce766aefdb0d4cdf11913041be9",
   "pve_backend/purepc/__init__.py": "592c0c23784f467e9559b973d4be27d7eef970c5f3619d912cc97a9dffa85191",
@@ -89,6 +89,6 @@
   "pve_runtime/vendor/team-create-template.json": "f2779bba8c0861fdb9d79112c4cf0c9808dd53c8a9ce80407fecb3f82a20d548",
   "pve_runtime/vendor/team_flow.pyc": "40002a48fd297deb380b87a607c34b5375d3f883143abe43a7e8d4345e3e386b",
   "pve_runtime/web_finish.py": "270bd9988743b00b0d954c7b2eed59085e377b49b6f312e98bfe53f0221b0672",
-  "pve_backend/bridge/core/_core_data/garena_web_session.py": "8fa8a2beb9fab87355777bd3329e027d27b0c8fd4e1b3e615fbf2308ad792f6b",
+  "pve_backend/bridge/core/_core_data/garena_web_session.py": "209221c1049fb496391af1161bf7bfc67dce11070cc513aeb341ed9d32f56e78",
   "pve_backend/purepc/login_limit.py": "217789d22c88a0a1d9783305a032aba44b3ac688b619e4aa5db583f13b8439c8"
 }

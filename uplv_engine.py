@@ -9,23 +9,28 @@ import tempfile
 import threading
 import time
 import uplv_config as config
+from uplv_auth_policy import auth_delay, clean_auth_wait, nonnegative_number
 
 
 class AuthGate:
     """Worker-local backpressure, never a master delay or a credential retry.
 
-    The supplied TLT engine uses a process-local 10/20/30-second throttle
-    streak. We retain that conservative policy, but do not rotate gateways or
-    restart a rejected account. Explicit server waits always take precedence.
+    Repeated throttles increase the wait with jitter. No endpoint/proxy rotation
+    or internal credential retries. Explicit server waits are never shortened.
     """
     def __init__(self):
         self.lock = threading.Lock()
         self.last_start = 0
         self.retry_until = 0
         self.streak = 0
+        self.denial_streak = 0
 
-    def enter(self, stop, progress):
+    def enter(self, stop, progress, not_before=0):
         announced = False
+        # Convert transferred wall-clock metadata once; actual waits use a
+        # monotonic deadline and remain STOP/lease-revocation interruptible.
+        transferred = nonnegative_number(not_before)
+        account_until = (time.monotonic() + max(0, transferred - time.time())) if transferred else 0
         while not stop.is_set():
             if self.lock.acquire(timeout=0.25):
                 try:
@@ -34,7 +39,7 @@ class AuthGate:
                         if stop.is_set():
                             raise RuntimeError('Stopped')
                         now = time.monotonic()
-                        delay = max(self.retry_until, self.last_start + 0.6) - now
+                        delay = max(self.retry_until, account_until, self.last_start + 2.5) - now
                         if delay <= 0:
                             return
                         if now - last_notice >= 5:
@@ -50,16 +55,21 @@ class AuthGate:
                 announced = True
         raise RuntimeError('Stopped')
 
-    def rejected(self, exc):
+    def rejected(self, exc, prior_attempt=0):
         throttle = (getattr(exc, 'reason', None) == 'rate_limited'
                     or getattr(exc, 'http_status', None) == 429
                     or getattr(exc, 'code', None) == 429)
-        server_wait = getattr(exc, 'retry_after', 0)
-        if type(server_wait) not in (int, float) or not math.isfinite(server_wait) or server_wait <= 0:
-            server_wait = 0
+        server_wait = nonnegative_number(getattr(exc, 'retry_after', 0))
+        diagnostics = getattr(exc, 'diagnostics', {})
+        web_denied = (getattr(exc, 'http_status', None) == 403
+                      and getattr(exc, 'stage', None) == 'tcp-token-v2'
+                      and isinstance(diagnostics, dict)
+                      and str(diagnostics.get('phase', '')).startswith('web-'))
         if throttle:
-            self.streak = min(3, self.streak + 1)
-        local_wait = 10 * self.streak if throttle else 0
+            self.streak = min(16, max(self.streak, prior_attempt) + 1)
+        elif web_denied:
+            self.denial_streak = min(16, max(self.denial_streak, prior_attempt) + 1)
+        local_wait = auth_delay('rate_limit', self.streak) if throttle else auth_delay('web_denied', self.denial_streak) if web_denied else 0
         wait = max(server_wait, local_wait)
         if wait:
             self.retry_until = max(self.retry_until, time.monotonic() + wait)
@@ -176,12 +186,18 @@ class Engine:
                 for index, account in enumerate(room['accounts']):
                     if account[0].casefold() == user.casefold():
                         progress(index, message)
+            wait_state = {}
+            auth_waits = room.get('auth_waits') or []
+            for index, account in enumerate(room['accounts']):
+                if account[0].casefold() == user.casefold() and index < len(auth_waits):
+                    wait_state = clean_auth_wait(auth_waits[index])
+                    break
             # Lazy initialization also supports existing injected/test Engines.
             with self.login_lock:
                 if not hasattr(self, 'auth_gate'):
                     self.auth_gate = AuthGate()
                 gate = self.auth_gate
-            gate.enter(stop, auth_progress)
+            gate.enter(stop, auth_progress, wait_state.get('auth_retry_until', 0))
             try:
                 if stop.is_set():
                     raise RuntimeError('Stopped')
@@ -198,11 +214,15 @@ class Engine:
                 except Exception as exc:
                     if stop.is_set() or str(exc) == 'Stopped':
                         raise RuntimeError('Stopped') from None
-                    throttle, wait, server_wait = gate.rejected(exc)
+                    throttle, wait, server_wait = gate.rejected(exc, wait_state.get('auth_attempt', 0))
                     details = self._auth_diagnostic(exc)
                     if wait:
-                        auth_progress(f'[AUTH_BACKOFF] reason={"rate_limited" if throttle else "server_retry_after"} '
-                                      f'worker_local={wait:.0f}s source={"server_and_local_policy" if server_wait else "local_policy"}')
+                        retry_at = time.time() + wait
+                        attempt = wait_state.get('auth_attempt', 0) + 1
+                        reason = 'rate_limited' if throttle else 'web_denied' if getattr(exc, 'http_status', None) == 403 else 'server_retry_after'
+                        auth_progress(f'[AUTH_BACKOFF] reason={reason} '
+                                      f'worker_local={math.ceil(wait)}s retry_at={retry_at:.3f} attempt={attempt} '
+                                      f'source={"server_and_local_policy" if server_wait else "local_policy"}')
                     kind = 'rate_limit' if throttle else 'login'
                     auth_progress('[AUTH_ERROR] level=unconfirmed ' + details)
                     raise RuntimeError('terminal_' + kind + ': Auth V2 thất bại; chưa vào game ('
@@ -210,8 +230,12 @@ class Engine:
                 if stop.is_set():
                     raise RuntimeError('Stopped')
                 gate.streak = 0
+                gate.denial_streak = 0
                 with bundle_lock:
                     bundles[user.casefold()] = bundle
+                for index, account in enumerate(room['accounts']):
+                    if account[0].casefold() == user.casefold() and index < len(auth_waits):
+                        auth_waits[index] = clean_auth_wait({})
                 auth_progress('[AUTH_OK] Đã xác thực token; chờ đọc cấp từ game')
                 return bundle
             finally:

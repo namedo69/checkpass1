@@ -4,6 +4,7 @@ import time
 import uuid
 import re
 from uplv_failure_policy import terminal_account_failure
+from uplv_auth_policy import auth_delay, clean_auth_wait
 
 
 class AccountPool:
@@ -305,6 +306,8 @@ class AccountPool:
             data.update({k: v for k, v in incoming.items() if v != '' and k != 'elapsed'})
             if results and str(slot) in results:
                 result = results[str(slot)]
+                if 'auth_retry_until' in result or 'auth_attempt' in result:
+                    data.update(clean_auth_wait(result))
                 data['result'] = result['status']
                 data['last_check'] = {'verified': result.get('verified') is True,
                                       'idle': result.get('idle') is True,
@@ -600,6 +603,23 @@ class AccountPool:
     def auth_cooldown_changes(self):
         return []
 
+    def room_auth_waits(self, room, tasks):
+        """Carry account waits across worker changes; never delay admission."""
+        saved = {task: clean_auth_wait(json.loads(raw)) for task, raw in self.store.fetch(
+            'SELECT t.id,d.detail_json FROM uplv_tasks t JOIN uplv_task_details d ON d.task_id=t.id WHERE t.room_id=? AND t.slot>=0', (room,))}
+        return [saved.get(row[0], clean_auth_wait({})) for row in tasks]
+
+    @staticmethod
+    def plan_auth_wait(detail, now, kind):
+        """Persist only metadata, never tokens or a fleet dispatch cooldown."""
+        state = clean_auth_wait(detail)
+        # A reported unexpired deadline came from the owning worker; preserve
+        # it rather than inventing another full wait on report delivery.
+        if state['auth_retry_until'] <= now:
+            state['auth_attempt'] += 1
+            state['auth_retry_until'] = now + auth_delay(kind, state['auth_attempt'])
+        detail.update(state)
+
     def rate_limit_result(self, task, room, observed_detail=None, context=None):
         """End this lease, not this account. A throttle spends no read budget."""
         now = time.time()
@@ -615,6 +635,7 @@ class AccountPool:
         detail = json.loads(saved[0]) if saved else {}
         if observed_detail:
             detail.update(observed_detail)
+        self.plan_auth_wait(detail, now, 'rate_limit')
         detail.update(stage='WAIT_RATE_LIMIT', pause_reason='', detail='Giới hạn tần suất (429); trả hàng đợi ngay, không khóa toàn đội',
                       next_retry_at=now+self.RATE_LIMIT_DELAY)
         changes.extend([
@@ -656,6 +677,8 @@ class AccountPool:
         # preparation. Unknown/missing level/state remains read-only inspection.
         text = str(result.get('final_error') or '')
         auth_only = ('SsoLoginError' in text or 'Auth V2 thất bại' in text)
+        if auth_only:
+            self.plan_auth_wait(detail, now, 'web_denied' if 'HTTP=403' in text else 'rate_limit')
         # Explicit registration rejection precedes any match. Retry preparation
         # rather than trapping an uncreated character in read-only inspection.
         import re
