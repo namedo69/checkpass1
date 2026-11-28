@@ -1,8 +1,23 @@
 # Deploy vệ tinh UpLv lên Render — 0.5.1
 
+## Thử nghiệm 4 phòng/vệ tinh — 28/11/2026 (0.6.17)
+
+- Giới hạn hiện hành **4 phòng/vệ tinh**, tối đa20 acc đang giữ lease.
+  Worker quảng bá/lập lịch4; master chặn phòng thứ5 và vẫn tôn trọng worker
+  cũ chỉ quảng bá1 trong lúc rollout. Giới hạn phòng toàn hệ thống giữ nguyên.
+- Không thay cơ chế xác thực: cả4 phòng dùng chung cổng tuần tự/backoff của
+  worker, tối thiểu2,5 giây giữa các lần bắt đầu; không nhân thành4 cổng login.
+  Heartbeat, STOP, quyền sở hữu, spool báo cáo và cache riêng lease giữ nguyên.
+- Không tự tạo/mở lại job. Đây là tăng giới hạn thử nghiệm, chưa chứng minh
+  thông lượng lên cấp hoặc mức RAM/CPU khi4 phòng cùng chạy game.
+- Backup trước sửa: `backups/before_four_rooms_11fb252.zip`.
+- Test offline gồm42 scheduler nhận168 phòng/840 acc không trùng quyền sở hữu,
+  chặn phòng thứ5, refill một phòng không thu hồi3 phòng khác, STOP và4 phòng
+  dùng chung một cổng xác thực. Rollout được ghi riêng sau triển khai.
+
 ## Web backpressure — 28/11/2026 (0.6.16)
 
-- Cấu hình hiện tại: **1 vệ tinh / 1 phòng**, tối đa 5 acc trong phòng.
+- Cấu hình tại bản0.6.16: **1 vệ tinh / 1 phòng**, tối đa 5 acc trong phòng.
   Các đoạn nói 5 phòng bên dưới là lịch sử, không phải cấu hình hiện hành.
 - Master vẫn cấp việc ngay, không khóa đăng nhập toàn đội. Thời hạn chờ và
   số lần lỗi được lưu theo task/acc rồi chuyển cùng lease; worker thực hiện

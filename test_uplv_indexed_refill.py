@@ -35,7 +35,7 @@ class IndexedRefillTests(unittest.TestCase):
         traces=[];store.db.set_trace_callback(traces.append)
         rooms=[]
         for worker in range(42):
-            body=dict(satellite_id=f'offline_{worker}',capacity=5,direct_game_protocol=1,verify_protocol=1)
+            body=dict(satellite_id=f'offline_{worker}',capacity=1,direct_game_protocol=1,verify_protocol=1)
             reply=pool.claim(body)
             self.assertIsNotNone(reply['room'])
             rooms.append(reply['room'])

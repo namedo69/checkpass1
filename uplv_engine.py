@@ -343,7 +343,7 @@ class Engine:
             with ThreadPoolExecutor(max_workers=min(5, len(room['accounts']))) as executor:
                 return dict(executor.map(verify_account, range(len(room['accounts']))))
 
-        # One room, up to five concurrent preparations; battle waits for all.
+        # Per room, up to five preparations; all rooms share the auth gate.
         concurrency = max(1, min(5, int(config.PREPARE_WORKERS)))
         if room.get('pool_protocol'):
             from pve_runtime.uplv import run_five_batch

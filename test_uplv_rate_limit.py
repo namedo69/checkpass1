@@ -22,7 +22,7 @@ class RateLimitTests(unittest.TestCase):
         self.room = self.claim()
 
     def claim(self, worker='offline', **extra):
-        return self.pool.claim(dict(satellite_id=worker, capacity=5, direct_game_protocol=1,
+        return self.pool.claim(dict(satellite_id=worker, capacity=1, direct_game_protocol=1,
                                     verify_protocol=1, screen_protocol=1, **extra))['room']
 
     def body(self, room=None, kind='rate_limit', **extra):

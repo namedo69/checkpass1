@@ -17,7 +17,7 @@ import uplv_config as config
 from uplv_logs import RoomLogs
 from uplv_auth_policy import clean_auth_wait
 
-VERSION = 'uplv-satellite-0.6.16-web-backpressure'
+VERSION = 'uplv-satellite-0.6.17-four-rooms'
 
 
 class RevokedLease(RuntimeError):
@@ -98,7 +98,7 @@ class Metrics:
                 pass
         return {'rss_mb': round(rss, 2), 'cpu_percent': round(percent, 2),
                  'threads': threading.active_count(), 'uptime_seconds': int(now - self.started),
-                  'capacity': 1,
+                  'capacity': 4,
                    'direct_game_protocol': 1,
                    'worker_version': VERSION,
                    'auth_web_session': 1,
@@ -524,7 +524,7 @@ class Satellite:
         print(f'[checkpass] Chunk {chunk_id} completed', flush=True)
 
     def run(self):
-        capacity = 1
+        capacity = 4
         request_id = uuid.uuid4().hex
         wake = threading.Event()
         def pause(seconds):
