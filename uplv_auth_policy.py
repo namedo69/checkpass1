@@ -13,8 +13,10 @@ def nonnegative_number(value):
 
 
 def auth_delay(kind, attempt):
-    """Bounded exponential backoff plus positive jitter, not a server TTL."""
-    base, cap = (60, 900) if kind == 'web_denied' else (10, 300)
+    """Fixed local web403 wait;429 retains bounded exponential jitter."""
+    if kind == 'web_denied':
+        return 10
+    base, cap = 10, 300
     attempt = min(16, max(1, int(attempt)))
     delay = min(cap, base * 2 ** (attempt - 1))
     return delay + random.uniform(0, delay * .1)

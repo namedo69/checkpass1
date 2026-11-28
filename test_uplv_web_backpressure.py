@@ -95,7 +95,7 @@ class WorkerWaitTests(unittest.TestCase):
         exc = SimpleNamespace(http_status=403, stage='tcp-token-v2', diagnostics={'phase':'web-prelogin'})
         gate = AuthGate()
         with patch('uplv_auth_policy.random.uniform', return_value=0):
-            self.assertEqual(gate.rejected(exc, prior_attempt=2), (False, 240, False))
+            self.assertEqual(gate.rejected(exc, prior_attempt=2), (False, 10, False))
         self.assertEqual(gate.streak, 0)
 
     def test_long_server_wait_is_not_capped(self):

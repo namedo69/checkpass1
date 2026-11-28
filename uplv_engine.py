@@ -82,15 +82,12 @@ class AuthGate:
                       and str(diagnostics.get('phase', '')).startswith('web-'))
         if throttle:
             self.streak = min(16, max(self.streak, prior_attempt) + 1)
-        # A web403 is not evidence that unrelated accounts share the failing
-        # account's retry history. Keep its exponential wait account-owned.
-        # The worker still pauses briefly after a denial; repeated failures do
-        # not turn another account's old attempt count into a 15-minute outage.
+        # Web403 policy is fixed10s, independent of account/worker history.
+        # Explicit server Retry-After still wins for both account and worker.
         account_attempt = min(16, max(0, prior_attempt) + 1)
         local_wait = auth_delay('rate_limit', self.streak) if throttle else auth_delay('web_denied', account_attempt) if web_denied else 0
         wait = max(server_wait, local_wait)
-        shared_local = min(local_wait, 66) if web_denied and not throttle else local_wait
-        shared_wait = max(server_wait, shared_local)
+        shared_wait = wait
         if shared_wait:
             self.retry_until = max(self.retry_until, time.monotonic() + shared_wait)
         return throttle, wait, bool(server_wait)

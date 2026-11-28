@@ -1,6 +1,16 @@
 # Deploy vệ tinh UpLv lên Render — 0.5.1
 
-## Phạm vi backoff web403 — 0.6.19
+## Web403 cố định10giây — 0.6.20
+
+- Thay chính sách0.6.19: phần chờ web403 do code tự đặt luôn10giây,
+  cả riêng acc và chung vệ tinh, không tăng theo số lần, không jitter.
+- `Retry-After` server yêu cầu dài hơn vẫn giữ nguyên;429 không đổi.
+- Cùng hàm policy được dùng bởi worker và fallback master khi báo cáo
+  không còn deadline hợp lệ. Không sửa/xóa các deadline cũ đã lưu.
+- Giữ4phòng, xác thực tuần tự, giãn lượt2,5giây, STOP và lease/đối soát.
+- Backup: `backups/before_fixed_web10_342101e.zip`.
+
+## Phạm vi backoff web403 — 0.6.19 (đã thay bằng0.6.20)
 
 - Giữ4phòng/vệ tinh, đăng nhập tuần tự và khoảng cách bắt đầu2,5giây.
 - Backoff web403 tự đặt tăng theo lịch sử riêng từng acc (60..900giây,

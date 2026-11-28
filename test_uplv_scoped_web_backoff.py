@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 
 from test_uplv_auth_gate import AuthEngineTests, ClockStop
 from uplv_engine import AuthGate
+from uplv_auth_policy import auth_delay
 
 
 def denial(**kwargs):
@@ -13,14 +14,32 @@ def denial(**kwargs):
 
 
 class ScopedWebBackoffTests(unittest.TestCase):
-    def test_high_account_attempt_keeps_long_account_wait_not_long_worker_wait(self):
+    def test_web_policy_has_no_attempt_escalation_or_jitter(self):
+        with patch('uplv_auth_policy.random.uniform', side_effect=AssertionError('no web jitter')):
+            for attempt in (0, 1, 2, 5, 16, 1000000):
+                self.assertEqual(auth_delay('web_denied', attempt), 10)
+
+    def test_short_server_wait_cannot_shorten_local_ten_seconds(self):
+        gate, clock = AuthGate(), ClockStop()
+        with patch('uplv_engine.time', SimpleNamespace(monotonic=lambda:clock.now)):
+            self.assertEqual(gate.rejected(denial(retry_after=3), 12), (False, 10, True))
+            self.assertEqual(gate.retry_until, 110)
+
+    def test_master_fallback_uses_same_fixed_policy(self):
+        from uplv_account_pool import AccountPool
+        detail = dict(auth_attempt=99, auth_retry_until=0)
+        AccountPool.plan_auth_wait(detail, 1000, 'web_denied')
+        self.assertEqual(detail['auth_retry_until'], 1010)
+        self.assertEqual(detail['auth_attempt'], 100)
+
+    def test_high_account_attempt_keeps_fixed_ten_seconds(self):
         gate, clock = AuthGate(), ClockStop()
         with patch('uplv_engine.time', SimpleNamespace(monotonic=lambda: clock.now)), patch('uplv_auth_policy.random.uniform', return_value=0):
-            self.assertEqual(gate.rejected(denial(), prior_attempt=12), (False, 900, False))
-            self.assertEqual(gate.retry_until, clock.now + 66)
+            self.assertEqual(gate.rejected(denial(), prior_attempt=12), (False, 10, False))
+            self.assertEqual(gate.retry_until, clock.now + 10)
             messages = []
             gate.enter(clock, messages.append)
-            self.assertEqual(clock.now, 166)
+            self.assertEqual(clock.now, 110)
             gate.lock.release()
         self.assertTrue(any('reason=worker_backoff' in m for m in messages))
 
@@ -28,9 +47,9 @@ class ScopedWebBackoffTests(unittest.TestCase):
         gate, clock = AuthGate(), ClockStop()
         with patch('uplv_engine.time', SimpleNamespace(monotonic=lambda: clock.now)), patch('uplv_auth_policy.random.uniform', return_value=0):
             for _ in range(20):
-                self.assertEqual(gate.rejected(denial()), (False, 60, False))
-                self.assertEqual(gate.retry_until, clock.now + 60)
-                clock.now += 60
+                self.assertEqual(gate.rejected(denial()), (False, 10, False))
+                self.assertEqual(gate.retry_until, clock.now + 10)
+                clock.now += 10
         self.assertEqual(gate.streak, 0)
 
     def test_server_retry_after_stays_shared_even_when_longer_than_policy(self):
@@ -69,8 +88,8 @@ class ScopedWebEngineTests(AuthEngineTests):
         self.login.assert_called_once()
         messages = [call.args[1] for call in self.progress.call_args_list]
         backoff = next(m for m in messages if '[AUTH_BACKOFF]' in m)
-        self.assertIn('worker_local=66s', backoff)
-        self.assertIn('account_local=900s', backoff)
+        self.assertIn('worker_local=10s', backoff)
+        self.assertIn('account_local=10s', backoff)
         self.assertIn('attempt=9', backoff)
         self.assertNotIn('untrusted-body', ' '.join(messages))
 
