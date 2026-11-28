@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 import uplv_config as config
 from uplv_logs import RoomLogs
 
-VERSION = 'uplv-satellite-0.6.14-single-room'
+VERSION = 'uplv-satellite-0.6.15-auth-backpressure'
 
 
 class RevokedLease(RuntimeError):
@@ -167,16 +167,19 @@ class Satellite:
                 print(f'room={room["id"]} slot={index} {safe_message}', flush=True)
             with lock:
                 row = progress.setdefault(str(index), {})
-                stage = re.search(r'\[(STACK\d(?:_DONE)?|BUFF|REGROUP|WAIT|RECONNECT|DEFERRED|VERIFYING|POOL_READY)\]', message)
+                stage = re.search(r'\[(STACK\d(?:_DONE)?|BUFF|REGROUP|WAIT|RECONNECT|DEFERRED|VERIFYING|POOL_READY|AUTH|AUTH_WAIT|AUTH_BACKOFF|AUTH_ERROR|AUTH_OK)\]', message)
                 level = re.search(r'\[LEVEL\]\s*Lv(\d+)', message)
                 elapsed = re.search(r'\[TIMER\]\s*(\d+)', message)
                 if stage:
                     row['stage'] = stage.group(1)
                 if level:
                     row['level'] = int(level.group(1))
+                    row['level_confirmed'] = True
+                elif '[AUTH]' in message and not row.get('level_confirmed'):
+                    row['level_confirmed'] = False
                 if elapsed:
                     row['elapsed'] = int(elapsed.group(1))
-                if any(marker in message for marker in ('[ERROR]', '[DEFERRED]', '[VERIFY_WAIT]', 'timeout', 'Timeout')):
+                if any(marker in message for marker in ('[ERROR]', '[AUTH_ERROR]', '[AUTH_BACKOFF]', '[DEFERRED]', '[VERIFY_WAIT]', 'timeout', 'Timeout')):
                     safe = message
                     for account in room['accounts']:
                         for secret in account:
@@ -194,7 +197,10 @@ class Satellite:
             row = terminal_result(row)
             ok, before, after, error = row
             terminal = terminal_account_failure({'final_error': error})
-            safe_result = logs.add(index, f'[RESULT] {"success" if ok else "failed" if terminal and not stop.is_set() else "pending"} Lv{before} -> Lv{after}')
+            with lock:
+                confirmed = bool(ok or before > 0 or after > 0 or progress.get(str(index), {}).get('level_confirmed'))
+            levels = f'Lv{before} -> Lv{after}' if confirmed else 'Lv? -> Lv? (chưa đọc được cấp game)'
+            safe_result = logs.add(index, f'[RESULT] {"success" if ok else "failed" if terminal and not stop.is_set() else "pending"} {levels}')
             if safe_result:
                 print(f'room={room["id"]} slot={index} {safe_result}', flush=True)
             with lock:
@@ -225,6 +231,7 @@ class Satellite:
                         item['detail'] = diagnostic[:400]
                 results[str(index)] = {'status': 'success' if ok else 'pending' if pending else 'failed',
                                         'level_before': before, 'level_after': after, 'failure_kind': failure_kind,
+                                        'level_confirmed': confirmed,
                                         'verified': ok or error in ('pool_ready', 'screen_ready'),
                                         'idle': error in ('pool_ready', 'screen_ready'), 'screened': error == 'screen_ready',
                                         'final_error': diagnostic[:400] if failure_kind else '',

@@ -88,21 +88,29 @@ class _Context:
     def __exit__(self,*args):
         if hasattr(self.obj,'close'): self.obj.close()
 
-def _direct_or_web(client, account, password, session_factory, progress):
+def _direct_or_web(client, account, password, session_factory, progress, stop_event=None):
     from bridge.core._core_data.garena_web_session import needs_web_session, web_login_grant
-    from bridge.core._core_data.garena_tcp import OAuthResult
+    from bridge.core._core_data.garena_tcp import AuthStopped, OAuthResult, check_auth_stop
+    check_auth_stop(stop_event)
     try:
         return client.oauth_token_login()
+    except AuthStopped:
+        raise
     except Exception as exc:
         if not needs_web_session(exc):
             raise
+    check_auth_stop(stop_event)
     if progress:
         progress('[web-session] app_id=100055 trigger=error_no_session action=start')
-    token, open_id = web_login_grant(account, password, session_factory=session_factory, progress=progress)
+    check_auth_stop(stop_event)
+    token, open_id = web_login_grant(account, password, session_factory=session_factory,
+                                    progress=progress, stop_event=stop_event)
     return OAuthResult(client.uid, open_id, token, '', ())
 
 
-def login_and_exchange(account,password,device_id,tcp_source_path=None,login_api_pyc_path=None,connect_base='https://100054.connect.garena.com',timeout=20,tcp_client_factory=None,opener=None,with_sso_key=True,progress=None,web_session_factory=None):
+def login_and_exchange(account,password,device_id,tcp_source_path=None,login_api_pyc_path=None,connect_base='https://100054.connect.garena.com',timeout=20,tcp_client_factory=None,opener=None,with_sso_key=True,progress=None,web_session_factory=None,stop_event=None):
+    from bridge.core._core_data.garena_tcp import AuthStopped, check_auth_stop
+    check_auth_stop(stop_event)
     if not account or not password: raise SsoLoginError('Garena account and password are required',stage='tcp')
     if tcp_client_factory is None:
         try:
@@ -112,14 +120,22 @@ def login_and_exchange(account,password,device_id,tcp_source_path=None,login_api
             raise SsoLoginError('Garena TCP client is not configured',stage='tcp') from exc
 
     client_obj = tcp_client_factory(timeout=timeout)
+    if stop_event is not None:
+        # Install before __enter__, which connects the real TCP client.
+        client_obj.stop_event = stop_event
     with client_obj if hasattr(client_obj,'__enter__') else _Context(client_obj) as c:
+        check_auth_stop(stop_event)
         c.login(account, password)
+        check_auth_stop(stop_event)
         # New TLT same-session TCP pair + conditional SSO/HTTP token grant.
         c.oauth_log = progress
         if opener is not None:
             c.http_grant_opener = opener
         try:
-            direct = _direct_or_web(c, account, password, web_session_factory, progress)
+            direct = _direct_or_web(c, account, password, web_session_factory, progress, stop_event)
+            check_auth_stop(stop_event)
+        except AuthStopped:
+            raise
         except Exception as exc:
             # Do not include a raw server body/token in diagnostics.
             code = getattr(exc, 'code', None)

@@ -16,7 +16,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from .garena_tcp import GarenaError
+from .garena_tcp import AuthStopped, GarenaError, check_auth_stop
 
 
 APP_ID = 100055
@@ -118,7 +118,8 @@ def _failure(reason, *, status=None, code=None, diagnostics=None):
     return error
 
 
-def grant_token(sso_key: str, *, opener=None) -> tuple[str, str]:
+def grant_token(sso_key: str, *, opener=None, stop_event=None) -> tuple[str, str]:
+    check_auth_stop(stop_event)
     if not isinstance(sso_key, str) or not sso_key.strip() or any(
             char in sso_key for char in ('\r', '\n', ';', '\0')):
         raise _failure('invalid_sso_key')
@@ -144,16 +145,19 @@ def grant_token(sso_key: str, *, opener=None) -> tuple[str, str]:
     response = None
     status = None
     try:
+        check_auth_stop(stop_event)
         try:
             response = send(request, timeout=HTTP_TIMEOUT)
         except urllib.error.HTTPError as exc:
             response = exc  # Redirects and non-2xx still have a parseable body.
+        check_auth_stop(stop_event)
         status = response.getcode()
         if status in (301, 302, 303, 307):
             token, open_id = extract_token_open_id(response.headers.get('Location', ''))
             if token and open_id:
                 return token, open_id
         raw = response.read(BODY_LIMIT + 1)
+        check_auth_stop(stop_event)
         if len(raw) > BODY_LIMIT:
             raise _failure('response_too_large', status=status,
                            code=429 if status == 429 else None)
@@ -187,11 +191,14 @@ def grant_token(sso_key: str, *, opener=None) -> tuple[str, str]:
             raise _failure('require_grant', status=status, code=141)
         raise _failure('http_rejected' if error or status != 200 else 'missing_token',
                        status=status, diagnostics=response_diagnostics(obj))
+    except AuthStopped:
+        raise
     except GarenaError as exc:
         if response is not None and exc.http_status in (429, 503):
             exc.retry_after = retry_after_seconds(response.headers.get('Retry-After'))
         raise
     except Exception as exc:
+        check_auth_stop(stop_event)
         raise _failure('http_transport', status=status,
                         code=429 if status == 429 else None,
                         diagnostics=transport_diagnostics(exc)) from None

@@ -1,6 +1,7 @@
 """Lazy-loaded Qt-free adapter for the production PvE runtime bundle."""
 import json
 import hashlib
+import math
 import os
 from pathlib import Path
 import sys
@@ -8,6 +9,61 @@ import tempfile
 import threading
 import time
 import uplv_config as config
+
+
+class AuthGate:
+    """Worker-local backpressure, never a master delay or a credential retry.
+
+    The supplied TLT engine uses a process-local 10/20/30-second throttle
+    streak. We retain that conservative policy, but do not rotate gateways or
+    restart a rejected account. Explicit server waits always take precedence.
+    """
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.last_start = 0
+        self.retry_until = 0
+        self.streak = 0
+
+    def enter(self, stop, progress):
+        announced = False
+        while not stop.is_set():
+            if self.lock.acquire(timeout=0.25):
+                try:
+                    last_notice = -math.inf
+                    while True:
+                        if stop.is_set():
+                            raise RuntimeError('Stopped')
+                        now = time.monotonic()
+                        delay = max(self.retry_until, self.last_start + 0.6) - now
+                        if delay <= 0:
+                            return
+                        if now - last_notice >= 5:
+                            progress(f'[AUTH_WAIT] worker_local remaining={math.ceil(delay)}s; giữ lease, chưa gửi đăng nhập')
+                            last_notice = now
+                        if stop.wait(min(delay, 0.5)):
+                            raise RuntimeError('Stopped')
+                except BaseException:
+                    self.lock.release()
+                    raise
+            if not announced:
+                progress('[AUTH_WAIT] worker_local serialized; chờ lượt xác thực, chưa gửi đăng nhập')
+                announced = True
+        raise RuntimeError('Stopped')
+
+    def rejected(self, exc):
+        throttle = (getattr(exc, 'reason', None) == 'rate_limited'
+                    or getattr(exc, 'http_status', None) == 429
+                    or getattr(exc, 'code', None) == 429)
+        server_wait = getattr(exc, 'retry_after', 0)
+        if type(server_wait) not in (int, float) or not math.isfinite(server_wait) or server_wait <= 0:
+            server_wait = 0
+        if throttle:
+            self.streak = min(3, self.streak + 1)
+        local_wait = 10 * self.streak if throttle else 0
+        wait = max(server_wait, local_wait)
+        if wait:
+            self.retry_until = max(self.retry_until, time.monotonic() + wait)
+        return throttle, wait, bool(server_wait)
 
 
 def load_runtime():
@@ -51,8 +107,22 @@ class Engine:
         os.environ['AOV_DEVICE_CACHE'] = str(self.state_dir / 'devices')
         self.runtime = load_runtime()
         self.login_lock = threading.Lock()
-        self.last_login = 0
-        self.auth_retry_until = 0
+        self.auth_gate = AuthGate()
+
+    @staticmethod
+    def _auth_diagnostic(exc):
+        details = type(exc).__name__
+        for label, value in (('code', getattr(exc, 'code', None)),
+                             ('HTTP', getattr(exc, 'http_status', None))):
+            if type(value) is int:
+                details += f' {label}={value}'
+        metadata = getattr(exc, 'diagnostics', {})
+        for key, value in (('phase', metadata.get('phase') if isinstance(metadata, dict) else None),
+                           ('reason', getattr(exc, 'reason', None))):
+            if isinstance(value, str) and 0 < len(value) <= 64 and all(
+                    c in 'abcdefghijklmnopqrstuvwxyz0123456789_-' for c in value):
+                details += f' {key}={value}'
+        return details
 
     def run(self, room, stop, progress, completed, replacement=None):
         # One account-bound OAuth cache for this owned operation, including its
@@ -96,58 +166,56 @@ class Engine:
         bundles, bundle_lock = room.get('_auth_context') or ({}, threading.RLock())
 
         def authenticate(user, password):
+            if stop.is_set():
+                raise RuntimeError('Stopped')
             with bundle_lock:
                 cached = bundles.get(user.casefold())
             if cached is not None:
                 return cached
-            # Keep the existing worker login spacing; explicit server waits are
-            # local to this engine and never hold master/report locks.
+            def auth_progress(message):
+                for index, account in enumerate(room['accounts']):
+                    if account[0].casefold() == user.casefold():
+                        progress(index, message)
+            # Lazy initialization also supports existing injected/test Engines.
             with self.login_lock:
-                delay = max(0, self.last_login + 0.6 - time.monotonic())
-                if stop.wait(delay):
-                    raise RuntimeError('Stopped')
-                self.last_login = time.monotonic()
-            while True:
-                with self.login_lock:
-                    delay = getattr(self, 'auth_retry_until', 0) - time.monotonic()
-                if delay <= 0:
-                    break
-                if stop.wait(min(delay, 0.5)):
-                    raise RuntimeError('Stopped')
+                if not hasattr(self, 'auth_gate'):
+                    self.auth_gate = AuthGate()
+                gate = self.auth_gate
+            gate.enter(stop, auth_progress)
             try:
-                def auth_progress(message):
-                    for index, account in enumerate(room['accounts']):
-                        if account[0].casefold() == user.casefold():
-                            progress(index, message)
-                # V2 handles conditional OAuth 141 TCP/SSO/HTTP grant on this
-                # single credential session. Never restart login on 3/429/deny.
-                bundle = login(user, password, device(user)['device_id'], timeout=20,
-                               with_sso_key=False,
-                               progress=auth_progress)
-            except Exception as exc:
-                code = getattr(exc, 'code', None)
-                status = getattr(exc, 'http_status', None)
-                details = type(exc).__name__
-                if type(code) is int:
-                    details += f' code={code}'
-                if type(status) is int:
-                    details += f' HTTP={status}'
-                metadata = getattr(exc, 'diagnostics', {})
-                for key, value in (('phase', metadata.get('phase') if isinstance(metadata, dict) else None),
-                                   ('reason', getattr(exc, 'reason', None))):
-                    if isinstance(value, str) and 0 < len(value) <= 64 and all(
-                            c in 'abcdefghijklmnopqrstuvwxyz0123456789_-' for c in value):
-                        details += f' {key}={value}'
-                wait = getattr(exc, 'retry_after', 0)
-                if type(wait) in (int, float) and wait > 0:
-                    with self.login_lock:
-                        self.auth_retry_until = max(getattr(self, 'auth_retry_until', 0), time.monotonic() + wait)
-                    details += f' server_retry_after={wait:.0f}'
-                raise RuntimeError('terminal_login: Auth V2 thất bại; kết thúc lượt hiện tại ('
-                                   + details + ')') from None
-            with bundle_lock:
-                bundles[user.casefold()] = bundle
-            return bundle
+                if stop.is_set():
+                    raise RuntimeError('Stopped')
+                # A same-account waiter may have filled the lease-local cache.
+                with bundle_lock:
+                    cached = bundles.get(user.casefold())
+                if cached is not None:
+                    return cached
+                gate.last_start = time.monotonic()
+                auth_progress('[AUTH] phase=login level=unconfirmed')
+                try:
+                    bundle = login(user, password, device(user)['device_id'], timeout=20,
+                                   with_sso_key=False, progress=auth_progress, stop_event=stop)
+                except Exception as exc:
+                    if stop.is_set() or str(exc) == 'Stopped':
+                        raise RuntimeError('Stopped') from None
+                    throttle, wait, server_wait = gate.rejected(exc)
+                    details = self._auth_diagnostic(exc)
+                    if wait:
+                        auth_progress(f'[AUTH_BACKOFF] reason={"rate_limited" if throttle else "server_retry_after"} '
+                                      f'worker_local={wait:.0f}s source={"server_and_local_policy" if server_wait else "local_policy"}')
+                    kind = 'rate_limit' if throttle else 'login'
+                    auth_progress('[AUTH_ERROR] level=unconfirmed ' + details)
+                    raise RuntimeError('terminal_' + kind + ': Auth V2 thất bại; chưa vào game ('
+                                       + details + ')') from None
+                if stop.is_set():
+                    raise RuntimeError('Stopped')
+                gate.streak = 0
+                with bundle_lock:
+                    bundles[user.casefold()] = bundle
+                auth_progress('[AUTH_OK] Đã xác thực token; chờ đọc cấp từ game')
+                return bundle
+            finally:
+                gate.lock.release()
 
         def execute(user, password, target_level=5, progress_cb=None, debug_log=None, character_name=None):
             # Read actual CS profile; skip the optional web-profile request.
@@ -157,6 +225,8 @@ class Engine:
                 bundle = authenticate(user, password)
             except Exception as exc:
                 return False, 0, 0, str(exc)
+            if stop.is_set():
+                return False, 0, 0, 'Stopped'
             with tempfile.TemporaryDirectory(prefix='uplv-') as temp:
                 token = Path(temp) / 'token.json'
                 token.write_text(json.dumps({'authToken': bundle.access_token, 'openId': bundle.open_id}), encoding='utf-8')
@@ -167,7 +237,7 @@ class Engine:
                         progress_cb(f'[LEVEL] Lv{level.group(1)}')
                 row = run_cs(token, user, role_cs='resolve', create=True,
                              replay_1v1='1v1_setwin_seq.json', log=log,
-                              target=target_level, max_rounds=8, stop_event=stop,
+                             target=target_level, max_rounds=8, stop_event=stop,
                              **({'character_name': character_name} if character_name else {}))
             before = row.get('level_before') or 0
             after = row.get('level_after') or before

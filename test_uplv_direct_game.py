@@ -143,7 +143,6 @@ class DirectGameTests(unittest.TestCase):
             self.assertNotIn('web_verify', kwargs)
             return {i: prepare(i,*account) for i,account in enumerate(accounts)}
         with patch('pve_runtime.uplv.run_five_batch', side_effect=batch), \
-                patch('uplv_engine.time.monotonic', return_value=100), \
                 patch('uplv_kientuong.PlayerSession', side_effect=AssertionError('no web')):
             rows = engine.run(room, threading.Event(), Mock(), Mock())
         self.assertTrue(all(row[0] and row[2] == 12 for row in rows.values()))
@@ -167,7 +166,6 @@ class DirectGameTests(unittest.TestCase):
             client = Mock(); client.post.return_value = dict(lease_until=time.time()+180)
             worker = Satellite(client, engine, folder, 'offline')
             with patch('pve_runtime.uplv.run_five_batch', side_effect=batch), \
-                    patch('uplv_engine.time.monotonic', return_value=100), \
                     patch('uplv_kientuong.PlayerSession', side_effect=AssertionError('no web')):
                 worker.run_room(room)
             report = json.loads(next(Path(folder).glob('pending_report_*.json')).read_text())

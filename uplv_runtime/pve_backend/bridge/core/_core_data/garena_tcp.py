@@ -27,6 +27,17 @@ APP_ID = 100054
 REDIRECT_URI = "gop100054://auth/"
 
 
+class AuthStopped(RuntimeError):
+    def __init__(self):
+        super().__init__('Stopped')
+
+
+def check_auth_stop(stop_event):
+    """Cooperative boundary check; never interrupts an in-flight OS request."""
+    if stop_event is not None and stop_event.is_set():
+        raise AuthStopped()
+
+
 class GarenaError(RuntimeError):
     def __init__(self, message, *, code=None, stage=None, app_id=None, reason=None, http_status=None):
         super().__init__(message)
@@ -280,6 +291,7 @@ class SsoSession:
 class GarenaTcpClient:
     def __init__(self, timeout: float = 15.0):
         self.timeout = timeout
+        self.stop_event = None
         self.socket: socket.socket | None = None
         self.session_key: bytes | None = None
         self.uid = 0
@@ -299,13 +311,20 @@ class GarenaTcpClient:
         candidates = list(GARENA_IPV4_FALLBACKS)
         last_error: OSError | None = None
         for host in dict.fromkeys(candidates):
+            check_auth_stop(self.stop_event)
             try:
                 self.socket = socket.create_connection(
                     (host, GARENA_PORT), min(self.timeout, 3.0)
                 )
                 self.socket.settimeout(self.timeout)
+                check_auth_stop(self.stop_event)
                 return
+            except AuthStopped:
+                # __exit__ is not called when __enter__/connect raises.
+                self.close()
+                raise
             except OSError as exc:
+                check_auth_stop(self.stop_event)
                 last_error = exc
         raise GarenaError("Không kết nối được máy chủ đăng nhập Garena") from last_error
 
@@ -331,6 +350,7 @@ class GarenaTcpClient:
             raise GarenaError("Kết nối Garena chưa được mở")
         result = bytearray()
         while len(result) < size:
+            check_auth_stop(self.stop_event)
             try:
                 if deadline is not None:
                     remaining = deadline - time.monotonic()
@@ -339,7 +359,9 @@ class GarenaTcpClient:
                     self.socket.settimeout(remaining)
                 chunk = self.socket.recv(size - len(result))
             except OSError as exc:
+                check_auth_stop(self.stop_event)
                 raise GarenaError("Mất kết nối với máy chủ Garena") from exc
+            check_auth_stop(self.stop_event)
             if not chunk:
                 raise GarenaError("Máy chủ Garena đã đóng kết nối")
             result.extend(chunk)
@@ -354,6 +376,7 @@ class GarenaTcpClient:
             return (self._receive_exact(size) if deadline is None else
                     self._receive_exact(size, deadline=deadline))
         try:
+            check_auth_stop(self.stop_event)
             if deadline is not None:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -361,7 +384,9 @@ class GarenaTcpClient:
                 self.socket.settimeout(remaining)
             self.socket.sendall(_encode_packet(request_id, command, payload, key))
         except OSError as exc:
+            check_auth_stop(self.stop_event)
             raise GarenaError("Không gửi được yêu cầu tới Garena") from exc
+        check_auth_stop(self.stop_event)
         # TLT waits for a matching command/request-id/type, up to five frames.
         # Unrelated pushes must not drive OAuth fallback or token validation.
         for _ in range(5):
@@ -388,6 +413,7 @@ class GarenaTcpClient:
         return reply
 
     def login(self, account: str, password: str) -> int:
+        check_auth_stop(self.stop_event)
         account = account.strip()
         if not account or not password:
             raise GarenaError("Tài khoản hoặc mật khẩu trống")
@@ -449,16 +475,19 @@ class GarenaTcpClient:
 
     def oauth_token_login(self) -> OAuthResult:
         """New TLT: bounded TCP pair, then SSO + HTTP token grant if denied."""
+        check_auth_stop(self.stop_event)
         if not self.session_key or not self.uid:
             raise GarenaError("Chưa đăng nhập Garena")
         self.oauth_diagnostics = []
         for attempt, app_id in enumerate((100054, 100055), 1):
+            check_auth_stop(self.stop_event)
             request = b"".join((
                 _field_varint(1, app_id), _field_string(2, ""),
                 _field_varint(3, 2), _field_string(4, ""),
                 _field_varint(5, 0), _field_varint(6, 17),
             ))
             header, raw = self._request_response(COMMAND_APP_OAUTH_LOGIN, request, self.session_key)
+            check_auth_stop(self.stop_event)
             rc = _first_int(header, 5)
             try:
                 reply = _parse_message(raw)
@@ -482,6 +511,7 @@ class GarenaTcpClient:
             if fallback:
                 continue
             if http_grant:
+                check_auth_stop(self.stop_event)
                 try:
                     sso_key = self.request_sso_key_for_grant()
                 except GarenaError:
@@ -493,7 +523,10 @@ class GarenaTcpClient:
                         callback('[sso-v2] command=442 action=success next=http-grant')
                     try:
                         from .garena_http_grant import grant_token
-                        token, open_id = grant_token(sso_key, opener=getattr(self, 'http_grant_opener', None))
+                        check_auth_stop(self.stop_event)
+                        token, open_id = grant_token(sso_key, opener=getattr(self, 'http_grant_opener', None),
+                                                    stop_event=self.stop_event)
+                        check_auth_stop(self.stop_event)
                     except GarenaError as exc:
                         if callback:
                             callback(f'[http-grant-v2] app_id=100055 http={exc.http_status} '
@@ -570,19 +603,21 @@ class GarenaTcpClient:
 
     def request_sso_key_for_grant(self) -> str:
         """New TLT command442: eight-second deadline; nonempty field1 only."""
+        check_auth_stop(self.stop_event)
         if self.socket is None or not self.session_key or not self.uid:
             raise GarenaError('Chưa đăng nhập Garena', stage='tcp-sso', reason='no_session')
         previous_timeout = self.socket.gettimeout()
         try:
             header, raw = self._request_response(COMMAND_SSO_KEY_GET, b'', self.session_key,
                                                  deadline=time.monotonic() + 8.0)
+            check_auth_stop(self.stop_event)
             if _first_int(header, 5):
                 raise GarenaError('Garena từ chối SSO', stage='tcp-sso', reason='sso_rejected')
             key = _first_bytes(_parse_message(raw), 1).decode('utf-8', 'strict').strip()
             if not key:
                 raise GarenaError('Garena trả SSO rỗng', stage='tcp-sso', reason='empty_sso')
             return key
-        except GarenaError:
+        except (AuthStopped, GarenaError):
             raise
         except Exception:
             raise GarenaError('Không nhận được SSO', stage='tcp-sso', reason='invalid_sso') from None

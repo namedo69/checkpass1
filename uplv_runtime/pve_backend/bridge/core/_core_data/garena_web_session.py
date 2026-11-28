@@ -12,7 +12,7 @@ from .garena_http_grant import (
     APP_ID, BODY_LIMIT, CONNECT_BASE, HTTP_TIMEOUT, _failure,
     extract_token_open_id, response_diagnostics, transport_diagnostics,
 )
-from .garena_tcp import GarenaError
+from .garena_tcp import AuthStopped, GarenaError, check_auth_stop
 
 
 def needs_web_session(exc):
@@ -30,7 +30,7 @@ def transform_password(password, v1, v2):
     return AES.new(key, AES.MODE_ECB).encrypt(digest).hex()
 
 
-def web_login_grant(account, password, *, session_factory=None, progress=None):
+def web_login_grant(account, password, *, session_factory=None, progress=None, stop_event=None):
     """Fresh session per call; at most prelogin/login/OAuth/grant requests."""
     if session_factory is None:
         from requests import Session
@@ -48,15 +48,18 @@ def web_login_grant(account, password, *, session_factory=None, progress=None):
 
     def request(path, *, params=None, data=None):
         nonlocal status
+        check_auth_stop(stop_event)
         status = None
         response = session.request('POST' if data is not None else 'GET',
             CONNECT_BASE + path, params=params, data=data, timeout=HTTP_TIMEOUT,
             allow_redirects=False, stream=True, verify=True)
         try:
+            check_auth_stop(stop_event)
             status = response.status_code
             if status == 429:
                 raise fail('rate_limited', code=429)
             raw = response.raw.read(BODY_LIMIT + 1, decode_content=True)
+            check_auth_stop(stop_event)
             if len(raw) > BODY_LIMIT:
                 raise fail('response_too_large')
             try:
@@ -79,6 +82,7 @@ def web_login_grant(account, password, *, session_factory=None, progress=None):
                 raise fail('web_http_rejected', obj)
             if progress:
                 progress(f'[web-session] app_id={APP_ID} phase={phase} http={status} action=accepted')
+            check_auth_stop(stop_event)
             return obj
         except GarenaError as exc:
             if status in (429, 503):
@@ -89,6 +93,7 @@ def web_login_grant(account, password, *, session_factory=None, progress=None):
             response.close()
 
     try:
+        check_auth_stop(stop_event)
         session = session_factory()
         session.headers.update({
             'User-Agent': 'GarenaMSDK/5.12.1(SM-S918B ;Android 13;vi;vn;)',
@@ -130,9 +135,10 @@ def web_login_grant(account, password, *, session_factory=None, progress=None):
         if not token or not open_id:
             raise fail('missing_token', grant)
         return token, open_id
-    except GarenaError:
+    except (AuthStopped, GarenaError):
         raise
     except Exception as exc:
+        check_auth_stop(stop_event)
         error = _failure('web_transport', status=status, diagnostics=transport_diagnostics(exc))
         error.diagnostics['phase'] = phase
         raise error from None

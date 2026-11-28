@@ -136,8 +136,7 @@ class FreshDiagnosticTests(NoNetwork):
         with tempfile.TemporaryDirectory() as directory:
             client = Mock(); client.post.return_value = dict(lease_until=self.now+180)
             worker = Satellite(client, engine, directory, 'offline')
-            with patch('purepc.uplevel_stateful.read_frames', return_value=[ProfileFramingTests.frame(self)]), \
-                    patch('uplv_engine.time.monotonic', return_value=100):
+            with patch('purepc.uplevel_stateful.read_frames', return_value=[ProfileFramingTests.frame(self)]):
                 worker.run_room(room)
             report = json.loads(next(Path(directory).glob('pending_report_*.json')).read_text())
         self.pool.report(report)
