@@ -17,7 +17,7 @@ import uplv_config as config
 from uplv_logs import RoomLogs
 from uplv_auth_policy import clean_auth_wait
 
-VERSION = 'uplv-satellite-0.6.18-auth-wait-fairness'
+VERSION = 'uplv-satellite-0.6.19-scoped-web-backoff'
 
 
 class RevokedLease(RuntimeError):

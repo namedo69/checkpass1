@@ -1,5 +1,20 @@
 # Deploy vệ tinh UpLv lên Render — 0.5.1
 
+## Phạm vi backoff web403 — 0.6.19
+
+- Giữ4phòng/vệ tinh, đăng nhập tuần tự và khoảng cách bắt đầu2,5giây.
+- Backoff web403 tự đặt tăng theo lịch sử riêng từng acc (60..900giây,
+  jitter tối đa10%); không dùng lịch sử acc khác để tăng thời gian này.
+- Phần chờ chung do chính sách web403 tối đa66giây mỗi lần bị từ chối,
+  thay vì tăng lên15–16,5phút. Đây không phải xóa backpressure.
+- `Retry-After` hợp lệ vẫn được giữ nguyên trên cả acc và cổng worker;
+  không rút ngắn dù lớn hơn66giây. Backoff429 không thay đổi.
+- Log phân biệt `worker_local` và `account_local`. Không đổi protocol,
+  không thêm retry nội bộ, proxy, cache qua lease hay sửa dữ liệu hàng chờ.
+- Deadline riêng đã lưu trước cập nhật được giữ nguyên. Render redeploy
+  theo cơ chế bình thường; luồng lease/report/đối soát cũ không thay đổi.
+- Backup: `backups/before_scoped_web_backoff_9685a82.zip`.
+
 ## AUTH_WAIT fairness — 0.6.18
 
 - Giữ4phòng/vệ tinh. Thời hạn riêng của acc được chờ ngoài mutex xác thực;

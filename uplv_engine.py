@@ -82,12 +82,17 @@ class AuthGate:
                       and str(diagnostics.get('phase', '')).startswith('web-'))
         if throttle:
             self.streak = min(16, max(self.streak, prior_attempt) + 1)
-        elif web_denied:
-            self.denial_streak = min(16, max(self.denial_streak, prior_attempt) + 1)
-        local_wait = auth_delay('rate_limit', self.streak) if throttle else auth_delay('web_denied', self.denial_streak) if web_denied else 0
+        # A web403 is not evidence that unrelated accounts share the failing
+        # account's retry history. Keep its exponential wait account-owned.
+        # The worker still pauses briefly after a denial; repeated failures do
+        # not turn another account's old attempt count into a 15-minute outage.
+        account_attempt = min(16, max(0, prior_attempt) + 1)
+        local_wait = auth_delay('rate_limit', self.streak) if throttle else auth_delay('web_denied', account_attempt) if web_denied else 0
         wait = max(server_wait, local_wait)
-        if wait:
-            self.retry_until = max(self.retry_until, time.monotonic() + wait)
+        shared_local = min(local_wait, 66) if web_denied and not throttle else local_wait
+        shared_wait = max(server_wait, shared_local)
+        if shared_wait:
+            self.retry_until = max(self.retry_until, time.monotonic() + shared_wait)
         return throttle, wait, bool(server_wait)
 
 
@@ -236,7 +241,8 @@ class Engine:
                         attempt = wait_state.get('auth_attempt', 0) + 1
                         reason = 'rate_limited' if throttle else 'web_denied' if getattr(exc, 'http_status', None) == 403 else 'server_retry_after'
                         auth_progress(f'[AUTH_BACKOFF] reason={reason} '
-                                      f'worker_local={math.ceil(wait)}s retry_at={retry_at:.3f} attempt={attempt} '
+                                      f'worker_local={math.ceil(max(0, gate.retry_until - time.monotonic()))}s '
+                                      f'account_local={math.ceil(wait)}s retry_at={retry_at:.3f} attempt={attempt} '
                                       f'source={"server_and_local_policy" if server_wait else "local_policy"}')
                     kind = 'rate_limit' if throttle else 'login'
                     auth_progress('[AUTH_ERROR] level=unconfirmed ' + details)
